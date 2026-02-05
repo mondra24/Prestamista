@@ -502,15 +502,15 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         if not columnas.exists():
             # Crear columnas por defecto si no existen
             columnas_default = [
-                {'nombre_columna': 'numero', 'titulo_personalizado': '#', 'orden': 1, 'ancho': 4},
-                {'nombre_columna': 'nombre_cliente', 'titulo_personalizado': 'Cliente', 'orden': 2, 'ancho': 22},
-                {'nombre_columna': 'telefono', 'titulo_personalizado': 'Teléfono', 'orden': 3, 'ancho': 12},
-                {'nombre_columna': 'categoria', 'titulo_personalizado': 'Cat.', 'orden': 4, 'ancho': 8},
-                {'nombre_columna': 'cuota_actual', 'titulo_personalizado': 'Cuota', 'orden': 5, 'ancho': 10},
-                {'nombre_columna': 'monto_cuota', 'titulo_personalizado': 'Monto', 'orden': 6, 'ancho': 12},
-                {'nombre_columna': 'es_renovacion', 'titulo_personalizado': 'Renov.', 'orden': 7, 'ancho': 10},
-                {'nombre_columna': 'dia_pago', 'titulo_personalizado': 'Día Pago', 'orden': 8, 'ancho': 10},
-                {'nombre_columna': 'espacio_cobrado', 'titulo_personalizado': 'Cobrado', 'orden': 9, 'ancho': 12},
+                {'nombre_columna': 'numero', 'titulo_personalizado': '#', 'orden': 1, 'ancho': '4%'},
+                {'nombre_columna': 'nombre_cliente', 'titulo_personalizado': 'Cliente', 'orden': 2, 'ancho': '22%'},
+                {'nombre_columna': 'telefono', 'titulo_personalizado': 'Teléfono', 'orden': 3, 'ancho': '12%'},
+                {'nombre_columna': 'categoria', 'titulo_personalizado': 'Cat.', 'orden': 4, 'ancho': '8%'},
+                {'nombre_columna': 'cuota_actual', 'titulo_personalizado': 'Cuota', 'orden': 5, 'ancho': '10%'},
+                {'nombre_columna': 'monto_cuota', 'titulo_personalizado': 'Monto', 'orden': 6, 'ancho': '12%'},
+                {'nombre_columna': 'es_renovacion', 'titulo_personalizado': 'Renov.', 'orden': 7, 'ancho': '10%'},
+                {'nombre_columna': 'dia_pago', 'titulo_personalizado': 'Día Pago', 'orden': 8, 'ancho': '10%'},
+                {'nombre_columna': 'espacio_cobrado', 'titulo_personalizado': 'Cobrado', 'orden': 9, 'ancho': '12%'},
             ]
             for col_data in columnas_default:
                 ColumnaPlanilla.objects.create(**col_data)

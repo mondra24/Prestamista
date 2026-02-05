@@ -80,11 +80,11 @@
 const clientesData = {
     {% for cliente in clientes %}
     {{ cliente.pk }}: {
-        nombre: "{{ cliente.nombre_completo }}",
-        categoria: "{{ cliente.get_categoria_display }}",
+        nombre: "{{ cliente.nombre_completo|escapejs }}",
+        categoria: "{{ cliente.get_categoria_display|escapejs }}",
         categoriaCod: "{{ cliente.categoria }}",
-        tipoNegocio: "{{ cliente.tipo_negocio.nombre|default:'-' }}",
-        comercio: "{{ cliente.tipo_comercio|default:'-' }}",
+        tipoNegocio: "{{ cliente.tipo_negocio.nombre|default:'-'|escapejs }}",
+        comercio: "{{ cliente.tipo_comercio|default:'-'|escapejs }}",
         maximoPrestable: {% if cliente.maximo_prestable is not None %}{{ cliente.maximo_prestable }}{% else %}null{% endif %},
         deudaTotal: {{ cliente.deuda_total|default:0 }},
         puedeRenovar: {{ cliente.puede_renovar|yesno:"true,false" }},

@@ -319,7 +319,7 @@
                 <thead>
                     <tr>
                         {% for columna in columnas %}
-                        <th style="width: {{ columna.ancho }}%;">{{ columna.titulo_personalizado|default:columna.get_nombre_columna_display }}</th>
+                        <th style="width: {{ columna.ancho }};">{{ columna.titulo_personalizado|default:columna.get_nombre_columna_display }}</th>
                         {% endfor %}
                     </tr>
                 </thead>

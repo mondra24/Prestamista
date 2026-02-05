@@ -189,27 +189,25 @@ class ColumnaPlanilla(models.Model):
     """Columnas personalizables para la planilla de cobros"""
     
     COLUMNAS_DISPONIBLES = [
-        ('cliente_nombre', 'Nombre del Cliente'),
-        ('cliente_telefono', 'Teléfono'),
-        ('cliente_direccion', 'Dirección'),
-        ('cliente_categoria', 'Categoría del Cliente'),
-        ('cliente_tipo_negocio', 'Tipo de Negocio'),
-        ('cliente_ruta', 'Ruta de Cobro'),
-        ('cliente_dia_pago', 'Día de Pago Preferido'),
-        ('cuota_numero', 'Número de Cuota'),
-        ('cuota_monto', 'Monto de Cuota'),
-        ('cuota_vencimiento', 'Fecha de Vencimiento'),
-        ('prestamo_monto', 'Monto del Préstamo'),
-        ('prestamo_total', 'Total a Pagar'),
-        ('prestamo_pendiente', 'Saldo Pendiente'),
-        ('prestamo_fecha_inicio', 'Fecha de Inicio'),
-        ('prestamo_fecha_fin', 'Fecha Finalización Est.'),
-        ('prestamo_frecuencia', 'Frecuencia de Pago'),
-        ('prestamo_renovacion', 'Es Renovación'),
-        ('prestamo_progreso', 'Progreso (%)'),
-        ('columna_cobrado', 'Espacio para Cobrado'),
-        ('columna_firma', 'Espacio para Firma'),
-        ('columna_notas', 'Espacio para Notas'),
+        ('numero', '# (Número de fila)'),
+        ('nombre_cliente', 'Nombre del Cliente'),
+        ('telefono', 'Teléfono'),
+        ('direccion', 'Dirección'),
+        ('categoria', 'Categoría del Cliente'),
+        ('tipo_negocio', 'Tipo de Negocio'),
+        ('ruta', 'Ruta de Cobro'),
+        ('dia_pago', 'Día de Pago Preferido'),
+        ('cuota_actual', 'Número de Cuota (X/N)'),
+        ('monto_cuota', 'Monto de Cuota'),
+        ('fecha_vencimiento', 'Fecha de Vencimiento'),
+        ('monto_solicitado', 'Monto Solicitado'),
+        ('monto_total', 'Total a Pagar'),
+        ('monto_pendiente', 'Saldo Pendiente'),
+        ('fecha_fin_prestamo', 'Fecha Finalización Est.'),
+        ('es_renovacion', 'Es Renovación'),
+        ('espacio_cobrado', 'Espacio para Cobrado'),
+        ('espacio_firma', 'Espacio para Firma'),
+        ('espacio_notas', 'Espacio para Notas'),
     ]
     
     nombre_columna = models.CharField(
@@ -394,6 +392,11 @@ class Cliente(models.Model):
         if prestamo:
             return prestamo.monto_pendiente
         return Decimal('0.00')
+    
+    @property
+    def deuda_total(self):
+        """Alias de credito_usado - Retorna la deuda total del cliente"""
+        return self.credito_usado
     
     @property
     def credito_disponible(self):
