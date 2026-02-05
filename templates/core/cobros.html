@@ -94,13 +94,25 @@
                     {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
                 </div>
                 <div class="cobro-info flex-grow-1">
-                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
-                        {{ cuota.prestamo.cliente.nombre_completo }}
-                    </a>
+                    <div class="d-flex align-items-center gap-2">
+                        <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                            {{ cuota.prestamo.cliente.nombre_completo }}
+                        </a>
+                        <span class="badge {% if cuota.prestamo.cliente.categoria == 'EX' %}bg-success{% elif cuota.prestamo.cliente.categoria == 'RE' %}bg-warning text-dark{% elif cuota.prestamo.cliente.categoria == 'MO' %}bg-danger{% else %}bg-info{% endif %} btn-categoria" 
+                              style="cursor: pointer;" 
+                              title="Click para cambiar categoría"
+                              data-cliente-id="{{ cuota.prestamo.cliente.pk }}"
+                              data-categoria="{{ cuota.prestamo.cliente.categoria }}">
+                            {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
+                        </span>
+                    </div>
                     <div class="cuota-info">
                         Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
                         {% if cuota.estado == 'PC' %}
                         <span class="badge bg-warning text-dark ms-1">Parcial</span>
+                        {% endif %}
+                        {% if cuota.prestamo.cliente.tipo_comercio %}
+                        <span class="text-muted ms-1">· {{ cuota.prestamo.cliente.tipo_comercio }}</span>
                         {% endif %}
                     </div>
                 </div>
@@ -205,6 +217,38 @@
 </div>
 
 {% csrf_token %}
+
+<!-- Modal para cambiar categoría -->
+<div class="modal fade" id="modal-categoria" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-tag me-2"></i>Cambiar Categoría
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="categoria-cliente-id">
+                <p class="text-muted mb-3">Selecciona la nueva categoría:</p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-outline-success btn-categoria-opcion" data-categoria="EX">
+                        <i class="bi bi-star-fill me-2"></i>Excelente
+                    </button>
+                    <button type="button" class="btn btn-outline-warning btn-categoria-opcion" data-categoria="RE">
+                        <i class="bi bi-dash-circle me-2"></i>Regular
+                    </button>
+                    <button type="button" class="btn btn-outline-danger btn-categoria-opcion" data-categoria="MO">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Moroso
+                    </button>
+                    <button type="button" class="btn btn-outline-info btn-categoria-opcion" data-categoria="NU">
+                        <i class="bi bi-person-plus me-2"></i>Nuevo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -242,6 +286,69 @@ document.querySelectorAll('.btn-cobrar').forEach(btn => {
     
     btn.addEventListener('touchend', () => clearTimeout(pressTimer));
     btn.addEventListener('touchmove', () => clearTimeout(pressTimer));
+});
+
+// ============ CAMBIO DE CATEGORÍA ============
+const modalCategoria = new bootstrap.Modal(document.getElementById('modal-categoria'));
+
+document.querySelectorAll('.btn-categoria').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const clienteId = btn.dataset.clienteId;
+        document.getElementById('categoria-cliente-id').value = clienteId;
+        
+        // Resaltar la categoría actual
+        const categoriaActual = btn.dataset.categoria;
+        document.querySelectorAll('.btn-categoria-opcion').forEach(opcion => {
+            opcion.classList.remove('active');
+            if (opcion.dataset.categoria === categoriaActual) {
+                opcion.classList.add('active');
+            }
+        });
+        
+        modalCategoria.show();
+    });
+});
+
+document.querySelectorAll('.btn-categoria-opcion').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+        const clienteId = document.getElementById('categoria-cliente-id').value;
+        const nuevaCategoria = btn.dataset.categoria;
+        
+        try {
+            const response = await fetch(`/api/cliente/${clienteId}/categoria/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ categoria: nuevaCategoria })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Actualizar badge en la página
+                const badge = document.querySelector(`.btn-categoria[data-cliente-id="${clienteId}"]`);
+                if (badge) {
+                    badge.dataset.categoria = nuevaCategoria;
+                    badge.textContent = data.cliente.categoria_display.slice(0, 3);
+                    badge.className = 'badge btn-categoria';
+                    if (nuevaCategoria === 'EX') badge.classList.add('bg-success');
+                    else if (nuevaCategoria === 'RE') badge.classList.add('bg-warning', 'text-dark');
+                    else if (nuevaCategoria === 'MO') badge.classList.add('bg-danger');
+                    else badge.classList.add('bg-info');
+                }
+                
+                showToast(data.message, 'success');
+                modalCategoria.hide();
+            } else {
+                showToast(data.message || 'Error al cambiar categoría', 'danger');
+            }
+        } catch (error) {
+            showToast('Error de conexión', 'danger');
+        }
+    });
 });
 </script>
 {% endblock %}

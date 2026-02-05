@@ -4,7 +4,7 @@ Formularios del Sistema de Gestión de Préstamos
 from django import forms
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Submit, Row, Column, Div, HTML, Field
-from .models import Cliente, Prestamo
+from .models import Cliente, Prestamo, RutaCobro
 
 
 class ClienteForm(forms.ModelForm):
@@ -12,7 +12,8 @@ class ClienteForm(forms.ModelForm):
     
     class Meta:
         model = Cliente
-        fields = ['nombre', 'apellido', 'telefono', 'direccion', 'categoria', 'estado', 'notas']
+        fields = ['nombre', 'apellido', 'telefono', 'direccion', 'tipo_comercio', 
+                  'limite_credito', 'ruta', 'dia_pago_preferido', 'categoria', 'estado', 'notas']
         widgets = {
             'nombre': forms.TextInput(attrs={
                 'class': 'form-control form-control-lg',
@@ -35,6 +36,24 @@ class ClienteForm(forms.ModelForm):
                 'placeholder': 'Dirección completa',
                 'rows': 2
             }),
+            'tipo_comercio': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej: Tienda, Venta ambulante, Empleado'
+            }),
+            'limite_credito': forms.NumberInput(attrs={
+                'class': 'form-control form-control-lg',
+                'placeholder': 'Máximo a prestar (0 = sin límite)',
+                'inputmode': 'decimal',
+                'min': '0',
+                'step': '0.01'
+            }),
+            'ruta': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'dia_pago_preferido': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ej: Lunes, Viernes'
+            }),
             'categoria': forms.Select(attrs={
                 'class': 'form-select form-select-lg'
             }),
@@ -50,6 +69,8 @@ class ClienteForm(forms.ModelForm):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields['ruta'].queryset = RutaCobro.objects.filter(activa=True)
+        self.fields['ruta'].required = False
         self.helper = FormHelper()
         self.helper.form_method = 'post'
         self.helper.layout = Layout(
@@ -59,6 +80,14 @@ class ClienteForm(forms.ModelForm):
             ),
             'telefono',
             'direccion',
+            Row(
+                Column('tipo_comercio', css_class='col-6'),
+                Column('limite_credito', css_class='col-6'),
+            ),
+            Row(
+                Column('ruta', css_class='col-6'),
+                Column('dia_pago_preferido', css_class='col-6'),
+            ),
             Row(
                 Column('categoria', css_class='col-6'),
                 Column('estado', css_class='col-6'),

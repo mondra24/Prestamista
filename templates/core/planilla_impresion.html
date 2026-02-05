@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planilla de Cobros - {{ fecha|date:"d/m/Y" }}</title>
+    <!-- html2pdf for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -13,14 +15,14 @@
         
         body {
             font-family: Arial, sans-serif;
-            font-size: 12px;
-            line-height: 1.4;
-            padding: 20px;
+            font-size: 11px;
+            line-height: 1.3;
+            padding: 15px;
         }
         
         .header {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 2px solid #000;
         }
@@ -31,7 +33,7 @@
         }
         
         .header p {
-            font-size: 14px;
+            font-size: 12px;
             color: #555;
         }
         
@@ -39,26 +41,43 @@
             display: flex;
             justify-content: space-between;
             margin-bottom: 15px;
-            padding: 10px;
+            padding: 8px;
             background: #f5f5f5;
+            font-size: 11px;
+        }
+        
+        .ruta-section {
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+        }
+        
+        .ruta-header {
+            background: #333;
+            color: white;
+            padding: 8px 12px;
+            font-weight: bold;
+            font-size: 13px;
+            margin-bottom: 0;
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         
         th, td {
             border: 1px solid #333;
-            padding: 8px;
+            padding: 6px 8px;
             text-align: left;
+            font-size: 10px;
         }
         
         th {
-            background-color: #333;
+            background-color: #555;
             color: white;
             font-weight: bold;
+            font-size: 9px;
         }
         
         tr:nth-child(even) {
@@ -77,30 +96,53 @@
             background-color: #333 !important;
             color: white;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 12px;
         }
         
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 8px;
+            font-weight: bold;
+        }
+        
+        .badge-renovacion {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .badge-nuevo {
+            background: #0d6efd;
+            color: #fff;
+        }
+        
+        .categoria-ex { color: #198754; font-weight: bold; }
+        .categoria-re { color: #fd7e14; }
+        .categoria-mo { color: #dc3545; font-weight: bold; }
+        .categoria-nu { color: #0d6efd; }
+        
         .footer {
-            margin-top: 30px;
-            padding-top: 20px;
+            margin-top: 20px;
+            padding-top: 15px;
             border-top: 1px dashed #333;
         }
         
         .firma-box {
             display: flex;
             justify-content: space-around;
-            margin-top: 50px;
+            margin-top: 40px;
         }
         
         .firma {
             text-align: center;
-            width: 200px;
+            width: 180px;
         }
         
         .firma-linea {
             border-top: 1px solid #333;
             margin-bottom: 5px;
-            margin-top: 40px;
+            margin-top: 35px;
         }
         
         @media print {
@@ -113,96 +155,256 @@
             }
             
             @page {
-                margin: 15mm;
+                margin: 10mm;
+                size: A4;
+            }
+            
+            .ruta-section {
+                page-break-inside: avoid;
             }
         }
         
-        .btn-print {
+        .btn-actions {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background: #198754;
-            color: white;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
+        }
+        
+        .btn {
+            padding: 10px 16px;
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
         
-        .btn-print:hover {
-            background: #157347;
+        .btn-print {
+            background: #198754;
+            color: white;
+        }
+        
+        .btn-pdf {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-whatsapp {
+            background: #25D366;
+            color: white;
+        }
+        
+        .btn-back {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+        }
+        
+        .filter-box {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+        }
+        
+        .filter-box select {
+            padding: 6px 12px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            margin-right: 10px;
         }
     </style>
 </head>
 <body>
-    <button class="btn-print no-print" onclick="window.print()">
-        🖨️ Imprimir
-    </button>
-    
-    <div class="header">
-        <h1>PLANILLA DE COBROS</h1>
-        <p>Préstamos - Sistema de Gestión de Préstamos</p>
+    <div class="btn-actions no-print">
+        <a href="{% url 'core:cierre_caja' %}" class="btn btn-back">
+            ← Volver
+        </a>
+        <button class="btn btn-print" onclick="window.print()">
+            🖨️ Imprimir
+        </button>
+        <button class="btn btn-pdf" onclick="generarPDF()">
+            📄 Descargar PDF
+        </button>
+        <button class="btn btn-whatsapp" onclick="compartirWhatsApp()">
+            📱 WhatsApp
+        </button>
     </div>
     
-    <div class="info-box">
-        <div>
-            <strong>Fecha:</strong> {{ fecha|date:"d/m/Y" }}
+    <div id="planilla-content">
+        <div class="header">
+            <h1>PLANILLA DE COBROS</h1>
+            <p>Préstamos - Sistema de Gestión</p>
         </div>
-        <div>
-            <strong>Total de cobros:</strong> {{ pagos|length }}
+        
+        <div class="info-box">
+            <div>
+                <strong>Fecha:</strong> {{ fecha|date:"l d/m/Y" }}
+            </div>
+            <div>
+                <strong>Cobros pendientes:</strong> {{ cuotas_pendientes|length }}
+            </div>
+            <div>
+                <strong>Total esperado:</strong> ${{ total_esperado|floatformat:0 }}
+            </div>
         </div>
+        
+        {% if ruta_filter %}
+        <div class="filter-box no-print">
+            <strong>Ruta:</strong> {{ ruta_filter.nombre }}
+        </div>
+        {% endif %}
+        
+        {% for ruta_nombre, cuotas in cuotas_por_ruta.items %}
+        <div class="ruta-section">
+            <div class="ruta-header">
+                📍 {{ ruta_nombre|default:"Sin Ruta Asignada" }} ({{ cuotas|length }} clientes)
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 4%;">#</th>
+                        <th style="width: 22%;">Cliente</th>
+                        <th style="width: 12%;">Teléfono</th>
+                        <th style="width: 8%;">Cat.</th>
+                        <th style="width: 10%;">Cuota</th>
+                        <th style="width: 12%;" class="text-right">Monto</th>
+                        <th style="width: 10%;">Renov.</th>
+                        <th style="width: 10%;">Día Pago</th>
+                        <th style="width: 12%;">Cobrado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cuota in cuotas %}
+                    <tr>
+                        <td class="text-center">{{ forloop.counter }}</td>
+                        <td>
+                            <strong>{{ cuota.prestamo.cliente.nombre_completo }}</strong>
+                            {% if cuota.prestamo.cliente.tipo_comercio %}
+                            <br><small style="color: #666;">{{ cuota.prestamo.cliente.tipo_comercio }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ cuota.prestamo.cliente.telefono }}</td>
+                        <td class="text-center categoria-{{ cuota.prestamo.cliente.categoria|lower }}">
+                            {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
+                        </td>
+                        <td class="text-center">
+                            {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
+                        </td>
+                        <td class="text-right">
+                            <strong>${{ cuota.monto_cuota|floatformat:0 }}</strong>
+                        </td>
+                        <td class="text-center">
+                            {% if cuota.prestamo.es_renovacion %}
+                            <span class="badge badge-renovacion">REN</span>
+                            {% else %}
+                            <span class="badge badge-nuevo">NVO</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {{ cuota.prestamo.cliente.dia_pago_preferido|default:"-" }}
+                        </td>
+                        <td style="border: 2px dashed #999; background: #fff;">
+                            
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% empty %}
+        <p class="text-center" style="padding: 30px; color: #666;">
+            No hay cobros pendientes para esta fecha.
+        </p>
+        {% endfor %}
+        
+        {% if cuotas_pendientes %}
+        <table>
+            <tr class="total-row">
+                <td colspan="5" class="text-right">TOTAL ESPERADO DEL DÍA:</td>
+                <td class="text-right">${{ total_esperado|floatformat:0 }}</td>
+                <td colspan="3"></td>
+            </tr>
+        </table>
+        {% endif %}
+        
+        <div class="footer">
+            <div class="firma-box">
+                <div class="firma">
+                    <div class="firma-linea"></div>
+                    <p>Firma del Cobrador</p>
+                </div>
+                <div class="firma">
+                    <div class="firma-linea"></div>
+                    <p>Total Cobrado: $_______</p>
+                </div>
+                <div class="firma">
+                    <div class="firma-linea"></div>
+                    <p>Firma Supervisor</p>
+                </div>
+            </div>
+        </div>
+        
+        <p class="text-center" style="margin-top: 20px; color: #888; font-size: 9px;">
+            Documento generado el {{ now|date:"d/m/Y H:i" }} - Préstamos v2.0
+        </p>
     </div>
     
-    <table>
-        <thead>
-            <tr>
-                <th style="width: 5%;">#</th>
-                <th style="width: 35%;">Cliente</th>
-                <th style="width: 20%;">Teléfono</th>
-                <th style="width: 15%;" class="text-center">Cuota</th>
-                <th style="width: 25%;" class="text-right">Monto Cobrado</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for pago in pagos %}
-            <tr>
-                <td class="text-center">{{ forloop.counter }}</td>
-                <td>{{ pago.prestamo.cliente.nombre_completo }}</td>
-                <td>{{ pago.prestamo.cliente.telefono }}</td>
-                <td class="text-center">{{ pago.numero_cuota }}/{{ pago.prestamo.cuotas_pactadas }}</td>
-                <td class="text-right">${{ pago.monto_pagado|floatformat:0 }}</td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="5" class="text-center">No hay cobros registrados para esta fecha.</td>
-            </tr>
+    <script>
+        function generarPDF() {
+            const element = document.getElementById('planilla-content');
+            const fecha = '{{ fecha|date:"Y-m-d" }}';
+            const opt = {
+                margin: [10, 10, 10, 10],
+                filename: `planilla-cobros-${fecha}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            
+            // Ocultar botones durante la generación
+            document.querySelector('.btn-actions').style.display = 'none';
+            
+            html2pdf().set(opt).from(element).save().then(() => {
+                document.querySelector('.btn-actions').style.display = 'flex';
+            });
+        }
+        
+        function compartirWhatsApp() {
+            const fecha = '{{ fecha|date:"d/m/Y" }}';
+            const total = '{{ total_esperado|floatformat:0 }}';
+            const cantidad = '{{ cuotas_pendientes|length }}';
+            
+            // Crear resumen de texto
+            let mensaje = `📋 *PLANILLA DE COBROS*\n`;
+            mensaje += `📅 Fecha: ${fecha}\n`;
+            mensaje += `👥 Clientes: ${cantidad}\n`;
+            mensaje += `💰 Total esperado: $${total}\n\n`;
+            mensaje += `📍 *Detalle por cliente:*\n`;
+            
+            {% for cuota in cuotas_pendientes %}
+            mensaje += `• {{ cuota.prestamo.cliente.nombre_completo }} - ${{ cuota.monto_cuota|floatformat:0 }} ({{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }})\n`;
             {% endfor %}
             
-            {% if pagos %}
-            <tr class="total-row">
-                <td colspan="4" class="text-right">TOTAL DEL DÍA:</td>
-                <td class="text-right">${{ total|floatformat:0 }}</td>
-            </tr>
-            {% endif %}
-        </tbody>
-    </table>
-    
-    <div class="footer">
-        <div class="firma-box">
-            <div class="firma">
-                <div class="firma-linea"></div>
-                <p>Firma del Cobrador</p>
-            </div>
-            <div class="firma">
-                <div class="firma-linea"></div>
-                <p>Firma del Supervisor</p>
-            </div>
-        </div>
-    </div>
-    
-    <p class="text-center" style="margin-top: 30px; color: #888; font-size: 10px;">
-        Documento generado - Préstamos v1.0
-    </p>
+            // Generar PDF y compartir
+            alert('El PDF se descargará. Luego podrás compartirlo por WhatsApp.');
+            generarPDF();
+            
+            // También abrir WhatsApp con el resumen de texto
+            const url = `https://wa.me/?text=${encodeURIComponent(mensaje)}`;
+            setTimeout(() => {
+                window.open(url, '_blank');
+            }, 1500);
+        }
+    </script>
 </body>
 </html>

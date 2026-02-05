@@ -84,6 +84,24 @@ def guardar_perfil_usuario(sender, instance, **kwargs):
         instance.perfil.save()
 
 
+class RutaCobro(models.Model):
+    """Modelo para categorizar rutas de cobro en la planilla"""
+    nombre = models.CharField(max_length=100, verbose_name='Nombre de la Ruta')
+    descripcion = models.TextField(blank=True, null=True, verbose_name='Descripción')
+    orden = models.PositiveIntegerField(default=0, verbose_name='Orden de Prioridad')
+    color = models.CharField(max_length=7, default='#0d6efd', verbose_name='Color', help_text='Color en formato hexadecimal')
+    activa = models.BooleanField(default=True, verbose_name='Activa')
+    fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+    
+    class Meta:
+        verbose_name = 'Ruta de Cobro'
+        verbose_name_plural = 'Rutas de Cobro'
+        ordering = ['orden', 'nombre']
+    
+    def __str__(self):
+        return self.nombre
+
+
 class Cliente(models.Model):
     """Modelo para gestionar clientes del sistema de préstamos"""
     
@@ -113,6 +131,37 @@ class Cliente(models.Model):
         default=Estado.ACTIVO,
         verbose_name='Estado'
     )
+    # Nuevos campos
+    tipo_comercio = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='Tipo de Comercio/Negocio',
+        help_text='Ej: Tienda, Venta ambulante, Empleado, etc.'
+    )
+    limite_credito = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+        verbose_name='Límite de Crédito',
+        help_text='Máximo que se le puede prestar a este cliente'
+    )
+    ruta = models.ForeignKey(
+        RutaCobro,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='clientes',
+        verbose_name='Ruta de Cobro'
+    )
+    dia_pago_preferido = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name='Día de Pago Preferido',
+        help_text='Ej: Lunes, Martes, etc.'
+    )
     fecha_registro = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Registro')
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')
     
@@ -137,6 +186,29 @@ class Cliente(models.Model):
     def prestamo_activo(self):
         """Retorna el préstamo activo del cliente"""
         return self.prestamos.filter(estado='AC').first()
+    
+    @property
+    def credito_usado(self):
+        """Retorna el monto total de crédito actualmente en uso"""
+        prestamo = self.prestamo_activo
+        if prestamo:
+            return prestamo.monto_pendiente
+        return Decimal('0.00')
+    
+    @property
+    def credito_disponible(self):
+        """Retorna cuánto más se le puede prestar al cliente"""
+        if self.limite_credito <= 0:
+            return None  # Sin límite definido
+        disponible = self.limite_credito - self.credito_usado
+        return max(disponible, Decimal('0.00'))
+    
+    @property
+    def porcentaje_credito_usado(self):
+        """Retorna el porcentaje del límite de crédito usado"""
+        if self.limite_credito <= 0:
+            return 0
+        return min(100, int((self.credito_usado / self.limite_credito) * 100))
     
     def actualizar_categoria(self):
         """Actualiza la categoría del cliente basado en su historial de pagos"""
@@ -224,6 +296,19 @@ class Prestamo(models.Model):
         choices=Estado.choices,
         default=Estado.ACTIVO,
         verbose_name='Estado'
+    )
+    es_renovacion = models.BooleanField(
+        default=False,
+        verbose_name='Es Renovación',
+        help_text='Indica si este préstamo es una renovación de otro'
+    )
+    prestamo_anterior = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='renovaciones',
+        verbose_name='Préstamo Anterior'
     )
     fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')

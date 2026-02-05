@@ -4,7 +4,7 @@ Configuración del Admin para el Sistema de Gestión de Préstamos
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
-from .models import Cliente, Prestamo, Cuota, PerfilUsuario
+from .models import Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro
 
 User = get_user_model()
 
@@ -44,14 +44,42 @@ class PerfilUsuarioAdmin(admin.ModelAdmin):
     raw_id_fields = ['user']
 
 
+# ==================== RUTAS DE COBRO ====================
+
+@admin.register(RutaCobro)
+class RutaCobroAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'descripcion', 'orden', 'color', 'activa', 'cantidad_clientes']
+    list_filter = ['activa']
+    search_fields = ['nombre', 'descripcion']
+    ordering = ['orden', 'nombre']
+    list_editable = ['orden', 'activa', 'color']
+    
+    def cantidad_clientes(self, obj):
+        return obj.clientes.count()
+    cantidad_clientes.short_description = 'Clientes'
+
+
 # ==================== ADMINISTRACIÓN DE PRÉSTAMOS ====================
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ['nombre_completo', 'telefono', 'categoria', 'estado', 'fecha_registro']
-    list_filter = ['categoria', 'estado']
-    search_fields = ['nombre', 'apellido', 'telefono']
+    list_display = ['nombre_completo', 'telefono', 'tipo_comercio', 'categoria', 'limite_credito', 'ruta', 'estado']
+    list_filter = ['categoria', 'estado', 'ruta']
+    search_fields = ['nombre', 'apellido', 'telefono', 'tipo_comercio']
     ordering = ['apellido', 'nombre']
+    list_editable = ['categoria', 'ruta']
+    
+    fieldsets = (
+        ('Información Personal', {
+            'fields': ('nombre', 'apellido', 'telefono', 'direccion')
+        }),
+        ('Comercio y Crédito', {
+            'fields': ('tipo_comercio', 'limite_credito', 'ruta', 'dia_pago_preferido')
+        }),
+        ('Clasificación', {
+            'fields': ('categoria', 'estado', 'notas')
+        }),
+    )
     
     def nombre_completo(self, obj):
         return f"{obj.nombre} {obj.apellido}"

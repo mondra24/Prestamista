@@ -234,6 +234,12 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
         initial['fecha_inicio'] = timezone.now().date()
         return initial
     
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Pasar datos de clientes para mostrar límite de crédito
+        context['clientes'] = Cliente.objects.filter(estado='AC')
+        return context
+    
     def form_valid(self, form):
         messages.success(self.request, 'Préstamo creado exitosamente. Las cuotas han sido generadas.')
         return super().form_valid(form)
@@ -380,6 +386,44 @@ def obtener_cuotas_hoy(request):
     })
 
 
+@login_required
+def cambiar_categoria_cliente(request, pk):
+    """Cambiar categoría del cliente via AJAX"""
+    if request.method == 'POST':
+        try:
+            cliente = get_object_or_404(Cliente, pk=pk)
+            
+            data = json.loads(request.body)
+            nueva_categoria = data.get('categoria')
+            
+            if nueva_categoria not in ['EX', 'RE', 'MO', 'NU']:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Categoría no válida'
+                }, status=400)
+            
+            categoria_anterior = cliente.get_categoria_display()
+            cliente.categoria = nueva_categoria
+            cliente.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Categoría cambiada de {categoria_anterior} a {cliente.get_categoria_display()}',
+                'cliente': {
+                    'id': cliente.pk,
+                    'categoria': cliente.categoria,
+                    'categoria_display': cliente.get_categoria_display(),
+                }
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+
 # ============== VISTAS DE REPORTES ==============
 
 class CierreCajaView(LoginRequiredMixin, TemplateView):
@@ -420,11 +464,13 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
 
 
 class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
-    """Vista optimizada para impresión"""
+    """Vista optimizada para impresión con cuotas pendientes del día"""
     template_name = 'core/planilla_impresion.html'
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        from collections import OrderedDict
+        from .models import RutaCobro
         
         fecha_str = self.request.GET.get('fecha')
         if fecha_str:
@@ -433,19 +479,56 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         else:
             fecha = timezone.now().date()
         
-        pagos = Cuota.objects.filter(
-            fecha_pago_real=fecha,
-            estado='PA'
-        ).select_related('prestamo', 'prestamo__cliente').order_by(
+        ruta_id = self.request.GET.get('ruta')
+        
+        # Obtener cuotas PENDIENTES del día (no cobradas)
+        cuotas_pendientes = Cuota.objects.filter(
+            fecha_vencimiento=fecha,
+            estado__in=['PE', 'PC'],
+            prestamo__estado='AC'
+        ).select_related(
+            'prestamo', 
+            'prestamo__cliente', 
+            'prestamo__cliente__ruta'
+        ).order_by(
+            'prestamo__cliente__ruta__orden',
             'prestamo__cliente__apellido'
         )
         
-        total = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+        # Filtrar por ruta si se especifica
+        ruta_filter = None
+        if ruta_id:
+            try:
+                ruta_filter = RutaCobro.objects.get(pk=ruta_id)
+                cuotas_pendientes = cuotas_pendientes.filter(
+                    prestamo__cliente__ruta_id=ruta_id
+                )
+            except RutaCobro.DoesNotExist:
+                pass
+        
+        # Organizar por ruta
+        cuotas_por_ruta = OrderedDict()
+        for cuota in cuotas_pendientes:
+            ruta_nombre = cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else "Sin Ruta"
+            if ruta_nombre not in cuotas_por_ruta:
+                cuotas_por_ruta[ruta_nombre] = []
+            cuotas_por_ruta[ruta_nombre].append(cuota)
+        
+        total_esperado = cuotas_pendientes.aggregate(
+            total=Sum('monto_cuota')
+        )['total'] or Decimal('0.00')
+        
+        # Lista de rutas para filtro
+        rutas = RutaCobro.objects.filter(activa=True).order_by('orden')
         
         context.update({
             'fecha': fecha,
-            'pagos': pagos,
-            'total': total,
+            'cuotas_pendientes': cuotas_pendientes,
+            'cuotas_por_ruta': cuotas_por_ruta,
+            'total_esperado': total_esperado,
+            'rutas': rutas,
+            'ruta_filter': ruta_filter,
+            'now': timezone.now(),
         })
         return context
 
