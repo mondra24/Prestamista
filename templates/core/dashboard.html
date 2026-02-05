@@ -1,0 +1,146 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Saludo y resumen -->
+    <div class="mb-4">
+        <h1 class="h4 fw-bold mb-1">¡Hola, {{ user.username }}!</h1>
+        <p class="text-muted mb-0">Aquí está el resumen de tu día</p>
+    </div>
+    
+    <!-- Estadísticas del día -->
+    <div class="row g-2 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <div class="stat-value text-success" id="total-cobrado-hoy">
+                    ${{ total_cobrado_hoy|floatformat:0 }}
+                </div>
+                <div class="stat-label">Cobrado Hoy</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-check2-circle"></i>
+                </div>
+                <div class="stat-value" id="cantidad-cobros-hoy">{{ cantidad_cobros_hoy }}</div>
+                <div class="stat-label">Cobros Hoy</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="stat-value">{{ cuotas_pendientes_hoy }}</div>
+                <div class="stat-label">Pendientes Hoy</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+                <div class="stat-value">{{ cuotas_vencidas }}</div>
+                <div class="stat-label">Vencidas</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Acciones rápidas -->
+    <section class="mb-4">
+        <h2 class="section-title">
+            <i class="bi bi-lightning-charge"></i>
+            Acciones Rápidas
+        </h2>
+        
+        <div class="row g-2">
+            <div class="col-6">
+                <a href="{% url 'core:cobros' %}" class="card text-decoration-none h-100">
+                    <div class="card-body text-center py-4">
+                        <div class="rounded-circle bg-success bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                            <i class="bi bi-cash-coin text-success fs-3"></i>
+                        </div>
+                        <h5 class="mb-1">Cobros del Día</h5>
+                        {% if cuotas_pendientes_hoy > 0 or cuotas_vencidas > 0 %}
+                        <span class="badge bg-warning text-dark">{{ cuotas_pendientes_hoy|add:cuotas_vencidas }} pendientes</span>
+                        {% else %}
+                        <small class="text-muted">Sin pendientes</small>
+                        {% endif %}
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:prestamo_create' %}" class="card text-decoration-none h-100">
+                    <div class="card-body text-center py-4">
+                        <div class="rounded-circle bg-primary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                            <i class="bi bi-plus-circle text-primary fs-3"></i>
+                        </div>
+                        <h5 class="mb-1">Nuevo Préstamo</h5>
+                        <small class="text-muted">Crear préstamo</small>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:cliente_create' %}" class="card text-decoration-none h-100">
+                    <div class="card-body text-center py-4">
+                        <div class="rounded-circle bg-info bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                            <i class="bi bi-person-plus text-info fs-3"></i>
+                        </div>
+                        <h5 class="mb-1">Nuevo Cliente</h5>
+                        <small class="text-muted">Registrar cliente</small>
+                    </div>
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:planilla_impresion' %}" class="card text-decoration-none h-100">
+                    <div class="card-body text-center py-4">
+                        <div class="rounded-circle bg-secondary bg-opacity-10 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                            <i class="bi bi-printer text-secondary fs-3"></i>
+                        </div>
+                        <h5 class="mb-1">Imprimir Planilla</h5>
+                        <small class="text-muted">Cobros del día</small>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Resumen de cartera -->
+    <section class="mb-4">
+        <h2 class="section-title">
+            <i class="bi bi-wallet2"></i>
+            Resumen de Cartera
+        </h2>
+        
+        <div class="card">
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="h3 mb-0 text-primary">{{ clientes_activos }}</div>
+                        <small class="text-muted">Clientes</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="h3 mb-0 text-success">{{ prestamos_activos }}</div>
+                        <small class="text-muted">Préstamos Activos</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="h3 mb-0 text-warning">${{ total_cartera|floatformat:0 }}</div>
+                        <small class="text-muted">Total Por Cobrar</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+</div>
+
+{% csrf_token %}
+{% endblock %}

@@ -1,0 +1,14 @@
+# Sistema de Gestión de Préstamos - PrestaFácil
+# Requisitos de Python
+
+Django>=4.2,<5.0
+django-environ>=0.11.0
+django-crispy-forms>=2.0
+crispy-bootstrap5>=2024.0
+
+# Para producción con PostgreSQL (descomentar):
+# psycopg2-binary>=2.9.0
+
+# Para producción (opcional):
+# gunicorn>=21.0
+# whitenoise>=6.0

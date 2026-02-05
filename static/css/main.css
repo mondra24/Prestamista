@@ -1,0 +1,551 @@
+/**
+ * Sistema de Gestión de Préstamos - CSS Mobile-First
+ * Colores: Verde (Pagado), Naranja (Pendiente), Rojo (Moroso)
+ */
+
+:root {
+    /* Colores principales */
+    --color-pagado: #198754;
+    --color-pagado-light: #d1f5e0;
+    --color-pendiente: #fd7e14;
+    --color-pendiente-light: #ffe5d0;
+    --color-moroso: #dc3545;
+    --color-moroso-light: #f8d7da;
+    --color-nuevo: #0d6efd;
+    --color-nuevo-light: #cfe2ff;
+    
+    /* UI Colors */
+    --bg-primary: #f8f9fa;
+    --bg-card: #ffffff;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #dee2e6;
+    
+    /* Spacing */
+    --bottom-nav-height: 70px;
+    --header-height: 50px;
+    --sidebar-width: 250px;
+}
+
+/* Reset y base */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    padding-bottom: var(--bottom-nav-height);
+    min-height: 100vh;
+}
+
+/* ============== HEADER MÓVIL ============== */
+.mobile-header {
+    background: linear-gradient(135deg, var(--color-pagado), #157347);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* ============== NAVEGACIÓN INFERIOR ============== */
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--bottom-nav-height);
+    background: var(--bg-card);
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+    z-index: 1001;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.bottom-nav .nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 8px 12px;
+    min-width: 60px;
+    transition: all 0.2s ease;
+}
+
+.bottom-nav .nav-item i {
+    font-size: 1.4rem;
+    margin-bottom: 2px;
+}
+
+.bottom-nav .nav-item.active,
+.bottom-nav .nav-item:active {
+    color: var(--color-pagado);
+}
+
+.bottom-nav .nav-item-main {
+    position: relative;
+    margin-top: -20px;
+}
+
+.bottom-nav .nav-main-btn {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--color-pagado), #157347);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 15px rgba(25, 135, 84, 0.4);
+}
+
+/* ============== SIDEBAR DESKTOP ============== */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    background: linear-gradient(180deg, #1a1a2e, #16213e);
+    flex-direction: column;
+    z-index: 1000;
+}
+
+.sidebar-brand {
+    padding: 20px;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sidebar-nav {
+    padding: 15px 0;
+    flex: 1;
+}
+
+.sidebar-nav a {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.sidebar-nav a i {
+    font-size: 1.2rem;
+    margin-right: 12px;
+    width: 24px;
+}
+
+.sidebar-nav a:hover,
+.sidebar-nav a.active {
+    background: rgba(255,255,255,0.1);
+    color: white;
+}
+
+.sidebar-nav a.active {
+    border-left: 3px solid var(--color-pagado);
+}
+
+@media (min-width: 992px) {
+    body {
+        padding-left: var(--sidebar-width);
+        padding-bottom: 0;
+    }
+    
+    .mobile-header {
+        display: none;
+    }
+}
+
+/* ============== CONTENIDO PRINCIPAL ============== */
+.main-content {
+    padding: 15px;
+    max-width: 100%;
+}
+
+@media (min-width: 992px) {
+    .main-content {
+        padding: 30px;
+        max-width: 1200px;
+    }
+}
+
+/* ============== TARJETAS DE COBRO ============== */
+.cobro-card {
+    background: var(--bg-card);
+    border-radius: 16px;
+    padding: 15px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cobro-card:active {
+    transform: scale(0.98);
+}
+
+.cobro-card.estado-pagado {
+    border-left: 4px solid var(--color-pagado);
+    background: var(--color-pagado-light);
+}
+
+.cobro-card.estado-pendiente {
+    border-left: 4px solid var(--color-pendiente);
+}
+
+.cobro-card.estado-vencido {
+    border-left: 4px solid var(--color-moroso);
+    background: var(--color-moroso-light);
+}
+
+.cobro-card .cliente-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-nuevo), #0b5ed7);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.cobro-card .cobro-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.cobro-card .cliente-nombre {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cobro-card .cuota-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.cobro-card .cobro-monto {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.cobro-card .monto-valor {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+/* Botón de cobrar */
+.btn-cobrar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--color-pagado);
+    border: none;
+    color: white;
+    font-size: 1.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 3px 10px rgba(25, 135, 84, 0.3);
+    transition: all 0.2s ease;
+}
+
+.btn-cobrar:active {
+    transform: scale(0.9);
+    background: #157347;
+}
+
+.btn-cobrar:disabled {
+    background: var(--text-secondary);
+    box-shadow: none;
+}
+
+.btn-cobrar.cobrado {
+    background: var(--color-pagado-light);
+    color: var(--color-pagado);
+}
+
+/* ============== BADGES DE ESTADO ============== */
+.badge-pagado {
+    background-color: var(--color-pagado) !important;
+    color: white;
+}
+
+.badge-pendiente {
+    background-color: var(--color-pendiente) !important;
+    color: white;
+}
+
+.badge-moroso {
+    background-color: var(--color-moroso) !important;
+    color: white;
+}
+
+.badge-nuevo {
+    background-color: var(--color-nuevo) !important;
+    color: white;
+}
+
+/* ============== FORMULARIOS MOBILE ============== */
+.form-control-lg,
+.form-select-lg {
+    padding: 14px 16px;
+    font-size: 1rem;
+    border-radius: 12px;
+    border: 2px solid var(--border-color);
+}
+
+.form-control-lg:focus,
+.form-select-lg:focus {
+    border-color: var(--color-pagado);
+    box-shadow: 0 0 0 3px rgba(25, 135, 84, 0.15);
+}
+
+/* ============== BOTONES ============== */
+.btn-lg {
+    padding: 14px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 12px;
+}
+
+.btn-success {
+    background: var(--color-pagado);
+    border-color: var(--color-pagado);
+}
+
+.btn-success:hover,
+.btn-success:active {
+    background: #157347;
+    border-color: #157347;
+}
+
+/* ============== ESTADÍSTICAS ============== */
+.stat-card {
+    background: var(--bg-card);
+    border-radius: 16px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.stat-card .stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px;
+    font-size: 1.5rem;
+}
+
+.stat-card .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.stat-card .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ============== SECCIÓN TÍTULOS ============== */
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-title i {
+    color: var(--color-pagado);
+}
+
+/* ============== LISTA DE CLIENTES ============== */
+.cliente-item {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+.cliente-item .categoria-badge {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.categoria-excelente { background-color: var(--color-pagado); }
+.categoria-regular { background-color: var(--color-pendiente); }
+.categoria-moroso { background-color: var(--color-moroso); }
+.categoria-nuevo { background-color: var(--color-nuevo); }
+
+/* ============== IMPRESIÓN ============== */
+@media print {
+    body {
+        padding: 0 !important;
+        background: white !important;
+    }
+    
+    .bottom-nav,
+    .sidebar,
+    .mobile-header,
+    .no-print {
+        display: none !important;
+    }
+    
+    .main-content {
+        padding: 0 !important;
+        max-width: 100% !important;
+    }
+    
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    .print-table th,
+    .print-table td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .print-header {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+}
+
+/* ============== FAB (Floating Action Button) ============== */
+.fab {
+    position: fixed;
+    bottom: calc(var(--bottom-nav-height) + 20px);
+    right: 20px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--color-pagado);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(25, 135, 84, 0.4);
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    z-index: 100;
+}
+
+.fab:active {
+    transform: scale(0.9);
+}
+
+@media (min-width: 992px) {
+    .fab {
+        bottom: 30px;
+    }
+}
+
+/* ============== ANIMACIONES ============== */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.pulse {
+    animation: pulse 0.3s ease-in-out;
+}
+
+/* Loading spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+/* ============== EMPTY STATES ============== */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    font-size: 0.9rem;
+}
+
+/* ============== PROGRESO ============== */
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--border-color);
+}
+
+.progress-bar {
+    background: var(--color-pagado);
+    border-radius: 4px;
+}
+
+/* ============== ALERTS CUSTOM ============== */
+.alert {
+    border: none;
+    border-radius: 12px;
+}

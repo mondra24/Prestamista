@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Usuarios - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-people-fill me-2"></i>Gestión de Usuarios
+        </h1>
+        <a href="{% url 'core:usuario_create' %}" class="btn btn-success">
+            <i class="bi bi-plus-lg me-1"></i>Nuevo Usuario
+        </a>
+    </div>
+    
+    <!-- Lista de usuarios -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Nombre</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for usuario in usuarios %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
+                                        <i class="bi bi-person"></i>
+                                    </div>
+                                    <div>
+                                        <strong>{{ usuario.username }}</strong>
+                                        {% if usuario.is_superuser %}
+                                        <span class="badge bg-danger ms-1">Superuser</span>
+                                        {% endif %}
+                                        <br>
+                                        <small class="text-muted">{{ usuario.email|default:"-" }}</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>{{ usuario.get_full_name|default:"-" }}</td>
+                            <td>
+                                {% if usuario.perfil %}
+                                    {% if usuario.perfil.rol == 'AD' %}
+                                    <span class="badge bg-danger">{{ usuario.perfil.get_rol_display }}</span>
+                                    {% elif usuario.perfil.rol == 'SU' %}
+                                    <span class="badge bg-warning text-dark">{{ usuario.perfil.get_rol_display }}</span>
+                                    {% else %}
+                                    <span class="badge bg-primary">{{ usuario.perfil.get_rol_display }}</span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="badge bg-secondary">Sin perfil</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if usuario.perfil and usuario.perfil.activo %}
+                                <span class="badge bg-success">Activo</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactivo</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{% url 'core:usuario_edit' usuario.pk %}" 
+                                       class="btn btn-outline-primary" title="Editar">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    {% if usuario != request.user %}
+                                    <a href="{% url 'core:usuario_toggle' usuario.pk %}" 
+                                       class="btn btn-outline-{% if usuario.perfil and usuario.perfil.activo %}warning{% else %}success{% endif %}"
+                                       title="{% if usuario.perfil and usuario.perfil.activo %}Desactivar{% else %}Activar{% endif %}">
+                                        <i class="bi bi-{% if usuario.perfil and usuario.perfil.activo %}pause{% else %}play{% endif %}"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                <i class="bi bi-people fs-1 d-block mb-2"></i>
+                                No hay usuarios registrados
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Leyenda de roles -->
+    <div class="mt-4">
+        <h6 class="text-muted mb-3">Roles del Sistema:</h6>
+        <div class="row g-2">
+            <div class="col-auto">
+                <span class="badge bg-danger">Administrador</span>
+                <small class="text-muted ms-1">Acceso total al sistema</small>
+            </div>
+            <div class="col-auto">
+                <span class="badge bg-warning text-dark">Supervisor</span>
+                <small class="text-muted ms-1">Gestión y reportes</small>
+            </div>
+            <div class="col-auto">
+                <span class="badge bg-primary">Cobrador</span>
+                <small class="text-muted ms-1">Cobros y consultas</small>
+            </div>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}

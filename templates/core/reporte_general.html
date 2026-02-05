@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reportes - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <h1 class="h4 mb-4">
+        <i class="bi bi-graph-up me-2"></i>Reportes Generales
+    </h1>
+    
+    <!-- Estadísticas principales -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <div class="stat-value">{{ total_clientes }}</div>
+                <div class="stat-label">Clientes Activos</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-wallet2"></i>
+                </div>
+                <div class="stat-value">{{ prestamos_activos }}</div>
+                <div class="stat-label">Préstamos Activos</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+                <div class="stat-value">${{ capital_en_calle|floatformat:0 }}</div>
+                <div class="stat-label">Capital en Calle</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="stat-value">{{ cuotas_vencidas }}</div>
+                <div class="stat-label">Cuotas Vencidas</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Distribución por categoría -->
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-pie-chart"></i>
+            Clientes por Categoría
+        </h3>
+        
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% for item in clientes_por_categoria %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="categoria-badge me-3 {% if item.categoria == 'EX' %}categoria-excelente{% elif item.categoria == 'RE' %}categoria-regular{% elif item.categoria == 'MO' %}categoria-moroso{% else %}categoria-nuevo{% endif %}" 
+                         style="width: 12px; height: 12px;"></div>
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>
+                                {% if item.categoria == 'EX' %}Excelente{% elif item.categoria == 'RE' %}Regular{% elif item.categoria == 'MO' %}Moroso{% else %}Nuevo{% endif %}
+                            </span>
+                            <strong>{{ item.cantidad }}</strong>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar 
+                                {% if item.categoria == 'EX' %}bg-success{% elif item.categoria == 'RE' %}bg-warning{% elif item.categoria == 'MO' %}bg-danger{% else %}bg-primary{% endif %}" 
+                                 style="width: {% widthratio item.cantidad total_clientes 100 %}%">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center">No hay datos disponibles</p>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+    
+    <!-- Accesos rápidos -->
+    <section>
+        <h3 class="section-title">
+            <i class="bi bi-lightning"></i>
+            Accesos Rápidos
+        </h3>
+        
+        <div class="row g-2">
+            <div class="col-6">
+                <a href="{% url 'core:cierre_caja' %}" class="btn btn-outline-success btn-lg w-100 py-3">
+                    <i class="bi bi-clipboard-check d-block fs-3 mb-1"></i>
+                    Cierre de Caja
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:cliente_list' %}?categoria=MO" class="btn btn-outline-danger btn-lg w-100 py-3">
+                    <i class="bi bi-exclamation-circle d-block fs-3 mb-1"></i>
+                    Clientes Morosos
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:prestamo_list' %}?estado=AC" class="btn btn-outline-primary btn-lg w-100 py-3">
+                    <i class="bi bi-wallet2 d-block fs-3 mb-1"></i>
+                    Préstamos Activos
+                </a>
+            </div>
+            <div class="col-6">
+                <a href="{% url 'core:prestamo_create' %}" class="btn btn-success btn-lg w-100 py-3">
+                    <i class="bi bi-plus-circle d-block fs-3 mb-1"></i>
+                    Nuevo Préstamo
+                </a>
+            </div>
+        </div>
+    </section>
+    
+</div>
+{% endblock %}

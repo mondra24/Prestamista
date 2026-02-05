@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Préstamo #{{ prestamo.pk }} - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-3">
+        <a href="{% url 'core:prestamo_list' %}" class="btn btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="h5 mb-0 flex-grow-1">Préstamo #{{ prestamo.pk }}</h1>
+        <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %} fs-6">
+            {{ prestamo.get_estado_display }}
+        </span>
+    </div>
+    
+    <!-- Info del préstamo -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <!-- Cliente -->
+            <div class="d-flex align-items-center mb-3">
+                <div class="cliente-avatar me-3" style="width: 50px; height: 50px;">
+                    {{ prestamo.cliente.nombre|slice:":1" }}{{ prestamo.cliente.apellido|slice:":1" }}
+                </div>
+                <div>
+                    <a href="{% url 'core:cliente_detail' prestamo.cliente.pk %}" class="fw-semibold text-decoration-none">
+                        {{ prestamo.cliente.nombre_completo }}
+                    </a>
+                    <small class="d-block text-muted">
+                        <i class="bi bi-telephone me-1"></i>{{ prestamo.cliente.telefono }}
+                    </small>
+                </div>
+            </div>
+            
+            <hr>
+            
+            <!-- Detalles del préstamo -->
+            <div class="row g-3 text-center">
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Capital</small>
+                    <strong>${{ prestamo.monto_solicitado|floatformat:0 }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Interés</small>
+                    <strong>{{ prestamo.tasa_interes_porcentaje }}%</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Total</small>
+                    <strong class="text-primary">${{ prestamo.monto_total_a_pagar|floatformat:0 }}</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Frecuencia</small>
+                    <strong>{{ prestamo.get_frecuencia_display }}</strong>
+                </div>
+            </div>
+            
+            <hr>
+            
+            <!-- Progreso -->
+            <div class="mb-3">
+                <div class="d-flex justify-content-between mb-1">
+                    <span>Progreso de pago</span>
+                    <span class="fw-bold">{{ prestamo.progreso_porcentaje }}%</span>
+                </div>
+                <div class="progress" style="height: 10px;">
+                    <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>
+                </div>
+            </div>
+            
+            <div class="row g-2 text-center">
+                <div class="col-4">
+                    <div class="p-2 bg-success bg-opacity-10 rounded">
+                        <small class="text-muted d-block">Pagado</small>
+                        <strong class="text-success">${{ prestamo.monto_pagado|floatformat:0 }}</strong>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-2 bg-warning bg-opacity-10 rounded">
+                        <small class="text-muted d-block">Pendiente</small>
+                        <strong class="text-warning">${{ prestamo.monto_pendiente|floatformat:0 }}</strong>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <div class="p-2 bg-primary bg-opacity-10 rounded">
+                        <small class="text-muted d-block">Cuotas</small>
+                        <strong>{{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }}</strong>
+                    </div>
+                </div>
+            </div>
+            
+            {% if prestamo.estado == 'AC' %}
+            <hr>
+            <div class="d-flex gap-2">
+                <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
+                    <i class="bi bi-arrow-repeat me-1"></i> Renovar
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Lista de cuotas -->
+    <section>
+        <h3 class="section-title">
+            <i class="bi bi-list-ol"></i>
+            Cuotas del Préstamo
+        </h3>
+        
+        {% for cuota in cuotas %}
+        <div class="cobro-card {% if cuota.estado == 'PA' %}estado-pagado{% elif cuota.esta_vencida %}estado-vencido{% else %}estado-pendiente{% endif %}">
+            <div class="text-center" style="min-width: 45px;">
+                <div class="fw-bold fs-5">{{ cuota.numero_cuota }}</div>
+                <small class="text-muted">de {{ prestamo.cuotas_pactadas }}</small>
+            </div>
+            
+            <div class="flex-grow-1 ps-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <small class="text-muted">{{ cuota.fecha_vencimiento|date:"d M Y" }}</small>
+                        {% if cuota.estado == 'PA' %}
+                            <span class="badge bg-success ms-2">Pagado</span>
+                        {% elif cuota.estado == 'PC' %}
+                            <span class="badge bg-warning text-dark ms-2">Parcial</span>
+                        {% elif cuota.esta_vencida %}
+                            <span class="badge bg-danger ms-2">{{ cuota.dias_vencida }}d vencida</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold">${{ cuota.monto_cuota|floatformat:0 }}</div>
+                        {% if cuota.estado == 'PC' %}
+                        <small class="text-muted">Resta: ${{ cuota.monto_restante|floatformat:0 }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                {% if cuota.fecha_pago_real %}
+                <small class="text-success">
+                    <i class="bi bi-check-circle me-1"></i>
+                    Pagado el {{ cuota.fecha_pago_real|date:"d/m/Y" }}
+                </small>
+                {% endif %}
+            </div>
+            
+            {% if cuota.estado != 'PA' and prestamo.estado == 'AC' %}
+            <button class="btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
+                <i class="bi bi-check-lg"></i>
+            </button>
+            {% elif cuota.estado == 'PA' %}
+            <div class="btn-cobrar cobrado" style="cursor: default;">
+                <i class="bi bi-check-lg"></i>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </section>
+    
+    <!-- Notas -->
+    {% if prestamo.notas %}
+    <section class="mt-4">
+        <h3 class="section-title">
+            <i class="bi bi-sticky"></i>
+            Notas
+        </h3>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {{ prestamo.notas|linebreaks }}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+    
+</div>
+
+{% csrf_token %}
+{% endblock %}

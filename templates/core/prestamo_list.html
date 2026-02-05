@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Préstamos - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Filtros -->
+    <div class="d-flex gap-2 mb-3 overflow-auto pb-2">
+        <a href="{% url 'core:prestamo_list' %}" 
+           class="btn btn-sm {% if not request.GET.estado %}btn-dark{% else %}btn-outline-dark{% endif %} rounded-pill">
+            Todos
+        </a>
+        <a href="?estado=AC" 
+           class="btn btn-sm rounded-pill {% if request.GET.estado == 'AC' %}btn-success{% else %}btn-outline-success{% endif %}">
+            Activos
+        </a>
+        <a href="?estado=FI" 
+           class="btn btn-sm rounded-pill {% if request.GET.estado == 'FI' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+            Finalizados
+        </a>
+        <a href="?estado=RE" 
+           class="btn btn-sm rounded-pill {% if request.GET.estado == 'RE' %}btn-warning{% else %}btn-outline-warning{% endif %}">
+            Renovados
+        </a>
+    </div>
+    
+    <!-- Lista de préstamos -->
+    <section>
+        {% if prestamos %}
+            {% for prestamo in prestamos %}
+            <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="cliente-item filtrable">
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">{{ prestamo.cliente.nombre_completo }}</div>
+                    <small class="text-muted">
+                        Préstamo #{{ prestamo.pk }} · ${{ prestamo.monto_total_a_pagar|floatformat:0 }}
+                    </small>
+                    <div class="mt-1">
+                        <div class="progress" style="height: 4px; width: 100px;">
+                            <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-end">
+                    <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %}">
+                        {{ prestamo.get_estado_display }}
+                    </span>
+                    <small class="d-block text-muted mt-1">
+                        {{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }}
+                    </small>
+                </div>
+                <i class="bi bi-chevron-right text-muted"></i>
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-wallet2"></i>
+                <h3>Sin préstamos</h3>
+                <p>No hay préstamos con los filtros seleccionados.</p>
+            </div>
+        {% endif %}
+    </section>
+    
+</div>
+
+<!-- FAB para nuevo préstamo -->
+<a href="{% url 'core:prestamo_create' %}" class="fab no-print" title="Nuevo Préstamo">
+    <i class="bi bi-plus-lg"></i>
+</a>
+{% endblock %}

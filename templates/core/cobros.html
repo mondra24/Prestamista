@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Cobros del Día - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Resumen rápido -->
+    <div class="row g-2 mb-4">
+        <div class="col-4">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <div class="stat-value text-success" id="total-cobrado-hoy">
+                    ${{ total_cobrado_hoy|floatformat:0 }}
+                </div>
+                <div class="stat-label">Cobrado</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="stat-value">${{ total_por_cobrar|floatformat:0 }}</div>
+                <div class="stat-label">Por Cobrar</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+                <div class="stat-value">{{ cuotas_vencidas|length }}</div>
+                <div class="stat-label">Vencidas</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cuotas vencidas (prioritarias) -->
+    {% if cuotas_vencidas %}
+    <section class="mb-4">
+        <h2 class="section-title text-danger">
+            <i class="bi bi-exclamation-circle-fill"></i>
+            Cuotas Vencidas ({{ cuotas_vencidas|length }})
+        </h2>
+        
+        {% for cuota in cuotas_vencidas %}
+        <div class="cobro-card estado-vencido filtrable" data-cuota-id="{{ cuota.pk }}">
+            <div class="cliente-avatar">
+                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+            </div>
+            <div class="cobro-info flex-grow-1">
+                <div class="fw-semibold">{{ cuota.prestamo.cliente.nombre_completo }}</div>
+                <div class="cuota-info">
+                    <span class="badge bg-danger me-1">{{ cuota.dias_vencida }} días</span>
+                    Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
+                </div>
+            </div>
+            <div class="cobro-monto text-end me-2">
+                <div class="monto-valor fw-bold">${{ cuota.monto_restante|floatformat:0 }}</div>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
+                        data-cuota-id="{{ cuota.pk }}" 
+                        data-monto="{{ cuota.monto_restante }}"
+                        data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                        title="Cobro personalizado">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                    <i class="bi bi-check-lg"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+    
+    <!-- Cobros del día -->
+    <section>
+        <h2 class="section-title">
+            <i class="bi bi-calendar-check"></i>
+            Cobros de Hoy
+            <span class="badge bg-primary ms-2">{{ cuotas_hoy|length }}</span>
+        </h2>
+        
+        {% if cuotas_hoy %}
+            {% for cuota in cuotas_hoy %}
+            <div class="cobro-card estado-pendiente filtrable" data-cuota-id="{{ cuota.pk }}">
+                <div class="cliente-avatar">
+                    {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                </div>
+                <div class="cobro-info flex-grow-1">
+                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                        {{ cuota.prestamo.cliente.nombre_completo }}
+                    </a>
+                    <div class="cuota-info">
+                        Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
+                        {% if cuota.estado == 'PC' %}
+                        <span class="badge bg-warning text-dark ms-1">Parcial</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="cobro-monto text-end me-2">
+                    <div class="monto-valor fw-bold">${{ cuota.monto_restante|floatformat:0 }}</div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
+                            data-cuota-id="{{ cuota.pk }}" 
+                            data-monto="{{ cuota.monto_restante }}"
+                            data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                            title="Cobro personalizado">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-emoji-smile"></i>
+                <h3>¡Sin cobros pendientes!</h3>
+                <p>No hay cuotas programadas para hoy.</p>
+            </div>
+        {% endif %}
+    </section>
+    
+</div>
+
+<!-- FAB para nuevo préstamo -->
+<a href="{% url 'core:prestamo_create' %}" class="fab no-print" title="Nuevo Préstamo">
+    <i class="bi bi-plus-lg"></i>
+</a>
+
+<!-- Modal para cobro personalizado -->
+<div class="modal fade" id="modal-pago-parcial" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-cash-stack me-2"></i>Cobro Personalizado
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pago-cuota-id">
+                <input type="hidden" id="pago-monto-max">
+                
+                <div class="alert alert-light border mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Cliente:</span>
+                        <strong id="pago-cliente-nombre"></strong>
+                    </div>
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span>Monto de cuota:</span>
+                        <strong id="pago-monto-max-label" class="text-primary fs-5">$0</strong>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-cash me-1"></i>Monto a cobrar ahora:
+                    </label>
+                    <input type="number" class="form-control form-control-lg" id="pago-monto" 
+                           inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+                    <div class="form-text">Ingrese el monto que el cliente pagará</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-arrow-repeat me-1"></i>¿Qué hacer con el restante?
+                    </label>
+                    <select class="form-select" id="pago-accion-restante" onchange="toggleFechaEspecial()">
+                        <option value="ignorar">Dejar pendiente en esta cuota</option>
+                        <option value="proxima">Sumar a la próxima cuota</option>
+                        <option value="especial">Agendar cuota especial en otra fecha</option>
+                    </select>
+                    <small class="text-muted">Si cobra el monto completo, esta opción se ignora</small>
+                </div>
+                
+                <div class="mb-3" id="fecha-especial-container" style="display: none;">
+                    <label class="form-label fw-semibold">
+                        <i class="bi bi-calendar-event me-1"></i>Fecha de cuota especial:
+                    </label>
+                    <input type="date" class="form-control" id="pago-fecha-especial">
+                    <div class="form-text">Se creará una nueva cuota para esta fecha</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x me-1"></i>Cancelar
+                </button>
+                <button type="button" class="btn btn-success btn-lg" onclick="confirmarPagoParcial()">
+                    <i class="bi bi-check-lg me-1"></i>Registrar Cobro
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Botón de editar cobro abre el modal
+document.querySelectorAll('.btn-editar-cobro').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const cuotaId = btn.dataset.cuotaId;
+        const monto = parseFloat(btn.dataset.monto);
+        const cliente = btn.dataset.cliente;
+        showPagoParcialModal(cuotaId, monto, cliente);
+    });
+});
+
+// También permitir click derecho / long press en botón cobrar
+document.querySelectorAll('.btn-cobrar').forEach(btn => {
+    let pressTimer;
+    
+    const openModal = (e) => {
+        e.preventDefault();
+        const card = btn.closest('.cobro-card');
+        const editBtn = card.querySelector('.btn-editar-cobro');
+        if (editBtn) {
+            editBtn.click();
+        }
+    };
+    
+    btn.addEventListener('contextmenu', openModal);
+    
+    // Long press para móviles
+    btn.addEventListener('touchstart', (e) => {
+        pressTimer = setTimeout(() => openModal(e), 500);
+    });
+    
+    btn.addEventListener('touchend', () => clearTimeout(pressTimer));
+    btn.addEventListener('touchmove', () => clearTimeout(pressTimer));
+});
+</script>
+{% endblock %}

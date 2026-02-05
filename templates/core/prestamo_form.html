@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Nuevo Préstamo - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4">
+        <a href="{% url 'core:prestamo_list' %}" class="btn btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="h4 mb-0">
+            <i class="bi bi-wallet-fill me-2"></i>Nuevo Préstamo
+        </h1>
+    </div>
+    
+    <!-- Formulario -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-3 p-lg-4">
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% crispy form %}
+            </form>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// La calculadora se inicializa automáticamente en main.js
+</script>
+{% endblock %}

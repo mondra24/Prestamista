@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Clientes - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Barra de búsqueda -->
+    <div class="mb-3">
+        <form method="get" class="d-flex gap-2">
+            <div class="flex-grow-1">
+                <input type="search" name="q" class="form-control form-control-lg" 
+                       placeholder="Buscar cliente..." value="{{ request.GET.q }}"
+                       id="search-input" autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg px-3">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+    </div>
+    
+    <!-- Filtro por categoría -->
+    <div class="d-flex gap-2 mb-3 overflow-auto pb-2">
+        <a href="{% url 'core:cliente_list' %}" 
+           class="btn btn-sm {% if not request.GET.categoria %}btn-dark{% else %}btn-outline-dark{% endif %} rounded-pill">
+            Todos
+        </a>
+        {% for value, label in categorias %}
+        <a href="?categoria={{ value }}" 
+           class="btn btn-sm rounded-pill 
+                  {% if request.GET.categoria == value %}
+                      {% if value == 'EX' %}btn-success{% elif value == 'RE' %}btn-warning{% elif value == 'MO' %}btn-danger{% else %}btn-primary{% endif %}
+                  {% else %}
+                      {% if value == 'EX' %}btn-outline-success{% elif value == 'RE' %}btn-outline-warning{% elif value == 'MO' %}btn-outline-danger{% else %}btn-outline-primary{% endif %}
+                  {% endif %}">
+            {{ label }}
+        </a>
+        {% endfor %}
+    </div>
+    
+    <!-- Lista de clientes -->
+    <section id="search-results">
+        {% if clientes %}
+            {% for cliente in clientes %}
+            <a href="{% url 'core:cliente_detail' cliente.pk %}" class="cliente-item filtrable">
+                <div class="categoria-badge categoria-{% if cliente.categoria == 'EX' %}excelente{% elif cliente.categoria == 'RE' %}regular{% elif cliente.categoria == 'MO' %}moroso{% else %}nuevo{% endif %}"></div>
+                <div class="cliente-avatar" style="width: 40px; height: 40px; font-size: 0.9rem;">
+                    {{ cliente.nombre|slice:":1" }}{{ cliente.apellido|slice:":1" }}
+                </div>
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">{{ cliente.nombre_completo }}</div>
+                    <small class="text-muted">
+                        <i class="bi bi-telephone me-1"></i>{{ cliente.telefono }}
+                    </small>
+                </div>
+                {% if cliente.tiene_prestamo_activo %}
+                <span class="badge bg-success">Activo</span>
+                {% endif %}
+                <i class="bi bi-chevron-right text-muted"></i>
+            </a>
+            {% endfor %}
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-people"></i>
+                <h3>Sin clientes</h3>
+                <p>No se encontraron clientes con los filtros aplicados.</p>
+            </div>
+        {% endif %}
+    </section>
+    
+</div>
+
+<!-- FAB para nuevo cliente -->
+<a href="{% url 'core:cliente_create' %}" class="fab no-print" title="Nuevo Cliente">
+    <i class="bi bi-person-plus"></i>
+</a>
+{% endblock %}

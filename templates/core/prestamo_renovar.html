@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Renovar Préstamo - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center mb-4">
+        <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="btn btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="h4 mb-0">
+            <i class="bi bi-arrow-repeat me-2"></i>Renovar Préstamo
+        </h1>
+    </div>
+    
+    <!-- Info del préstamo actual -->
+    <div class="card border-0 shadow-sm mb-4 bg-warning bg-opacity-10">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                <i class="bi bi-info-circle me-2"></i>Préstamo Actual #{{ prestamo.pk }}
+            </h5>
+            
+            <div class="row g-2 text-center mb-3">
+                <div class="col-6">
+                    <small class="text-muted d-block">Monto Original</small>
+                    <strong>${{ prestamo.monto_total_a_pagar|floatformat:0 }}</strong>
+                </div>
+                <div class="col-6">
+                    <small class="text-muted d-block">Pagado</small>
+                    <strong class="text-success">${{ prestamo.monto_pagado|floatformat:0 }}</strong>
+                </div>
+            </div>
+            
+            <div class="alert alert-warning mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Saldo Pendiente: ${{ saldo_pendiente|floatformat:0 }}</strong>
+                <br>
+                <small>Este monto se sumará al nuevo capital.</small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Formulario de renovación -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-3 p-lg-4">
+            <h5 class="mb-3">Datos del Nuevo Préstamo</h5>
+            
+            <form method="post" novalidate>
+                {% csrf_token %}
+                {% crispy form %}
+            </form>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}
