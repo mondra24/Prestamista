@@ -25,28 +25,42 @@
                 <span id="info-cliente-categoria" class="badge ms-2"></span>
             </div>
             <div class="text-end">
-                <small class="text-muted">Comercio:</small>
+                <small class="text-muted">Negocio:</small>
                 <span id="info-cliente-comercio" class="ms-1">-</span>
             </div>
         </div>
         <hr class="my-2">
         <div class="row text-center">
             <div class="col-4">
-                <small class="text-muted d-block">Límite</small>
-                <strong id="info-cliente-limite" class="text-primary">-</strong>
+                <small class="text-muted d-block">Máx. Prestable</small>
+                <strong id="info-cliente-maximo" class="text-primary">-</strong>
             </div>
             <div class="col-4">
-                <small class="text-muted d-block">En uso</small>
-                <strong id="info-cliente-usado" class="text-warning">-</strong>
+                <small class="text-muted d-block">Deuda Actual</small>
+                <strong id="info-cliente-deuda" class="text-warning">-</strong>
             </div>
             <div class="col-4">
-                <small class="text-muted d-block">Disponible</small>
-                <strong id="info-cliente-disponible" class="text-success">-</strong>
+                <small class="text-muted d-block">¿Puede Renovar?</small>
+                <strong id="info-cliente-renovar" class="text-success">-</strong>
             </div>
         </div>
-        <div class="progress mt-2" style="height: 6px;">
-            <div class="progress-bar" id="info-cliente-progress" role="progressbar" style="width: 0%"></div>
+        <div id="info-prestamo-activo" class="mt-2 d-none">
+            <hr class="my-2">
+            <div class="d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-calendar-check me-1"></i> Préstamo activo finaliza:</span>
+                <strong id="info-fecha-fin" class="text-info">-</strong>
+            </div>
         </div>
+        <div id="info-limite-explicacion" class="mt-2 small text-muted d-none">
+            <i class="bi bi-info-circle me-1"></i>
+            <span id="info-limite-texto"></span>
+        </div>
+    </div>
+    
+    <!-- Alerta de advertencia -->
+    <div class="alert alert-warning border-0 shadow-sm d-none" id="alerta-credito">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="alerta-credito-texto"></span>
     </div>
     
     <!-- Formulario -->
@@ -69,11 +83,17 @@ const clientesData = {
         nombre: "{{ cliente.nombre_completo }}",
         categoria: "{{ cliente.get_categoria_display }}",
         categoriaCod: "{{ cliente.categoria }}",
+        tipoNegocio: "{{ cliente.tipo_negocio.nombre|default:'-' }}",
         comercio: "{{ cliente.tipo_comercio|default:'-' }}",
-        limite: {{ cliente.limite_credito|default:0 }},
-        usado: {{ cliente.credito_usado|default:0 }},
-        disponible: {% if cliente.credito_disponible is not None %}{{ cliente.credito_disponible }}{% else %}null{% endif %},
-        porcentaje: {{ cliente.porcentaje_credito_usado|default:0 }}
+        maximoPrestable: {% if cliente.maximo_prestable is not None %}{{ cliente.maximo_prestable }}{% else %}null{% endif %},
+        deudaTotal: {{ cliente.deuda_total|default:0 }},
+        puedeRenovar: {{ cliente.puede_renovar|yesno:"true,false" }},
+        diasParaRenovar: {{ cliente.dias_para_poder_renovar|default:0 }},
+        fechaFin: "{{ cliente.fecha_fin_prestamo_activo|date:'d/m/Y'|default:'' }}",
+        limitePorCategoria: {% if cliente.limite_por_categoria is not None %}{{ cliente.limite_por_categoria }}{% else %}null{% endif %},
+        limiteSobreDeuda: {% if cliente.limite_sobre_deuda is not None %}{{ cliente.limite_sobre_deuda }}{% else %}null{% endif %},
+        limitePorTipoNegocio: {% if cliente.limite_por_tipo_negocio is not None %}{{ cliente.limite_por_tipo_negocio }}{% else %}null{% endif %},
+        limiteIndividual: {{ cliente.limite_credito|default:0 }}
     },
     {% endfor %}
 };
@@ -86,15 +106,24 @@ const clientesData = {
 document.addEventListener('DOMContentLoaded', function() {
     const selectCliente = document.getElementById('id_cliente');
     const infoBox = document.getElementById('info-cliente');
+    const alertaCredito = document.getElementById('alerta-credito');
     
     if (selectCliente) {
         selectCliente.addEventListener('change', function() {
             const clienteId = this.value;
+            alertaCredito.classList.add('d-none');
+            
             if (clienteId && clientesData[clienteId]) {
                 const cliente = clientesData[clienteId];
                 
                 document.getElementById('info-cliente-nombre').textContent = cliente.nombre;
-                document.getElementById('info-cliente-comercio').textContent = cliente.comercio;
+                
+                // Tipo de negocio
+                let negocioTexto = cliente.tipoNegocio;
+                if (cliente.comercio !== '-' && cliente.comercio !== cliente.tipoNegocio) {
+                    negocioTexto += ' - ' + cliente.comercio;
+                }
+                document.getElementById('info-cliente-comercio').textContent = negocioTexto;
                 
                 // Categoría con color
                 const badgeCat = document.getElementById('info-cliente-categoria');
@@ -105,24 +134,75 @@ document.addEventListener('DOMContentLoaded', function() {
                 else if (cliente.categoriaCod === 'MO') badgeCat.classList.add('bg-danger');
                 else badgeCat.classList.add('bg-info');
                 
-                // Límite de crédito
-                if (cliente.limite > 0) {
-                    document.getElementById('info-cliente-limite').textContent = '$' + cliente.limite.toLocaleString();
-                    document.getElementById('info-cliente-usado').textContent = '$' + cliente.usado.toLocaleString();
-                    document.getElementById('info-cliente-disponible').textContent = cliente.disponible !== null ? '$' + cliente.disponible.toLocaleString() : 'Sin límite';
-                    
-                    // Progress bar
-                    const progress = document.getElementById('info-cliente-progress');
-                    progress.style.width = cliente.porcentaje + '%';
-                    progress.className = 'progress-bar';
-                    if (cliente.porcentaje >= 90) progress.classList.add('bg-danger');
-                    else if (cliente.porcentaje >= 70) progress.classList.add('bg-warning');
-                    else progress.classList.add('bg-success');
+                // Máximo prestable
+                if (cliente.maximoPrestable !== null) {
+                    document.getElementById('info-cliente-maximo').textContent = '$' + cliente.maximoPrestable.toLocaleString();
+                    document.getElementById('info-cliente-maximo').className = 'text-primary';
                 } else {
-                    document.getElementById('info-cliente-limite').textContent = 'Sin límite';
-                    document.getElementById('info-cliente-usado').textContent = '$' + cliente.usado.toLocaleString();
-                    document.getElementById('info-cliente-disponible').textContent = 'Ilimitado';
-                    document.getElementById('info-cliente-progress').style.width = '0%';
+                    document.getElementById('info-cliente-maximo').textContent = 'Sin límite';
+                    document.getElementById('info-cliente-maximo').className = 'text-success';
+                }
+                
+                // Deuda total
+                document.getElementById('info-cliente-deuda').textContent = '$' + cliente.deudaTotal.toLocaleString();
+                if (cliente.deudaTotal > 0) {
+                    document.getElementById('info-cliente-deuda').className = 'text-warning';
+                } else {
+                    document.getElementById('info-cliente-deuda').className = 'text-success';
+                }
+                
+                // ¿Puede renovar?
+                const renovarEl = document.getElementById('info-cliente-renovar');
+                if (cliente.puedeRenovar) {
+                    renovarEl.textContent = 'Sí';
+                    renovarEl.className = 'text-success';
+                } else {
+                    if (cliente.diasParaRenovar > 0) {
+                        renovarEl.textContent = 'En ' + cliente.diasParaRenovar + ' días';
+                        renovarEl.className = 'text-warning';
+                    } else {
+                        renovarEl.textContent = 'No';
+                        renovarEl.className = 'text-danger';
+                    }
+                }
+                
+                // Fecha fin préstamo activo
+                const prestamoActivoDiv = document.getElementById('info-prestamo-activo');
+                if (cliente.fechaFin) {
+                    document.getElementById('info-fecha-fin').textContent = cliente.fechaFin;
+                    prestamoActivoDiv.classList.remove('d-none');
+                } else {
+                    prestamoActivoDiv.classList.add('d-none');
+                }
+                
+                // Explicación del límite
+                let explicacionLimite = [];
+                if (cliente.limiteIndividual > 0) {
+                    explicacionLimite.push('Límite individual: $' + cliente.limiteIndividual.toLocaleString());
+                }
+                if (cliente.limitePorCategoria !== null) {
+                    explicacionLimite.push('Por categoría (' + cliente.categoria + '): $' + cliente.limitePorCategoria.toLocaleString());
+                }
+                if (cliente.limitePorTipoNegocio !== null) {
+                    explicacionLimite.push('Por tipo negocio (' + cliente.tipoNegocio + '): $' + cliente.limitePorTipoNegocio.toLocaleString());
+                }
+                if (cliente.limiteSobreDeuda !== null) {
+                    explicacionLimite.push('Límite sobre deuda: $' + cliente.limiteSobreDeuda.toLocaleString());
+                }
+                
+                const explicacionDiv = document.getElementById('info-limite-explicacion');
+                if (explicacionLimite.length > 0) {
+                    document.getElementById('info-limite-texto').textContent = 'Límites aplicados: ' + explicacionLimite.join(' | ');
+                    explicacionDiv.classList.remove('d-none');
+                } else {
+                    explicacionDiv.classList.add('d-none');
+                }
+                
+                // Mostrar alerta si no puede renovar con deuda
+                if (!cliente.puedeRenovar && cliente.deudaTotal > 0) {
+                    document.getElementById('alerta-credito-texto').textContent = 
+                        'Este cliente tiene deuda activa. Según las reglas de crédito, puede que no pueda renovar.';
+                    alertaCredito.classList.remove('d-none');
                 }
                 
                 infoBox.classList.remove('d-none');

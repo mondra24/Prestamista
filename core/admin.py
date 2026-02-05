@@ -4,7 +4,10 @@ Configuración del Admin para el Sistema de Gestión de Préstamos
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
-from .models import Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro
+from .models import (
+    Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro,
+    TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla
+)
 
 User = get_user_model()
 
@@ -59,22 +62,108 @@ class RutaCobroAdmin(admin.ModelAdmin):
     cantidad_clientes.short_description = 'Clientes'
 
 
+# ==================== TIPOS DE NEGOCIO ====================
+
+@admin.register(TipoNegocio)
+class TipoNegocioAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'limite_credito_sugerido', 'orden', 'activo', 'cantidad_clientes']
+    list_filter = ['activo']
+    search_fields = ['nombre', 'descripcion']
+    ordering = ['orden', 'nombre']
+    list_editable = ['orden', 'activo', 'limite_credito_sugerido']
+    
+    def cantidad_clientes(self, obj):
+        return obj.clientes.count()
+    cantidad_clientes.short_description = 'Clientes'
+
+
+# ==================== CONFIGURACIÓN DE CRÉDITO ====================
+
+@admin.register(ConfiguracionCredito)
+class ConfiguracionCreditoAdmin(admin.ModelAdmin):
+    list_display = ['categoria', 'limite_maximo', 'porcentaje_sobre_deuda', 
+                    'puede_renovar_con_deuda', 'dias_minimos_para_renovar', 'activo']
+    list_filter = ['activo', 'puede_renovar_con_deuda']
+    list_editable = ['limite_maximo', 'porcentaje_sobre_deuda', 'puede_renovar_con_deuda', 
+                     'dias_minimos_para_renovar', 'activo']
+    
+    fieldsets = (
+        ('Categoría', {
+            'fields': ('categoria', 'activo')
+        }),
+        ('Límites de Crédito', {
+            'fields': ('limite_maximo', 'porcentaje_sobre_deuda'),
+            'description': 'Configure cuánto puede prestar a clientes de esta categoría'
+        }),
+        ('Restricciones de Renovación', {
+            'fields': ('puede_renovar_con_deuda', 'dias_minimos_para_renovar'),
+            'description': 'Configure las reglas para renovar préstamos'
+        }),
+    )
+
+
+# ==================== CONFIGURACIÓN DE PLANILLA ====================
+
+class ColumnaPlanillaInline(admin.TabularInline):
+    model = ColumnaPlanilla
+    extra = 1
+    ordering = ['orden']
+
+
+@admin.register(ColumnaPlanilla)
+class ColumnaPlanillaAdmin(admin.ModelAdmin):
+    list_display = ['nombre_columna', 'titulo_personalizado', 'orden', 'ancho', 'activa']
+    list_filter = ['activa']
+    list_editable = ['orden', 'activa', 'titulo_personalizado', 'ancho']
+    ordering = ['orden']
+
+
+@admin.register(ConfiguracionPlanilla)
+class ConfiguracionPlanillaAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'titulo_reporte', 'agrupar_por_ruta', 'agrupar_por_categoria', 
+                    'incluir_vencidas', 'es_default']
+    list_filter = ['agrupar_por_ruta', 'agrupar_por_categoria', 'es_default']
+    list_editable = ['es_default']
+    
+    fieldsets = (
+        ('Identificación', {
+            'fields': ('nombre', 'es_default')
+        }),
+        ('Títulos', {
+            'fields': ('titulo_reporte', 'subtitulo')
+        }),
+        ('Visualización', {
+            'fields': ('mostrar_logo', 'mostrar_fecha', 'mostrar_totales', 'mostrar_firmas')
+        }),
+        ('Agrupación y Filtros', {
+            'fields': ('agrupar_por_ruta', 'agrupar_por_categoria', 'incluir_vencidas', 'filtrar_por_ruta')
+        }),
+    )
+
+
 # ==================== ADMINISTRACIÓN DE PRÉSTAMOS ====================
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ['nombre_completo', 'telefono', 'tipo_comercio', 'categoria', 'limite_credito', 'ruta', 'estado']
-    list_filter = ['categoria', 'estado', 'ruta']
+    list_display = ['nombre_completo', 'telefono', 'tipo_negocio', 'categoria', 
+                    'limite_credito', 'get_maximo_prestable', 'ruta', 'estado']
+    list_filter = ['categoria', 'estado', 'ruta', 'tipo_negocio']
     search_fields = ['nombre', 'apellido', 'telefono', 'tipo_comercio']
     ordering = ['apellido', 'nombre']
     list_editable = ['categoria', 'ruta']
+    autocomplete_fields = ['tipo_negocio', 'ruta']
     
     fieldsets = (
         ('Información Personal', {
             'fields': ('nombre', 'apellido', 'telefono', 'direccion')
         }),
-        ('Comercio y Crédito', {
-            'fields': ('tipo_comercio', 'limite_credito', 'ruta', 'dia_pago_preferido')
+        ('Tipo de Negocio', {
+            'fields': ('tipo_negocio', 'tipo_comercio'),
+            'description': 'Seleccione un tipo de negocio o escriba uno personalizado'
+        }),
+        ('Crédito y Cobro', {
+            'fields': ('limite_credito', 'ruta', 'dia_pago_preferido'),
+            'description': 'Límite individual (0 = usar límite de categoría/tipo negocio)'
         }),
         ('Clasificación', {
             'fields': ('categoria', 'estado', 'notas')
@@ -83,7 +172,14 @@ class ClienteAdmin(admin.ModelAdmin):
     
     def nombre_completo(self, obj):
         return f"{obj.nombre} {obj.apellido}"
-    nombre_completo.short_description = 'Nombre Completo'
+    nombre_completo.short_description = 'Nombre'
+    
+    def get_maximo_prestable(self, obj):
+        maximo = obj.maximo_prestable
+        if maximo is not None:
+            return f"${maximo:,.0f}"
+        return "Sin límite"
+    get_maximo_prestable.short_description = 'Máx. Prestable'
 
 
 class CuotaInline(admin.TabularInline):

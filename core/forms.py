@@ -4,7 +4,7 @@ Formularios del Sistema de Gestión de Préstamos
 from django import forms
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Submit, Row, Column, Div, HTML, Field
-from .models import Cliente, Prestamo, RutaCobro
+from .models import Cliente, Prestamo, RutaCobro, TipoNegocio
 
 
 class ClienteForm(forms.ModelForm):
@@ -12,7 +12,7 @@ class ClienteForm(forms.ModelForm):
     
     class Meta:
         model = Cliente
-        fields = ['nombre', 'apellido', 'telefono', 'direccion', 'tipo_comercio', 
+        fields = ['nombre', 'apellido', 'telefono', 'direccion', 'tipo_negocio', 'tipo_comercio', 
                   'limite_credito', 'ruta', 'dia_pago_preferido', 'categoria', 'estado', 'notas']
         widgets = {
             'nombre': forms.TextInput(attrs={
@@ -36,13 +36,16 @@ class ClienteForm(forms.ModelForm):
                 'placeholder': 'Dirección completa',
                 'rows': 2
             }),
+            'tipo_negocio': forms.Select(attrs={
+                'class': 'form-select'
+            }),
             'tipo_comercio': forms.TextInput(attrs={
                 'class': 'form-control',
-                'placeholder': 'Ej: Tienda, Venta ambulante, Empleado'
+                'placeholder': 'Descripción adicional del negocio'
             }),
             'limite_credito': forms.NumberInput(attrs={
                 'class': 'form-control form-control-lg',
-                'placeholder': 'Máximo a prestar (0 = sin límite)',
+                'placeholder': 'Límite individual (0 = usar límite de categoría)',
                 'inputmode': 'decimal',
                 'min': '0',
                 'step': '0.01'
@@ -71,6 +74,8 @@ class ClienteForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['ruta'].queryset = RutaCobro.objects.filter(activa=True)
         self.fields['ruta'].required = False
+        self.fields['tipo_negocio'].queryset = TipoNegocio.objects.filter(activo=True)
+        self.fields['tipo_negocio'].required = False
         self.helper = FormHelper()
         self.helper.form_method = 'post'
         self.helper.layout = Layout(
@@ -81,13 +86,14 @@ class ClienteForm(forms.ModelForm):
             'telefono',
             'direccion',
             Row(
+                Column('tipo_negocio', css_class='col-6'),
                 Column('tipo_comercio', css_class='col-6'),
-                Column('limite_credito', css_class='col-6'),
             ),
             Row(
+                Column('limite_credito', css_class='col-6'),
                 Column('ruta', css_class='col-6'),
-                Column('dia_pago_preferido', css_class='col-6'),
             ),
+            'dia_pago_preferido',
             Row(
                 Column('categoria', css_class='col-6'),
                 Column('estado', css_class='col-6'),

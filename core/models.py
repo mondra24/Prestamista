@@ -102,6 +102,197 @@ class RutaCobro(models.Model):
         return self.nombre
 
 
+class TipoNegocio(models.Model):
+    """Tipos de negocio/comercio administrables desde el admin"""
+    nombre = models.CharField(max_length=100, verbose_name='Nombre')
+    descripcion = models.TextField(blank=True, null=True, verbose_name='Descripción')
+    limite_credito_sugerido = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name='Límite de Crédito Sugerido',
+        help_text='Límite sugerido para este tipo de negocio (0 = sin límite)'
+    )
+    activo = models.BooleanField(default=True, verbose_name='Activo')
+    orden = models.PositiveIntegerField(default=0, verbose_name='Orden')
+    
+    class Meta:
+        verbose_name = 'Tipo de Negocio'
+        verbose_name_plural = 'Tipos de Negocio'
+        ordering = ['orden', 'nombre']
+    
+    def __str__(self):
+        return self.nombre
+
+
+class ConfiguracionCredito(models.Model):
+    """Configuración de límites de crédito por categoría de cliente"""
+    
+    CATEGORIA_CHOICES = [
+        ('EX', 'Excelente'),
+        ('RE', 'Regular'),
+        ('MO', 'Moroso'),
+        ('NU', 'Nuevo'),
+    ]
+    
+    categoria = models.CharField(
+        max_length=2,
+        choices=CATEGORIA_CHOICES,
+        unique=True,
+        verbose_name='Categoría de Cliente'
+    )
+    limite_maximo = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name='Límite Máximo de Préstamo',
+        help_text='Monto máximo que se puede prestar a esta categoría (0 = sin límite)'
+    )
+    porcentaje_sobre_deuda = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('500.00'))],
+        verbose_name='% Adicional sobre Deuda',
+        help_text='Porcentaje adicional que se puede prestar sobre deuda actual. Ej: 50 = hasta 50% más de lo que debe'
+    )
+    puede_renovar_con_deuda = models.BooleanField(
+        default=True,
+        verbose_name='Puede Renovar con Deuda',
+        help_text='Si puede renovar préstamos con saldo pendiente'
+    )
+    dias_minimos_para_renovar = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Días Mínimos para Renovar',
+        help_text='Días mínimos que debe haber pagado antes de renovar (0 = sin restricción)'
+    )
+    activo = models.BooleanField(default=True, verbose_name='Activo')
+    
+    class Meta:
+        verbose_name = 'Configuración de Crédito'
+        verbose_name_plural = 'Configuraciones de Crédito'
+        ordering = ['categoria']
+    
+    def __str__(self):
+        return f"Config. {self.get_categoria_display()}"
+    
+    @classmethod
+    def obtener_config(cls, categoria):
+        """Obtiene la configuración para una categoría específica"""
+        try:
+            return cls.objects.get(categoria=categoria, activo=True)
+        except cls.DoesNotExist:
+            return None
+
+
+class ColumnaPlanilla(models.Model):
+    """Columnas personalizables para la planilla de cobros"""
+    
+    COLUMNAS_DISPONIBLES = [
+        ('cliente_nombre', 'Nombre del Cliente'),
+        ('cliente_telefono', 'Teléfono'),
+        ('cliente_direccion', 'Dirección'),
+        ('cliente_categoria', 'Categoría del Cliente'),
+        ('cliente_tipo_negocio', 'Tipo de Negocio'),
+        ('cliente_ruta', 'Ruta de Cobro'),
+        ('cliente_dia_pago', 'Día de Pago Preferido'),
+        ('cuota_numero', 'Número de Cuota'),
+        ('cuota_monto', 'Monto de Cuota'),
+        ('cuota_vencimiento', 'Fecha de Vencimiento'),
+        ('prestamo_monto', 'Monto del Préstamo'),
+        ('prestamo_total', 'Total a Pagar'),
+        ('prestamo_pendiente', 'Saldo Pendiente'),
+        ('prestamo_fecha_inicio', 'Fecha de Inicio'),
+        ('prestamo_fecha_fin', 'Fecha Finalización Est.'),
+        ('prestamo_frecuencia', 'Frecuencia de Pago'),
+        ('prestamo_renovacion', 'Es Renovación'),
+        ('prestamo_progreso', 'Progreso (%)'),
+        ('columna_cobrado', 'Espacio para Cobrado'),
+        ('columna_firma', 'Espacio para Firma'),
+        ('columna_notas', 'Espacio para Notas'),
+    ]
+    
+    nombre_columna = models.CharField(
+        max_length=50,
+        choices=COLUMNAS_DISPONIBLES,
+        verbose_name='Columna'
+    )
+    titulo_personalizado = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name='Título Personalizado',
+        help_text='Dejar vacío para usar el título por defecto'
+    )
+    orden = models.PositiveIntegerField(default=0, verbose_name='Orden')
+    ancho = models.CharField(
+        max_length=10,
+        default='auto',
+        verbose_name='Ancho',
+        help_text='Ej: auto, 100px, 15%'
+    )
+    activa = models.BooleanField(default=True, verbose_name='Activa')
+    
+    class Meta:
+        verbose_name = 'Columna de Planilla'
+        verbose_name_plural = 'Columnas de Planilla'
+        ordering = ['orden']
+    
+    def __str__(self):
+        return self.get_nombre_columna_display()
+    
+    @property
+    def titulo(self):
+        return self.titulo_personalizado or self.get_nombre_columna_display()
+    
+    @classmethod
+    def obtener_columnas_activas(cls):
+        return cls.objects.filter(activa=True).order_by('orden')
+
+
+class ConfiguracionPlanilla(models.Model):
+    """Configuración general de la planilla"""
+    nombre = models.CharField(max_length=100, default='Planilla Principal', verbose_name='Nombre')
+    titulo_reporte = models.CharField(max_length=200, default='PLANILLA DE COBROS', verbose_name='Título del Reporte')
+    subtitulo = models.CharField(max_length=200, blank=True, null=True, verbose_name='Subtítulo')
+    mostrar_logo = models.BooleanField(default=True, verbose_name='Mostrar Logo')
+    mostrar_fecha = models.BooleanField(default=True, verbose_name='Mostrar Fecha')
+    mostrar_totales = models.BooleanField(default=True, verbose_name='Mostrar Totales')
+    mostrar_firmas = models.BooleanField(default=True, verbose_name='Mostrar Espacio para Firmas')
+    agrupar_por_ruta = models.BooleanField(default=True, verbose_name='Agrupar por Ruta')
+    agrupar_por_categoria = models.BooleanField(default=False, verbose_name='Agrupar por Categoría')
+    incluir_vencidas = models.BooleanField(default=True, verbose_name='Incluir Cuotas Vencidas')
+    filtrar_por_ruta = models.ForeignKey(
+        RutaCobro,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='Filtrar por Ruta',
+        help_text='Dejar vacío para mostrar todas las rutas'
+    )
+    es_default = models.BooleanField(default=False, verbose_name='Es Configuración por Defecto')
+    
+    class Meta:
+        verbose_name = 'Configuración de Planilla'
+        verbose_name_plural = 'Configuraciones de Planilla'
+    
+    def __str__(self):
+        return self.nombre
+    
+    def save(self, *args, **kwargs):
+        if self.es_default:
+            # Desmarcar otros defaults
+            ConfiguracionPlanilla.objects.filter(es_default=True).update(es_default=False)
+        super().save(*args, **kwargs)
+    
+    @classmethod
+    def obtener_default(cls):
+        try:
+            return cls.objects.get(es_default=True)
+        except cls.DoesNotExist:
+            return cls.objects.first()
+
+
 class Cliente(models.Model):
     """Modelo para gestionar clientes del sistema de préstamos"""
     
@@ -136,8 +327,17 @@ class Cliente(models.Model):
         max_length=100,
         blank=True,
         null=True,
-        verbose_name='Tipo de Comercio/Negocio',
-        help_text='Ej: Tienda, Venta ambulante, Empleado, etc.'
+        verbose_name='Tipo de Comercio/Negocio (texto)',
+        help_text='Campo de texto libre (usar Tipo Negocio para categorías)'
+    )
+    tipo_negocio = models.ForeignKey(
+        TipoNegocio,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='clientes',
+        verbose_name='Tipo de Negocio',
+        help_text='Categoría de negocio administrable'
     )
     limite_credito = models.DecimalField(
         max_digits=12,
@@ -209,6 +409,123 @@ class Cliente(models.Model):
         if self.limite_credito <= 0:
             return 0
         return min(100, int((self.credito_usado / self.limite_credito) * 100))
+    
+    @property
+    def config_credito(self):
+        """Obtiene la configuración de crédito según la categoría"""
+        return ConfiguracionCredito.obtener_config(self.categoria)
+    
+    @property
+    def limite_por_categoria(self):
+        """Límite máximo según su categoría"""
+        config = self.config_credito
+        if config and config.limite_maximo > 0:
+            return config.limite_maximo
+        return None
+    
+    @property
+    def limite_sobre_deuda(self):
+        """Cuánto más puede pedir basado en su deuda actual"""
+        config = self.config_credito
+        if config and config.porcentaje_sobre_deuda > 0:
+            deuda = self.credito_usado
+            return deuda * (config.porcentaje_sobre_deuda / 100)
+        return None
+    
+    @property
+    def limite_por_tipo_negocio(self):
+        """Límite según su tipo de negocio"""
+        if self.tipo_negocio and self.tipo_negocio.limite_credito_sugerido > 0:
+            return self.tipo_negocio.limite_credito_sugerido
+        return None
+    
+    @property
+    def maximo_prestable(self):
+        """El máximo que se le puede prestar considerando todas las reglas"""
+        limites = []
+        deuda_actual = self.credito_usado
+        
+        # 1. Límite individual del cliente
+        if self.limite_credito > 0:
+            limites.append(self.limite_credito - deuda_actual)
+        
+        # 2. Límite por categoría
+        limite_cat = self.limite_por_categoria
+        if limite_cat:
+            limites.append(limite_cat - deuda_actual)
+        
+        # 3. Límite por tipo de negocio
+        limite_neg = self.limite_por_tipo_negocio
+        if limite_neg:
+            limites.append(limite_neg - deuda_actual)
+        
+        # 4. Límite basado en % sobre deuda
+        limite_deuda = self.limite_sobre_deuda
+        if limite_deuda and deuda_actual > 0:
+            limites.append(limite_deuda)
+        
+        if limites:
+            return max(Decimal('0.00'), min(limites))
+        return None  # Sin límite definido
+    
+    @property
+    def puede_renovar(self):
+        """Verifica si el cliente puede renovar su préstamo"""
+        config = self.config_credito
+        prestamo = self.prestamo_activo
+        
+        if not prestamo:
+            return True  # Sin préstamo activo, puede crear nuevo
+        
+        if config:
+            # Verificar si puede renovar con deuda
+            if not config.puede_renovar_con_deuda and self.credito_usado > 0:
+                return False
+            # Verificar días mínimos
+            if config.dias_minimos_para_renovar > 0:
+                dias_pagando = (timezone.now().date() - prestamo.fecha_inicio).days
+                if dias_pagando < config.dias_minimos_para_renovar:
+                    return False
+        
+        return True
+    
+    @property
+    def dias_para_poder_renovar(self):
+        """Días que faltan para poder renovar"""
+        config = self.config_credito
+        prestamo = self.prestamo_activo
+        
+        if not prestamo or not config:
+            return 0
+        
+        if config.dias_minimos_para_renovar > 0:
+            dias_pagando = (timezone.now().date() - prestamo.fecha_inicio).days
+            dias_faltantes = config.dias_minimos_para_renovar - dias_pagando
+            return max(0, dias_faltantes)
+        return 0
+    
+    @property
+    def fecha_fin_prestamo_activo(self):
+        """Fecha de finalización del préstamo activo"""
+        prestamo = self.prestamo_activo
+        if prestamo:
+            return prestamo.fecha_finalizacion
+        return None
+    
+    @property
+    def info_limite_credito(self):
+        """Información completa de límites para mostrar"""
+        return {
+            'limite_individual': self.limite_credito if self.limite_credito > 0 else None,
+            'limite_categoria': self.limite_por_categoria,
+            'limite_tipo_negocio': self.limite_por_tipo_negocio,
+            'limite_sobre_deuda': self.limite_sobre_deuda,
+            'maximo_prestable': self.maximo_prestable,
+            'deuda_actual': self.credito_usado,
+            'puede_renovar': self.puede_renovar,
+            'dias_para_renovar': self.dias_para_poder_renovar,
+            'fecha_fin_actual': self.fecha_fin_prestamo_activo,
+        }
     
     def actualizar_categoria(self):
         """Actualiza la categoría del cliente basado en su historial de pagos"""

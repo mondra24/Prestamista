@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planilla de Cobros - {{ fecha|date:"d/m/Y" }}</title>
+    <title>{{ config.titulo_reporte|default:"Planilla de Cobros" }} - {{ fecha|date:"d/m/Y" }}</title>
     <!-- html2pdf for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -214,13 +214,27 @@
             padding: 10px;
             background: #e9ecef;
             border-radius: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
         }
         
-        .filter-box select {
+        .filter-box select, .filter-box input {
             padding: 6px 12px;
             border-radius: 4px;
             border: 1px solid #ccc;
-            margin-right: 10px;
+        }
+        
+        .filter-box label {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
     </style>
 </head>
@@ -240,12 +254,41 @@
         </button>
     </div>
     
+    <!-- Filtros -->
+    <div class="filter-box no-print">
+        <div class="filter-group">
+            <label>Fecha:</label>
+            <input type="date" id="filtro-fecha" value="{{ fecha|date:'Y-m-d' }}" onchange="aplicarFiltros()">
+        </div>
+        <div class="filter-group">
+            <label>Ruta:</label>
+            <select id="filtro-ruta" onchange="aplicarFiltros()">
+                <option value="">Todas las rutas</option>
+                {% for ruta in rutas %}
+                <option value="{{ ruta.pk }}" {% if ruta_filter and ruta_filter.pk == ruta.pk %}selected{% endif %}>{{ ruta.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if configuraciones %}
+        <div class="filter-group">
+            <label>Plantilla:</label>
+            <select id="filtro-config" onchange="aplicarFiltros()">
+                <option value="">Por defecto</option>
+                {% for conf in configuraciones %}
+                <option value="{{ conf.pk }}" {% if config.pk == conf.pk %}selected{% endif %}>{{ conf.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+    </div>
+
     <div id="planilla-content">
         <div class="header">
-            <h1>PLANILLA DE COBROS</h1>
-            <p>Préstamos - Sistema de Gestión</p>
+            <h1>{{ config.titulo_reporte|default:"PLANILLA DE COBROS"|upper }}</h1>
+            <p>{{ config.subtitulo|default:"Préstamos - Sistema de Gestión" }}</p>
         </div>
         
+        {% if config.mostrar_fecha or config.mostrar_fecha is None %}
         <div class="info-box">
             <div>
                 <strong>Fecha:</strong> {{ fecha|date:"l d/m/Y" }}
@@ -253,69 +296,92 @@
             <div>
                 <strong>Cobros pendientes:</strong> {{ cuotas_pendientes|length }}
             </div>
+            {% if config.mostrar_totales or config.mostrar_totales is None %}
             <div>
                 <strong>Total esperado:</strong> ${{ total_esperado|floatformat:0 }}
             </div>
-        </div>
-        
-        {% if ruta_filter %}
-        <div class="filter-box no-print">
-            <strong>Ruta:</strong> {{ ruta_filter.nombre }}
+            {% endif %}
         </div>
         {% endif %}
         
-        {% for ruta_nombre, cuotas in cuotas_por_ruta.items %}
+        {% if ruta_filter %}
+        <div class="filter-box" style="background: #fff3cd;">
+            <strong>📍 Ruta:</strong> {{ ruta_filter.nombre }}
+        </div>
+        {% endif %}
+        
+        {% for grupo_nombre, cuotas in cuotas_por_ruta.items %}
         <div class="ruta-section">
             <div class="ruta-header">
-                📍 {{ ruta_nombre|default:"Sin Ruta Asignada" }} ({{ cuotas|length }} clientes)
+                📍 {{ grupo_nombre|default:"Sin Asignar" }} ({{ cuotas|length }} clientes)
             </div>
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 4%;">#</th>
-                        <th style="width: 22%;">Cliente</th>
-                        <th style="width: 12%;">Teléfono</th>
-                        <th style="width: 8%;">Cat.</th>
-                        <th style="width: 10%;">Cuota</th>
-                        <th style="width: 12%;" class="text-right">Monto</th>
-                        <th style="width: 10%;">Renov.</th>
-                        <th style="width: 10%;">Día Pago</th>
-                        <th style="width: 12%;">Cobrado</th>
+                        {% for columna in columnas %}
+                        <th style="width: {{ columna.ancho }}%;">{{ columna.titulo_personalizado|default:columna.get_nombre_columna_display }}</th>
+                        {% endfor %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for cuota in cuotas %}
                     <tr>
-                        <td class="text-center">{{ forloop.counter }}</td>
-                        <td>
-                            <strong>{{ cuota.prestamo.cliente.nombre_completo }}</strong>
-                            {% if cuota.prestamo.cliente.tipo_comercio %}
-                            <br><small style="color: #666;">{{ cuota.prestamo.cliente.tipo_comercio }}</small>
-                            {% endif %}
-                        </td>
-                        <td>{{ cuota.prestamo.cliente.telefono }}</td>
-                        <td class="text-center categoria-{{ cuota.prestamo.cliente.categoria|lower }}">
-                            {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
-                        </td>
-                        <td class="text-center">
-                            {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
-                        </td>
-                        <td class="text-right">
-                            <strong>${{ cuota.monto_cuota|floatformat:0 }}</strong>
-                        </td>
-                        <td class="text-center">
-                            {% if cuota.prestamo.es_renovacion %}
-                            <span class="badge badge-renovacion">REN</span>
+                        {% for columna in columnas %}
+                            {% if columna.nombre_columna == 'numero' %}
+                            <td class="text-center">{{ forloop.counter }}</td>
+                            {% elif columna.nombre_columna == 'nombre_cliente' %}
+                            <td>
+                                <strong>{{ cuota.prestamo.cliente.nombre_completo }}</strong>
+                                {% if cuota.prestamo.cliente.tipo_negocio or cuota.prestamo.cliente.tipo_comercio %}
+                                <br><small style="color: #666;">{{ cuota.prestamo.cliente.tipo_negocio.nombre|default:"" }}{% if cuota.prestamo.cliente.tipo_negocio and cuota.prestamo.cliente.tipo_comercio %} - {% endif %}{{ cuota.prestamo.cliente.tipo_comercio|default:"" }}</small>
+                                {% endif %}
+                            </td>
+                            {% elif columna.nombre_columna == 'telefono' %}
+                            <td>{{ cuota.prestamo.cliente.telefono }}</td>
+                            {% elif columna.nombre_columna == 'direccion' %}
+                            <td><small>{{ cuota.prestamo.cliente.direccion|truncatechars:30 }}</small></td>
+                            {% elif columna.nombre_columna == 'tipo_negocio' %}
+                            <td>{{ cuota.prestamo.cliente.tipo_negocio.nombre|default:"-" }}</td>
+                            {% elif columna.nombre_columna == 'categoria' %}
+                            <td class="text-center categoria-{{ cuota.prestamo.cliente.categoria|lower }}">
+                                {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
+                            </td>
+                            {% elif columna.nombre_columna == 'ruta' %}
+                            <td>{{ cuota.prestamo.cliente.ruta.nombre|default:"-" }}</td>
+                            {% elif columna.nombre_columna == 'cuota_actual' %}
+                            <td class="text-center">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</td>
+                            {% elif columna.nombre_columna == 'monto_cuota' %}
+                            <td class="text-right"><strong>${{ cuota.monto_cuota|floatformat:0 }}</strong></td>
+                            {% elif columna.nombre_columna == 'monto_pendiente' %}
+                            <td class="text-right">${{ cuota.prestamo.monto_pendiente|floatformat:0 }}</td>
+                            {% elif columna.nombre_columna == 'fecha_vencimiento' %}
+                            <td class="text-center">{{ cuota.fecha_vencimiento|date:"d/m" }}</td>
+                            {% elif columna.nombre_columna == 'fecha_fin_prestamo' %}
+                            <td class="text-center">{{ cuota.prestamo.cliente.fecha_fin_prestamo_activo|date:"d/m/Y"|default:"-" }}</td>
+                            {% elif columna.nombre_columna == 'es_renovacion' %}
+                            <td class="text-center">
+                                {% if cuota.prestamo.es_renovacion %}
+                                <span class="badge badge-renovacion">REN</span>
+                                {% else %}
+                                <span class="badge badge-nuevo">NVO</span>
+                                {% endif %}
+                            </td>
+                            {% elif columna.nombre_columna == 'dia_pago' %}
+                            <td class="text-center">{{ cuota.prestamo.cliente.dia_pago_preferido|default:"-" }}</td>
+                            {% elif columna.nombre_columna == 'monto_solicitado' %}
+                            <td class="text-right">${{ cuota.prestamo.monto_solicitado|floatformat:0 }}</td>
+                            {% elif columna.nombre_columna == 'monto_total' %}
+                            <td class="text-right">${{ cuota.prestamo.monto_total_a_pagar|floatformat:0 }}</td>
+                            {% elif columna.nombre_columna == 'espacio_cobrado' %}
+                            <td style="border: 2px dashed #999; background: #fff;"></td>
+                            {% elif columna.nombre_columna == 'espacio_firma' %}
+                            <td style="border: 2px dashed #999; background: #fff;"></td>
+                            {% elif columna.nombre_columna == 'espacio_notas' %}
+                            <td style="border: 2px dashed #999; background: #fff;"></td>
                             {% else %}
-                            <span class="badge badge-nuevo">NVO</span>
+                            <td>-</td>
                             {% endif %}
-                        </td>
-                        <td class="text-center">
-                            {{ cuota.prestamo.cliente.dia_pago_preferido|default:"-" }}
-                        </td>
-                        <td style="border: 2px dashed #999; background: #fff;">
-                            
-                        </td>
+                        {% endfor %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -327,16 +393,16 @@
         </p>
         {% endfor %}
         
-        {% if cuotas_pendientes %}
+        {% if cuotas_pendientes and config.mostrar_totales or config.mostrar_totales is None %}
         <table>
             <tr class="total-row">
-                <td colspan="5" class="text-right">TOTAL ESPERADO DEL DÍA:</td>
+                <td colspan="{{ columnas|length|add:'-1' }}" class="text-right">TOTAL ESPERADO DEL DÍA:</td>
                 <td class="text-right">${{ total_esperado|floatformat:0 }}</td>
-                <td colspan="3"></td>
             </tr>
         </table>
         {% endif %}
         
+        {% if config.mostrar_firmas or config.mostrar_firmas is None %}
         <div class="footer">
             <div class="firma-box">
                 <div class="firma">
@@ -353,6 +419,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
         
         <p class="text-center" style="margin-top: 20px; color: #888; font-size: 9px;">
             Documento generado el {{ now|date:"d/m/Y H:i" }} - Préstamos v2.0
@@ -360,6 +427,19 @@
     </div>
     
     <script>
+        function aplicarFiltros() {
+            const fecha = document.getElementById('filtro-fecha').value;
+            const ruta = document.getElementById('filtro-ruta').value;
+            const configEl = document.getElementById('filtro-config');
+            const config = configEl ? configEl.value : '';
+            
+            let url = '{% url "core:planilla_impresion" %}?fecha=' + fecha;
+            if (ruta) url += '&ruta=' + ruta;
+            if (config) url += '&config=' + config;
+            
+            window.location.href = url;
+        }
+        
         function generarPDF() {
             const element = document.getElementById('planilla-content');
             const fecha = '{{ fecha|date:"Y-m-d" }}';
@@ -385,7 +465,7 @@
             const cantidad = '{{ cuotas_pendientes|length }}';
             
             // Crear resumen de texto
-            let mensaje = `📋 *PLANILLA DE COBROS*\n`;
+            let mensaje = `📋 *{{ config.titulo_reporte|default:"PLANILLA DE COBROS" }}*\n`;
             mensaje += `📅 Fecha: ${fecha}\n`;
             mensaje += `👥 Clientes: ${cantidad}\n`;
             mensaje += `💰 Total esperado: $${total}\n\n`;

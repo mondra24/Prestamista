@@ -40,7 +40,66 @@
                 <span class="badge {% if cliente.estado == 'AC' %}bg-success{% else %}bg-secondary{% endif %} fs-6">
                     {{ cliente.get_estado_display }}
                 </span>
+                {% if cliente.tipo_negocio %}
+                <span class="badge bg-info fs-6">
+                    {{ cliente.tipo_negocio.nombre }}
+                </span>
+                {% endif %}
             </div>
+        </div>
+    </div>
+    
+    <!-- Info de Crédito -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <h6 class="text-muted mb-3">
+                <i class="bi bi-credit-card me-1"></i> Información de Crédito
+            </h6>
+            <div class="row text-center g-3">
+                <div class="col-4">
+                    <small class="text-muted d-block">Máx. Prestable</small>
+                    <strong class="{% if cliente.maximo_prestable is not None %}text-primary{% else %}text-success{% endif %}">
+                        {% if cliente.maximo_prestable is not None %}
+                        ${{ cliente.maximo_prestable|floatformat:0 }}
+                        {% else %}
+                        Sin límite
+                        {% endif %}
+                    </strong>
+                </div>
+                <div class="col-4">
+                    <small class="text-muted d-block">Deuda Total</small>
+                    <strong class="{% if cliente.deuda_total > 0 %}text-warning{% else %}text-success{% endif %}">
+                        ${{ cliente.deuda_total|floatformat:0 }}
+                    </strong>
+                </div>
+                <div class="col-4">
+                    <small class="text-muted d-block">¿Puede Renovar?</small>
+                    <strong class="{% if cliente.puede_renovar %}text-success{% else %}text-danger{% endif %}">
+                        {% if cliente.puede_renovar %}
+                        <i class="bi bi-check-circle"></i> Sí
+                        {% else %}
+                        <i class="bi bi-x-circle"></i> No
+                        {% endif %}
+                    </strong>
+                </div>
+            </div>
+            {% if cliente.fecha_fin_prestamo_activo %}
+            <hr class="my-2">
+            <div class="text-center">
+                <small class="text-muted">
+                    <i class="bi bi-calendar-check me-1"></i>
+                    Préstamo activo finaliza: <strong class="text-info">{{ cliente.fecha_fin_prestamo_activo|date:"d/m/Y" }}</strong>
+                </small>
+            </div>
+            {% endif %}
+            {% if cliente.dias_para_poder_renovar > 0 %}
+            <div class="text-center mt-2">
+                <small class="text-warning">
+                    <i class="bi bi-hourglass-split me-1"></i>
+                    Puede renovar en {{ cliente.dias_para_poder_renovar }} días
+                </small>
+            </div>
+            {% endif %}
         </div>
     </div>
     

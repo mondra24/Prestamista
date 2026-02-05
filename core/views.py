@@ -470,7 +470,51 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from collections import OrderedDict
-        from .models import RutaCobro
+        from .models import RutaCobro, ConfiguracionPlanilla, ColumnaPlanilla
+        
+        # Obtener configuración de planilla
+        config_id = self.request.GET.get('config')
+        if config_id:
+            try:
+                config = ConfiguracionPlanilla.objects.get(pk=config_id)
+            except ConfiguracionPlanilla.DoesNotExist:
+                config = ConfiguracionPlanilla.objects.filter(es_default=True).first()
+        else:
+            config = ConfiguracionPlanilla.objects.filter(es_default=True).first()
+        
+        # Si no hay configuración, usar valores por defecto
+        if not config:
+            config = type('ConfigDefault', (), {
+                'titulo_reporte': 'PLANILLA DE COBROS',
+                'subtitulo': 'Préstamos - Sistema de Gestión',
+                'mostrar_logo': False,
+                'mostrar_fecha': True,
+                'mostrar_totales': True,
+                'mostrar_firmas': True,
+                'agrupar_por_ruta': True,
+                'agrupar_por_categoria': False,
+                'incluir_vencidas': False,
+                'filtrar_por_ruta': None,
+            })()
+        
+        # Obtener columnas activas
+        columnas = ColumnaPlanilla.objects.filter(activa=True).order_by('orden')
+        if not columnas.exists():
+            # Crear columnas por defecto si no existen
+            columnas_default = [
+                {'nombre_columna': 'numero', 'titulo_personalizado': '#', 'orden': 1, 'ancho': 4},
+                {'nombre_columna': 'nombre_cliente', 'titulo_personalizado': 'Cliente', 'orden': 2, 'ancho': 22},
+                {'nombre_columna': 'telefono', 'titulo_personalizado': 'Teléfono', 'orden': 3, 'ancho': 12},
+                {'nombre_columna': 'categoria', 'titulo_personalizado': 'Cat.', 'orden': 4, 'ancho': 8},
+                {'nombre_columna': 'cuota_actual', 'titulo_personalizado': 'Cuota', 'orden': 5, 'ancho': 10},
+                {'nombre_columna': 'monto_cuota', 'titulo_personalizado': 'Monto', 'orden': 6, 'ancho': 12},
+                {'nombre_columna': 'es_renovacion', 'titulo_personalizado': 'Renov.', 'orden': 7, 'ancho': 10},
+                {'nombre_columna': 'dia_pago', 'titulo_personalizado': 'Día Pago', 'orden': 8, 'ancho': 10},
+                {'nombre_columna': 'espacio_cobrado', 'titulo_personalizado': 'Cobrado', 'orden': 9, 'ancho': 12},
+            ]
+            for col_data in columnas_default:
+                ColumnaPlanilla.objects.create(**col_data)
+            columnas = ColumnaPlanilla.objects.filter(activa=True).order_by('orden')
         
         fecha_str = self.request.GET.get('fecha')
         if fecha_str:
@@ -480,20 +524,48 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             fecha = timezone.now().date()
         
         ruta_id = self.request.GET.get('ruta')
+        if not ruta_id and config and hasattr(config, 'filtrar_por_ruta') and config.filtrar_por_ruta:
+            ruta_id = config.filtrar_por_ruta_id
         
         # Obtener cuotas PENDIENTES del día (no cobradas)
-        cuotas_pendientes = Cuota.objects.filter(
-            fecha_vencimiento=fecha,
-            estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
-        ).select_related(
-            'prestamo', 
-            'prestamo__cliente', 
-            'prestamo__cliente__ruta'
-        ).order_by(
-            'prestamo__cliente__ruta__orden',
-            'prestamo__cliente__apellido'
-        )
+        estados_cuota = ['PE', 'PC']
+        if hasattr(config, 'incluir_vencidas') and config.incluir_vencidas:
+            # Incluir cuotas ya vencidas
+            cuotas_pendientes = Cuota.objects.filter(
+                fecha_vencimiento__lte=fecha,
+                estado__in=estados_cuota,
+                prestamo__estado='AC'
+            ).select_related(
+                'prestamo', 
+                'prestamo__cliente', 
+                'prestamo__cliente__ruta',
+                'prestamo__cliente__tipo_negocio'
+            )
+        else:
+            cuotas_pendientes = Cuota.objects.filter(
+                fecha_vencimiento=fecha,
+                estado__in=estados_cuota,
+                prestamo__estado='AC'
+            ).select_related(
+                'prestamo', 
+                'prestamo__cliente', 
+                'prestamo__cliente__ruta',
+                'prestamo__cliente__tipo_negocio'
+            )
+        
+        # Ordenar
+        if hasattr(config, 'agrupar_por_ruta') and config.agrupar_por_ruta:
+            cuotas_pendientes = cuotas_pendientes.order_by(
+                'prestamo__cliente__ruta__orden',
+                'prestamo__cliente__apellido'
+            )
+        elif hasattr(config, 'agrupar_por_categoria') and config.agrupar_por_categoria:
+            cuotas_pendientes = cuotas_pendientes.order_by(
+                'prestamo__cliente__categoria',
+                'prestamo__cliente__apellido'
+            )
+        else:
+            cuotas_pendientes = cuotas_pendientes.order_by('prestamo__cliente__apellido')
         
         # Filtrar por ruta si se especifica
         ruta_filter = None
@@ -506,13 +578,22 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             except RutaCobro.DoesNotExist:
                 pass
         
-        # Organizar por ruta
-        cuotas_por_ruta = OrderedDict()
-        for cuota in cuotas_pendientes:
-            ruta_nombre = cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else "Sin Ruta"
-            if ruta_nombre not in cuotas_por_ruta:
-                cuotas_por_ruta[ruta_nombre] = []
-            cuotas_por_ruta[ruta_nombre].append(cuota)
+        # Organizar datos
+        cuotas_agrupadas = OrderedDict()
+        if hasattr(config, 'agrupar_por_ruta') and config.agrupar_por_ruta:
+            for cuota in cuotas_pendientes:
+                grupo = cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else "Sin Ruta"
+                if grupo not in cuotas_agrupadas:
+                    cuotas_agrupadas[grupo] = []
+                cuotas_agrupadas[grupo].append(cuota)
+        elif hasattr(config, 'agrupar_por_categoria') and config.agrupar_por_categoria:
+            for cuota in cuotas_pendientes:
+                grupo = cuota.prestamo.cliente.get_categoria_display()
+                if grupo not in cuotas_agrupadas:
+                    cuotas_agrupadas[grupo] = []
+                cuotas_agrupadas[grupo].append(cuota)
+        else:
+            cuotas_agrupadas['Todos'] = list(cuotas_pendientes)
         
         total_esperado = cuotas_pendientes.aggregate(
             total=Sum('monto_cuota')
@@ -521,14 +602,21 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         # Lista de rutas para filtro
         rutas = RutaCobro.objects.filter(activa=True).order_by('orden')
         
+        # Lista de configuraciones disponibles
+        configuraciones = ConfiguracionPlanilla.objects.all()
+        
         context.update({
             'fecha': fecha,
             'cuotas_pendientes': cuotas_pendientes,
-            'cuotas_por_ruta': cuotas_por_ruta,
+            'cuotas_por_ruta': cuotas_agrupadas,  # Compatibilidad
+            'cuotas_agrupadas': cuotas_agrupadas,
             'total_esperado': total_esperado,
             'rutas': rutas,
             'ruta_filter': ruta_filter,
             'now': timezone.now(),
+            'config': config,
+            'columnas': columnas,
+            'configuraciones': configuraciones,
         })
         return context
 
