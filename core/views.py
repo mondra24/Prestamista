@@ -93,9 +93,10 @@ class CobrosView(LoginRequiredMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        from datetime import timedelta
         hoy = timezone.now().date()
         
-        # Cuotas del día (pendientes y vencidas)
+        # Cuotas del día (pendientes)
         cuotas_hoy = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
@@ -105,6 +106,14 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         # Cuotas vencidas (días anteriores)
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
+            estado__in=['PE', 'PC'],
+            prestamo__estado='AC'
+        ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+        
+        # Cuotas próximas (próximos 7 días)
+        cuotas_proximas = Cuota.objects.filter(
+            fecha_vencimiento__gt=hoy,
+            fecha_vencimiento__lte=hoy + timedelta(days=7),
             estado__in=['PE', 'PC'],
             prestamo__estado='AC'
         ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
@@ -123,12 +132,19 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             total=Sum('monto_cuota')
         )['total'] or Decimal('0.00')
         
+        # Total próximos
+        total_proximas = cuotas_proximas.aggregate(
+            total=Sum('monto_cuota')
+        )['total'] or Decimal('0.00')
+        
         context.update({
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
+            'cuotas_proximas': cuotas_proximas,
             'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'total_por_cobrar': total_por_cobrar,
+            'total_proximas': total_proximas,
             'fecha_hoy': hoy,
         })
         return context
@@ -342,6 +358,18 @@ def cobrar_cuota(request, pk):
             else:
                 mensaje = 'Pago registrado exitosamente'
             
+            # Calcular total cobrado hoy
+            hoy = timezone.now().date()
+            total_cobrado_hoy = Cuota.objects.filter(
+                fecha_pago_real=hoy,
+                estado='PA'
+            ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+            
+            cantidad_cobros_hoy = Cuota.objects.filter(
+                fecha_pago_real=hoy,
+                estado='PA'
+            ).count()
+            
             return JsonResponse({
                 'success': True,
                 'message': mensaje,
@@ -355,6 +383,10 @@ def cobrar_cuota(request, pk):
                 'prestamo': {
                     'progreso': cuota.prestamo.progreso_porcentaje,
                     'estado': cuota.prestamo.estado,
+                },
+                'estadisticas': {
+                    'total_cobrado_hoy': int(total_cobrado_hoy),  # Sin decimales
+                    'cantidad_cobros_hoy': cantidad_cobros_hoy,
                 }
             })
         except Exception as e:
@@ -493,8 +525,9 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
                 'mostrar_firmas': True,
                 'agrupar_por_ruta': True,
                 'agrupar_por_categoria': False,
-                'incluir_vencidas': False,
+                'incluir_vencidas': True,  # Incluir vencidas por defecto
                 'filtrar_por_ruta': None,
+                'pk': None,
             })()
         
         # Obtener columnas activas
@@ -527,30 +560,54 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         if not ruta_id and config and hasattr(config, 'filtrar_por_ruta') and config.filtrar_por_ruta:
             ruta_id = config.filtrar_por_ruta_id
         
-        # Obtener cuotas PENDIENTES del día (no cobradas)
+        # Verificar si incluir vencidas (por defecto True para mostrar todos los pendientes)
+        incluir_vencidas_param = self.request.GET.get('incluir_vencidas')
+        if incluir_vencidas_param is not None:
+            incluir_vencidas = incluir_vencidas_param.lower() in ('true', '1', 'si', 'yes')
+        else:
+            incluir_vencidas = getattr(config, 'incluir_vencidas', True)
+        
+        # Verificar si mostrar próximas cuotas
+        mostrar_proximas = self.request.GET.get('proximas', 'true').lower() in ('true', '1', 'si', 'yes')
+        
+        # Obtener cuotas PENDIENTES (no cobradas)
         estados_cuota = ['PE', 'PC']
-        if hasattr(config, 'incluir_vencidas') and config.incluir_vencidas:
-            # Incluir cuotas ya vencidas
-            cuotas_pendientes = Cuota.objects.filter(
-                fecha_vencimiento__lte=fecha,
-                estado__in=estados_cuota,
-                prestamo__estado='AC'
-            ).select_related(
-                'prestamo', 
-                'prestamo__cliente', 
-                'prestamo__cliente__ruta',
-                'prestamo__cliente__tipo_negocio'
+        
+        # Base query: cuotas pendientes de préstamos activos
+        base_query = Cuota.objects.filter(
+            estado__in=estados_cuota,
+            prestamo__estado='AC'
+        ).select_related(
+            'prestamo', 
+            'prestamo__cliente', 
+            'prestamo__cliente__ruta',
+            'prestamo__cliente__tipo_negocio'
+        )
+        
+        if incluir_vencidas and mostrar_proximas:
+            # Mostrar: cuotas vencidas + cuotas del día seleccionado + próximas 7 días
+            from datetime import timedelta
+            fecha_limite = fecha + timedelta(days=7)
+            cuotas_pendientes = base_query.filter(
+                fecha_vencimiento__lte=fecha_limite
+            )
+        elif incluir_vencidas:
+            # Mostrar: cuotas vencidas + cuotas del día seleccionado
+            cuotas_pendientes = base_query.filter(
+                fecha_vencimiento__lte=fecha
+            )
+        elif mostrar_proximas:
+            # Mostrar: solo cuotas de la fecha seleccionada + próximos 7 días
+            from datetime import timedelta
+            fecha_limite = fecha + timedelta(days=7)
+            cuotas_pendientes = base_query.filter(
+                fecha_vencimiento__gte=fecha,
+                fecha_vencimiento__lte=fecha_limite
             )
         else:
-            cuotas_pendientes = Cuota.objects.filter(
-                fecha_vencimiento=fecha,
-                estado__in=estados_cuota,
-                prestamo__estado='AC'
-            ).select_related(
-                'prestamo', 
-                'prestamo__cliente', 
-                'prestamo__cliente__ruta',
-                'prestamo__cliente__tipo_negocio'
+            # Solo cuotas del día exacto
+            cuotas_pendientes = base_query.filter(
+                fecha_vencimiento=fecha
             )
         
         # Ordenar
@@ -617,6 +674,8 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             'config': config,
             'columnas': columnas,
             'configuraciones': configuraciones,
+            'incluir_vencidas': incluir_vencidas,
+            'mostrar_proximas': mostrar_proximas,
         })
         return context
 
@@ -823,3 +882,545 @@ def toggle_usuario_activo(request, pk):
         messages.success(request, f'Usuario "{user.username}" {estado}.')
     
     return redirect('core:usuario_list')
+
+
+# ==================== EXPORTACIÓN EXCEL ====================
+
+from django.http import HttpResponse
+from .models import RegistroAuditoria, Notificacion, ConfiguracionRespaldo
+import io
+import os
+from datetime import datetime
+
+
+@login_required
+def exportar_planilla_excel(request):
+    """Exportar planilla de cobros a Excel"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:planilla_impresion')
+    
+    # Obtener fecha del filtro
+    fecha_str = request.GET.get('fecha')
+    if fecha_str:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    else:
+        fecha = timezone.now().date()
+    
+    # Obtener ruta de filtro
+    ruta_id = request.GET.get('ruta')
+    incluir_vencidas = request.GET.get('incluir_vencidas', '1').lower() in ('true', '1', 'si')
+    
+    # Obtener cuotas pendientes
+    cuotas = Cuota.objects.filter(
+        prestamo__estado='AC',
+        estado__in=['PE', 'PC']
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta')
+    
+    if incluir_vencidas:
+        cuotas = cuotas.filter(fecha_vencimiento__lte=fecha)
+    else:
+        cuotas = cuotas.filter(fecha_vencimiento=fecha)
+    
+    if ruta_id:
+        cuotas = cuotas.filter(prestamo__cliente__ruta_id=ruta_id)
+    
+    cuotas = cuotas.order_by('prestamo__cliente__ruta__orden', 'prestamo__cliente__apellido')
+    
+    # Crear workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Planilla {fecha.strftime('%d-%m-%Y')}"
+    
+    # Estilos
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='333333', end_color='333333', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Título
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f'PLANILLA DE COBROS - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    # Info
+    ws.merge_cells('A2:H2')
+    ws['A2'] = f'Total cobros: {cuotas.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+    
+    # Headers
+    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Venc.', 'Cobrado']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # Anchos de columna
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 10
+    ws.column_dimensions['F'].width = 15
+    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 15
+    
+    # Datos
+    total = Decimal('0.00')
+    for i, cuota in enumerate(cuotas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin Ruta').border = border
+        ws.cell(row=row, column=5, value=f'{cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas}').border = border
+        
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_cuota))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+        
+        ws.cell(row=row, column=7, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
+        ws.cell(row=row, column=8, value='').border = border
+        
+        total += cuota.monto_cuota
+    
+    # Fila de total
+    total_row = cuotas.count() + 5
+    ws.merge_cells(f'A{total_row}:E{total_row}')
+    ws.cell(row=total_row, column=1, value='TOTAL ESPERADO:').font = Font(bold=True)
+    total_cell = ws.cell(row=total_row, column=6, value=float(total))
+    total_cell.font = Font(bold=True)
+    total_cell.number_format = '#,##0'
+    
+    # Registrar auditoría
+    RegistroAuditoria.registrar(
+        usuario=request.user,
+        tipo_accion='OT',
+        tipo_modelo='SI',
+        descripcion=f'Exportación de planilla a Excel - Fecha: {fecha}',
+        ip_address=get_client_ip(request)
+    )
+    
+    # Crear respuesta
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename=planilla_cobros_{fecha.strftime("%Y%m%d")}.xlsx'
+    
+    wb.save(response)
+    return response
+
+
+@login_required
+def exportar_clientes_excel(request):
+    """Exportar lista de clientes a Excel"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:cliente_list')
+    
+    clientes = Cliente.objects.filter(estado='AC').select_related('ruta', 'tipo_negocio')
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Clientes"
+    
+    # Estilos
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='198754', end_color='198754', fill_type='solid')
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Headers
+    headers = ['#', 'Nombre', 'Apellido', 'Teléfono', 'Dirección', 'Categoría', 'Ruta', 'Tipo Negocio', 'Límite Crédito']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+    
+    # Datos
+    for i, cliente in enumerate(clientes, 1):
+        row = i + 1
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=cliente.nombre).border = border
+        ws.cell(row=row, column=3, value=cliente.apellido).border = border
+        ws.cell(row=row, column=4, value=cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=cliente.direccion[:50]).border = border
+        ws.cell(row=row, column=6, value=cliente.get_categoria_display()).border = border
+        ws.cell(row=row, column=7, value=cliente.ruta.nombre if cliente.ruta else '-').border = border
+        ws.cell(row=row, column=8, value=cliente.tipo_negocio.nombre if cliente.tipo_negocio else '-').border = border
+        limite_cell = ws.cell(row=row, column=9, value=float(cliente.limite_credito))
+        limite_cell.number_format = '#,##0'
+        limite_cell.border = border
+    
+    # Ajustar anchos
+    for col in range(1, 10):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['E'].width = 30
+    
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename=clientes_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    
+    wb.save(response)
+    return response
+
+
+@login_required
+def exportar_prestamos_excel(request):
+    """Exportar préstamos a Excel"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Border, Side
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:prestamo_list')
+    
+    estado = request.GET.get('estado', '')
+    prestamos = Prestamo.objects.select_related('cliente')
+    if estado:
+        prestamos = prestamos.filter(estado=estado)
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Préstamos"
+    
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='0d6efd', end_color='0d6efd', fill_type='solid')
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    headers = ['#', 'Cliente', 'Monto', 'Total', 'Pagado', 'Pendiente', 'Cuotas', 'Frecuencia', 'Estado', 'Fecha Inicio']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.border = border
+    
+    for i, p in enumerate(prestamos, 1):
+        row = i + 1
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=p.cliente.nombre_completo).border = border
+        monto_cell = ws.cell(row=row, column=3, value=float(p.monto_solicitado))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+        total_cell = ws.cell(row=row, column=4, value=float(p.monto_total_a_pagar))
+        total_cell.number_format = '#,##0'
+        total_cell.border = border
+        pagado_cell = ws.cell(row=row, column=5, value=float(p.monto_pagado))
+        pagado_cell.number_format = '#,##0'
+        pagado_cell.border = border
+        pend_cell = ws.cell(row=row, column=6, value=float(p.monto_pendiente))
+        pend_cell.number_format = '#,##0'
+        pend_cell.border = border
+        ws.cell(row=row, column=7, value=f'{p.cuotas_pagadas}/{p.cuotas_pactadas}').border = border
+        ws.cell(row=row, column=8, value=p.get_frecuencia_display()).border = border
+        ws.cell(row=row, column=9, value=p.get_estado_display()).border = border
+        ws.cell(row=row, column=10, value=p.fecha_inicio.strftime('%d/%m/%Y')).border = border
+    
+    for col in range(1, 11):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
+    ws.column_dimensions['B'].width = 25
+    
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename=prestamos_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    
+    wb.save(response)
+    return response
+
+
+# ==================== NOTIFICACIONES ====================
+
+class NotificacionListView(LoginRequiredMixin, ListView):
+    """Vista de notificaciones del usuario"""
+    model = Notificacion
+    template_name = 'core/notificacion_list.html'
+    context_object_name = 'notificaciones'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        qs = Notificacion.objects.filter(
+            Q(usuario=self.request.user) | Q(usuario__isnull=True)
+        )
+        
+        # Filtros
+        solo_no_leidas = self.request.GET.get('no_leidas', '')
+        tipo = self.request.GET.get('tipo', '')
+        
+        if solo_no_leidas:
+            qs = qs.filter(leida=False)
+        if tipo:
+            qs = qs.filter(tipo=tipo)
+        
+        return qs.order_by('-fecha_creacion')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['tipos_notificacion'] = Notificacion.TipoNotificacion.choices
+        context['no_leidas_count'] = Notificacion.objects.filter(
+            Q(usuario=self.request.user) | Q(usuario__isnull=True),
+            leida=False
+        ).count()
+        return context
+
+
+@login_required
+def marcar_notificacion_leida(request, pk):
+    """Marcar notificación como leída via AJAX"""
+    notificacion = get_object_or_404(Notificacion, pk=pk)
+    notificacion.marcar_como_leida()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'success': True})
+    
+    return redirect('core:notificacion_list')
+
+
+@login_required
+def marcar_todas_leidas(request):
+    """Marcar todas las notificaciones como leídas"""
+    Notificacion.objects.filter(
+        Q(usuario=request.user) | Q(usuario__isnull=True),
+        leida=False
+    ).update(leida=True, fecha_lectura=timezone.now())
+    
+    messages.success(request, 'Todas las notificaciones marcadas como leídas.')
+    return redirect('core:notificacion_list')
+
+
+@login_required
+def obtener_notificaciones(request):
+    """API para obtener notificaciones no leídas (para actualización en tiempo real)"""
+    notificaciones = Notificacion.objects.filter(
+        Q(usuario=request.user) | Q(usuario__isnull=True),
+        leida=False
+    ).order_by('-fecha_creacion')[:5]
+    
+    data = {
+        'count': notificaciones.count(),
+        'notificaciones': [
+            {
+                'id': n.pk,
+                'titulo': n.titulo,
+                'mensaje': n.mensaje[:100],
+                'tipo': n.tipo,
+                'prioridad': n.prioridad,
+                'fecha': n.fecha_creacion.strftime('%d/%m %H:%M'),
+                'enlace': n.enlace
+            }
+            for n in notificaciones
+        ]
+    }
+    return JsonResponse(data)
+
+
+# ==================== AUDITORÍA ====================
+
+class AuditoriaListView(LoginRequiredMixin, ListView):
+    """Vista de registros de auditoría"""
+    model = RegistroAuditoria
+    template_name = 'core/auditoria_list.html'
+    context_object_name = 'registros'
+    paginate_by = 50
+    
+    def dispatch(self, request, *args, **kwargs):
+        if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
+            if not request.user.is_superuser:
+                messages.error(request, 'No tienes permiso para ver el historial de auditoría.')
+                return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_queryset(self):
+        qs = super().get_queryset()
+        
+        # Filtros
+        usuario = self.request.GET.get('usuario', '')
+        tipo_accion = self.request.GET.get('tipo_accion', '')
+        tipo_modelo = self.request.GET.get('tipo_modelo', '')
+        fecha_desde = self.request.GET.get('fecha_desde', '')
+        fecha_hasta = self.request.GET.get('fecha_hasta', '')
+        
+        if usuario:
+            qs = qs.filter(usuario_id=usuario)
+        if tipo_accion:
+            qs = qs.filter(tipo_accion=tipo_accion)
+        if tipo_modelo:
+            qs = qs.filter(tipo_modelo=tipo_modelo)
+        if fecha_desde:
+            qs = qs.filter(fecha_hora__date__gte=fecha_desde)
+        if fecha_hasta:
+            qs = qs.filter(fecha_hora__date__lte=fecha_hasta)
+        
+        return qs.select_related('usuario')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['usuarios'] = User.objects.all()
+        context['tipos_accion'] = RegistroAuditoria.TipoAccion.choices
+        context['tipos_modelo'] = RegistroAuditoria.TipoModelo.choices
+        return context
+
+
+# ==================== RESPALDOS ====================
+
+@login_required
+def crear_respaldo(request):
+    """Crear respaldo manual de la base de datos"""
+    if not request.user.is_superuser:
+        messages.error(request, 'Solo los superusuarios pueden crear respaldos.')
+        return redirect('core:dashboard')
+    
+    import shutil
+    from django.conf import settings
+    
+    try:
+        # Crear directorio de respaldos si no existe
+        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Nombre del archivo de respaldo
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_name = f'backup_{timestamp}.sqlite3'
+        backup_path = os.path.join(backup_dir, backup_name)
+        
+        # Copiar base de datos
+        db_path = settings.DATABASES['default']['NAME']
+        shutil.copy2(db_path, backup_path)
+        
+        # Registrar auditoría
+        RegistroAuditoria.registrar(
+            usuario=request.user,
+            tipo_accion='RS',
+            tipo_modelo='SI',
+            descripcion=f'Respaldo manual creado: {backup_name}',
+            ip_address=get_client_ip(request)
+        )
+        
+        # Limpiar respaldos antiguos
+        config = ConfiguracionRespaldo.objects.first()
+        if config:
+            config.ultimo_respaldo = timezone.now()
+            config.save()
+            
+            # Mantener solo los últimos N respaldos
+            backups = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith('backup_')],
+                reverse=True
+            )
+            for old_backup in backups[config.mantener_ultimos:]:
+                os.remove(os.path.join(backup_dir, old_backup))
+        
+        messages.success(request, f'Respaldo creado exitosamente: {backup_name}')
+    except Exception as e:
+        messages.error(request, f'Error al crear respaldo: {str(e)}')
+    
+    return redirect('core:reporte_general')
+
+
+@login_required
+def descargar_respaldo(request, nombre):
+    """Descargar un respaldo específico"""
+    if not request.user.is_superuser:
+        messages.error(request, 'Solo los superusuarios pueden descargar respaldos.')
+        return redirect('core:dashboard')
+    
+    from django.conf import settings
+    
+    backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+    backup_path = os.path.join(backup_dir, nombre)
+    
+    if os.path.exists(backup_path) and nombre.startswith('backup_'):
+        with open(backup_path, 'rb') as f:
+            response = HttpResponse(f.read(), content_type='application/octet-stream')
+            response['Content-Disposition'] = f'attachment; filename={nombre}'
+            return response
+    
+    messages.error(request, 'El archivo de respaldo no existe.')
+    return redirect('core:reporte_general')
+
+
+class RespaldoListView(LoginRequiredMixin, TemplateView):
+    """Vista de listado de respaldos disponibles"""
+    template_name = 'core/respaldo_list.html'
+    
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_superuser:
+            messages.error(request, 'Solo los superusuarios pueden ver los respaldos.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+    
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+        
+        context = super().get_context_data(**kwargs)
+        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+        
+        backups = []
+        if os.path.exists(backup_dir):
+            for f in sorted(os.listdir(backup_dir), reverse=True):
+                if f.startswith('backup_'):
+                    path = os.path.join(backup_dir, f)
+                    size = os.path.getsize(path)
+                    backups.append({
+                        'nombre': f,
+                        'tamano': f'{size / 1024 / 1024:.2f} MB',
+                        'fecha': datetime.fromtimestamp(os.path.getctime(path))
+                    })
+        
+        context['backups'] = backups
+        context['config'] = ConfiguracionRespaldo.objects.first()
+        return context
+
+
+# ==================== UTILIDADES ====================
+
+def get_client_ip(request):
+    """Obtener la IP del cliente"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+# ==================== GENERAR NOTIFICACIONES AUTOMÁTICAS ====================
+
+@login_required
+def generar_notificaciones(request):
+    """Generar notificaciones de cuotas vencidas y por vencer"""
+    if not request.user.is_superuser and not (hasattr(request.user, 'perfil') and request.user.perfil.es_admin):
+        return JsonResponse({'success': False, 'message': 'Sin permisos'}, status=403)
+    
+    Notificacion.notificar_cuotas_vencidas()
+    Notificacion.notificar_cuotas_por_vencer()
+    
+    return JsonResponse({'success': True, 'message': 'Notificaciones generadas'})

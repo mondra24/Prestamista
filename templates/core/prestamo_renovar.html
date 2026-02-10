@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load crispy_forms_tags %}
+{% load currency_filters %}
 
 {% block title %}Renovar Préstamo - Préstamos{% endblock %}
 
@@ -26,17 +27,17 @@
             <div class="row g-2 text-center mb-3">
                 <div class="col-6">
                     <small class="text-muted d-block">Monto Original</small>
-                    <strong>${{ prestamo.monto_total_a_pagar|floatformat:0 }}</strong>
+                    <strong>{{ prestamo.monto_total_a_pagar|dinero }}</strong>
                 </div>
                 <div class="col-6">
                     <small class="text-muted d-block">Pagado</small>
-                    <strong class="text-success">${{ prestamo.monto_pagado|floatformat:0 }}</strong>
+                    <strong class="text-success">{{ prestamo.monto_pagado|dinero }}</strong>
                 </div>
             </div>
             
             <div class="alert alert-warning mb-0">
                 <i class="bi bi-exclamation-triangle me-2"></i>
-                <strong>Saldo Pendiente: ${{ saldo_pendiente|floatformat:0 }}</strong>
+                <strong>Saldo Pendiente: {{ saldo_pendiente|dinero }}</strong>
                 <br>
                 <small>Este monto se sumará al nuevo capital.</small>
             </div>

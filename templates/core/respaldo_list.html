@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Respaldos - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-hdd me-2"></i>Respaldos del Sistema
+        </h1>
+        <a href="{% url 'core:crear_respaldo' %}" class="btn btn-success">
+            <i class="bi bi-plus-circle me-1"></i>Crear Respaldo
+        </a>
+    </div>
+    
+    <!-- Configuración actual -->
+    {% if config %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-transparent">
+            <h6 class="mb-0">
+                <i class="bi bi-gear me-2"></i>Configuración de Respaldos
+            </h6>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Estado</small>
+                    <strong class="{% if config.activo %}text-success{% else %}text-danger{% endif %}">
+                        {% if config.activo %}Activo{% else %}Inactivo{% endif %}
+                    </strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Frecuencia</small>
+                    <strong>Cada {{ config.frecuencia_horas }}h</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Mantener</small>
+                    <strong>{{ config.mantener_ultimos }} últimos</strong>
+                </div>
+                <div class="col-6 col-md-3">
+                    <small class="text-muted d-block">Último Respaldo</small>
+                    <strong>
+                        {% if config.ultimo_respaldo %}
+                        {{ config.ultimo_respaldo|date:"d/m/Y H:i" }}
+                        {% else %}
+                        Nunca
+                        {% endif %}
+                    </strong>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Lista de respaldos -->
+    <section>
+        <h5 class="section-title">
+            <i class="bi bi-archive"></i>
+            Respaldos Disponibles
+        </h5>
+        
+        {% if backups %}
+        <div class="list-group">
+            {% for backup in backups %}
+            <div class="list-group-item d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="bi bi-file-earmark-zip fs-4 text-primary"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">{{ backup.nombre }}</div>
+                        <small class="text-muted">
+                            {{ backup.fecha|date:"d/m/Y H:i" }} · {{ backup.tamano }}
+                        </small>
+                    </div>
+                </div>
+                <a href="{% url 'core:descargar_respaldo' backup.nombre %}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-archive"></i>
+            <h3>Sin respaldos</h3>
+            <p>No hay respaldos disponibles todavía.</p>
+            <a href="{% url 'core:crear_respaldo' %}" class="btn btn-success">
+                <i class="bi bi-plus-circle me-1"></i>Crear Primer Respaldo
+            </a>
+        </div>
+        {% endif %}
+    </section>
+    
+    <!-- Instrucciones -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-body">
+            <h6 class="text-muted mb-3">
+                <i class="bi bi-info-circle me-2"></i>Información
+            </h6>
+            <ul class="list-unstyled mb-0 small text-muted">
+                <li class="mb-2">
+                    <i class="bi bi-check-circle text-success me-2"></i>
+                    Los respaldos incluyen toda la base de datos (clientes, préstamos, cuotas, etc.)
+                </li>
+                <li class="mb-2">
+                    <i class="bi bi-check-circle text-success me-2"></i>
+                    Se mantienen los últimos {{ config.mantener_ultimos|default:7 }} respaldos automáticamente
+                </li>
+                <li class="mb-2">
+                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                    Descargue los respaldos regularmente y guárdelos en un lugar seguro
+                </li>
+                <li>
+                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+                    Para restaurar un respaldo, contacte al administrador del sistema
+                </li>
+            </ul>
+        </div>
+    </div>
+    
+</div>
+{% endblock %}

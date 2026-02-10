@@ -251,12 +251,34 @@ body {
 .cobro-card .cobro-monto {
     text-align: right;
     flex-shrink: 0;
+    max-width: 30%;
 }
 
 .cobro-card .monto-valor {
     font-weight: 700;
-    font-size: 1.1rem;
+    font-size: 0.8rem;
     color: var(--text-primary);
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: nowrap;
+}
+
+@media (min-width: 360px) {
+    .cobro-card .monto-valor {
+        font-size: 0.9rem;
+    }
+    .cobro-card .cobro-monto {
+        max-width: 35%;
+    }
+}
+
+@media (min-width: 576px) {
+    .cobro-card .monto-valor {
+        font-size: 1.1rem;
+    }
+    .cobro-card .cobro-monto {
+        max-width: 40%;
+    }
 }
 
 /* Botón de cobrar */
@@ -349,33 +371,86 @@ body {
 /* ============== ESTADÍSTICAS ============== */
 .stat-card {
     background: var(--bg-card);
-    border-radius: 16px;
-    padding: 20px;
+    border-radius: 12px;
+    padding: 10px 6px;
     text-align: center;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    overflow: hidden;
 }
 
 .stat-card .stat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 12px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 0 auto 10px;
-    font-size: 1.5rem;
+    margin: 0 auto 4px;
+    font-size: 1rem;
 }
 
 .stat-card .stat-value {
-    font-size: 1.5rem;
+    font-size: 0.75rem;
     font-weight: 700;
+    line-height: 1.1;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: nowrap;
 }
 
 .stat-card .stat-label {
-    font-size: 0.8rem;
+    font-size: 0.55rem;
     color: var(--text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.2px;
+    line-height: 1.1;
+    margin-top: 2px;
+}
+
+/* Móviles medianos */
+@media (min-width: 360px) {
+    .stat-card {
+        padding: 12px 8px;
+    }
+    
+    .stat-card .stat-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 1.1rem;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.85rem;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.6rem;
+    }
+}
+
+/* Tablets y desktop */
+@media (min-width: 576px) {
+    .stat-card {
+        padding: 20px;
+        border-radius: 16px;
+    }
+    
+    .stat-card .stat-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.5rem;
+        margin-bottom: 8px;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 1.25rem;
+        white-space: normal;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.75rem;
+        margin-top: 4px;
+    }
 }
 
 /* ============== SECCIÓN TÍTULOS ============== */
@@ -390,6 +465,31 @@ body {
 
 .section-title i {
     color: var(--color-pagado);
+}
+
+/* ============== VALORES DE CARTERA ============== */
+.cartera-value {
+    font-size: clamp(0.85rem, 3.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1.2;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    margin-bottom: 0;
+}
+
+@media (min-width: 576px) {
+    .cartera-value {
+        font-size: clamp(1rem, 3vw, 1.75rem);
+    }
+}
+
+/* ============== VALORES DE CRÉDITO ============== */
+.credito-value {
+    font-size: clamp(0.75rem, 3vw, 1rem);
+    display: block;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.3;
 }
 
 /* ============== LISTA DE CLIENTES ============== */

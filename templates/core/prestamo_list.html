@@ -1,10 +1,22 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load currency_filters %}
 
 {% block title %}Préstamos - Préstamos{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Barra de acciones -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h5 mb-0 d-none d-lg-block">
+            <i class="bi bi-wallet2 me-2"></i>Préstamos
+        </h1>
+        <a href="{% url 'core:exportar_prestamos_excel' %}{% if request.GET.estado %}?estado={{ request.GET.estado }}{% endif %}" 
+           class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
+        </a>
+    </div>
     
     <!-- Filtros -->
     <div class="d-flex gap-2 mb-3 overflow-auto pb-2">
@@ -34,7 +46,7 @@
                 <div class="flex-grow-1">
                     <div class="fw-semibold">{{ prestamo.cliente.nombre_completo }}</div>
                     <small class="text-muted">
-                        Préstamo #{{ prestamo.pk }} · ${{ prestamo.monto_total_a_pagar|floatformat:0 }}
+                        Préstamo #{{ prestamo.pk }} · {{ prestamo.monto_total_a_pagar|dinero }}
                     </small>
                     <div class="mt-1">
                         <div class="progress" style="height: 4px; width: 100px;">

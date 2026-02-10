@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load currency_filters %}
 
 {% block title %}Préstamo #{{ prestamo.pk }} - Préstamos{% endblock %}
 
@@ -41,7 +42,7 @@
             <div class="row g-3 text-center">
                 <div class="col-6 col-md-3">
                     <small class="text-muted d-block">Capital</small>
-                    <strong>${{ prestamo.monto_solicitado|floatformat:0 }}</strong>
+                    <strong>{{ prestamo.monto_solicitado|dinero }}</strong>
                 </div>
                 <div class="col-6 col-md-3">
                     <small class="text-muted d-block">Interés</small>
@@ -49,7 +50,7 @@
                 </div>
                 <div class="col-6 col-md-3">
                     <small class="text-muted d-block">Total</small>
-                    <strong class="text-primary">${{ prestamo.monto_total_a_pagar|floatformat:0 }}</strong>
+                    <strong class="text-primary">{{ prestamo.monto_total_a_pagar|dinero }}</strong>
                 </div>
                 <div class="col-6 col-md-3">
                     <small class="text-muted d-block">Frecuencia</small>
@@ -74,13 +75,13 @@
                 <div class="col-4">
                     <div class="p-2 bg-success bg-opacity-10 rounded">
                         <small class="text-muted d-block">Pagado</small>
-                        <strong class="text-success">${{ prestamo.monto_pagado|floatformat:0 }}</strong>
+                        <strong class="text-success">{{ prestamo.monto_pagado|dinero }}</strong>
                     </div>
                 </div>
                 <div class="col-4">
                     <div class="p-2 bg-warning bg-opacity-10 rounded">
                         <small class="text-muted d-block">Pendiente</small>
-                        <strong class="text-warning">${{ prestamo.monto_pendiente|floatformat:0 }}</strong>
+                        <strong class="text-warning">{{ prestamo.monto_pendiente|dinero }}</strong>
                     </div>
                 </div>
                 <div class="col-4">
@@ -129,9 +130,9 @@
                         {% endif %}
                     </div>
                     <div class="text-end">
-                        <div class="fw-bold">${{ cuota.monto_cuota|floatformat:0 }}</div>
+                        <div class="fw-bold">{{ cuota.monto_cuota|dinero }}</div>
                         {% if cuota.estado == 'PC' %}
-                        <small class="text-muted">Resta: ${{ cuota.monto_restante|floatformat:0 }}</small>
+                        <small class="text-muted">Resta: {{ cuota.monto_restante|dinero }}</small>
                         {% endif %}
                     </div>
                 </div>

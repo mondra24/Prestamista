@@ -1,59 +1,74 @@
-# Préstamos - Sistema de Gestión de Préstamos
+# PrestaFácil - Sistema de Gestión de Préstamos
 
 Sistema web de gestión de préstamos optimizado para dispositivos móviles (Mobile-First). Diseñado para que un prestamista pueda cobrar en la calle usando su celular.
 
 ![Django](https://img.shields.io/badge/Django-4.2+-green)
 ![Python](https://img.shields.io/badge/Python-3.8+-blue)
 ![Bootstrap](https://img.shields.io/badge/Bootstrap-5.3-purple)
+![Railway](https://img.shields.io/badge/Deploy-Railway-blueviolet)
 
-## Características Principales
+## 🚀 Demo en Vivo
 
-### Gestión de Préstamos
+**URL:** `https://tu-proyecto.up.railway.app`
+
+## ✨ Características Principales
+
+### 💰 Gestión de Préstamos
 - **Creación de préstamos** con cálculo automático de intereses
 - **Generación automática de cuotas** según frecuencia (diario, semanal, quincenal, mensual)
 - **Renovación de préstamos** sumando saldo pendiente al nuevo monto
 - **Estados de préstamo**: Activo, Finalizado, Cancelado, Renovado
 
-### Cobros
+### 📱 Cobros
 - **Cobros AJAX**: Registra pagos sin recargar la página
 - **Pagos parciales flexibles** con opciones:
   - Ignorar el restante
   - Agregar a la próxima cuota
   - Crear cuota especial
 - **Vista de cobros del día** organizada por cliente
+- **Próximos 7 días**: Ver cuotas que vencen próximamente
 
-### Gestión de Clientes
+### 👥 Gestión de Clientes
 - Categorización: Excelente, Regular, Moroso, Nuevo
 - Estado: Activo/Inactivo
 - Historial de préstamos por cliente
+- Rutas de cobro asignables
 
-### Sistema de Usuarios y Roles
+### 👤 Sistema de Usuarios y Roles
 - **Administrador**: Acceso total al sistema
 - **Supervisor**: Gestión de cobros y reportes
 - **Cobrador**: Solo cobros y consultas
 
-### Reportes
+### 📊 Reportes y Exportación
 - Cierre de caja diario
 - Planilla de impresión optimizada
 - Resumen de cartera
+- **Exportación a Excel** (clientes, préstamos, planillas)
 
-### Interfaz
+### 🔔 Sistema de Notificaciones
+- Alertas de cuotas vencidas
+- Notificaciones de cobros realizados
+- Auditoría de acciones del sistema
+
+### 🎨 Interfaz
 - **Mobile-First**: Optimizada para uso con una sola mano
 - **Navegación Bottom Nav**: Estilo aplicación móvil
 - **PWA Ready**: Puede instalarse como app
+- **Formato moneda argentina**: $1.234.567,89
 
-## Stack Tecnológico
+## 🛠️ Stack Tecnológico
 
 | Componente | Tecnología |
 |------------|------------|
-| Backend | Python 3.8+ / Django 4.2+ |
+| Backend | Python 3.11 / Django 4.2+ |
 | Base de Datos | SQLite (dev) / PostgreSQL (prod) |
 | Frontend | HTML5, JavaScript ES6+, Bootstrap 5.3 |
 | Formularios | django-crispy-forms + crispy-bootstrap5 |
 | Iconografía | Bootstrap Icons |
-| Autenticación | Django Auth + Perfiles personalizados |
+| Deploy | Railway + Gunicorn + WhiteNoise |
+| Excel | openpyxl |
 
-## Instalación
+## 📦 Instalación Local
 
 ### Requisitos Previos
 - Python 3.8 o superior
@@ -63,8 +78,8 @@ Sistema web de gestión de préstamos optimizado para dispositivos móviles (Mob
 ### Paso 1: Clonar el repositorio
 
 ```bash
-git clone https://github.com/mondra24/Prestamista.git
-cd Prestamista
+git clone https://github.com/TU_USUARIO/financiera.git
+cd financiera
 ```
 
 ### Paso 2: Crear entorno virtual
@@ -87,38 +102,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Paso 4: Configurar variables de entorno
-
-Crear archivo `.env` en la raíz del proyecto:
-
-```env
-DEBUG=True
-SECRET_KEY=tu-clave-secreta-muy-segura-aqui-cambiar-en-produccion
-DATABASE_URL=sqlite:///db.sqlite3
-ALLOWED_HOSTS=localhost,127.0.0.1
-```
-
-> **Nota**: Para producción, genera una SECRET_KEY segura y configura DEBUG=False
-
-### Paso 5: Aplicar migraciones
+### Paso 4: Aplicar migraciones
 
 ```bash
 python manage.py migrate
 ```
 
-### Paso 6: Crear superusuario
+### Paso 5: Crear superusuario
 
 ```bash
 python manage.py createsuperuser
 ```
 
-### Paso 7: Cargar datos de prueba (opcional)
+### Paso 6: Cargar datos de prueba (opcional)
 
 ```bash
 python cargar_datos.py
 ```
 
-### Paso 8: Iniciar servidor de desarrollo
+### Paso 7: Iniciar servidor
 
 ```bash
 python manage.py runserver
@@ -126,152 +128,96 @@ python manage.py runserver
 
 Acceder a: http://127.0.0.1:8000
 
-## Estructura del Proyecto
+## 🚀 Deploy en Railway
+
+### Archivos necesarios (ya incluidos)
+- `requirements.txt` - Dependencias Python
+- `Procfile` - Comando de inicio
+- `runtime.txt` - Versión de Python
+
+### Pasos para deploy
+
+#### 1. Subir a GitHub
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/TU_USUARIO/financiera.git
+git push -u origin main
+```
+
+#### 2. Configurar Railway
+1. Ir a [railway.app](https://railway.app) y loguearse con GitHub
+2. **New Project** → **Provision PostgreSQL** (crear base de datos)
+3. **New** → **GitHub Repo** → Seleccionar tu repositorio
+4. Copiar `DATABASE_URL` de PostgreSQL → Variables del proyecto Django
+
+#### 3. Configurar Variables en Railway
+En tu proyecto Django → **Variables**:
+| Variable | Valor |
+|----------|-------|
+| `DATABASE_URL` | (copiar de PostgreSQL) |
+| `SECRET_KEY` | (generar una clave segura) |
+| `DJANGO_DEBUG` | `False` |
+
+#### 4. Configurar Build Command
+En **Settings** → **Build Command**:
+```bash
+pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
+```
+
+#### 5. Crear superusuario
+En Railway → **Shell**:
+```bash
+python manage.py createsuperuser
+```
+
+Tu app estará en: `https://tu-proyecto.up.railway.app`
+
+## 🧪 Tests
+
+Ejecutar suite de tests (66 tests):
+```bash
+python manage.py test core -v 2
+```
+
+## 📁 Estructura del Proyecto
 
 ```
-Prestamista/
+financiera/
 ├── core/                       # Aplicación principal
-│   ├── models.py              # Modelos: Cliente, Prestamo, Cuota, PerfilUsuario
+│   ├── models.py              # Cliente, Prestamo, Cuota, Notificacion, Auditoria
 │   ├── views.py               # Vistas y lógica de negocio
 │   ├── forms.py               # Formularios con validaciones
 │   ├── urls.py                # URLs de la aplicación
-│   ├── admin.py               # Panel de administración Django
-│   └── migrations/            # Migraciones de BD
+│   ├── admin.py               # Panel de administración
+│   ├── tests.py               # Suite de tests (66 tests)
+│   └── templatetags/          # Filtros personalizados (formato ARS)
 │
-├── prestamos_config/           # Configuración del proyecto Django
-│   ├── settings.py            # Configuración general
-│   ├── urls.py                # URLs principales
-│   └── wsgi.py                # Configuración WSGI
+├── prestamos_config/          # Configuración Django
+│   ├── settings.py            # Configuración (Railway-ready)
+│   └── wsgi.py                # WSGI para Gunicorn
 │
-├── templates/                  # Templates HTML
+├── templates/                 # Templates HTML
 │   ├── base.html              # Template base con navegación
-│   ├── registration/          # Templates de login/logout
-│   └── core/                  # Templates de la aplicación
-│       ├── dashboard.html     # Panel principal
-│       ├── cobros.html        # Vista de cobros
-│       ├── cliente_list.html  # Lista de clientes
-│       ├── prestamo_list.html # Lista de préstamos
-│       ├── usuario_list.html  # Gestión de usuarios
-│       └── ...
+│   └── core/                  # Templates de la app
 │
-├── static/                     # Archivos estáticos
-│   ├── css/main.css           # Estilos personalizados
-│   ├── js/main.js             # JavaScript principal
-│   └── manifest.json          # Manifest PWA
-│
-├── .env                        # Variables de entorno (no incluir en repo)
-├── .gitignore                  # Archivos ignorados por git
-├── requirements.txt            # Dependencias Python
-├── cargar_datos.py            # Script para datos de prueba
-├── manage.py                  # CLI de Django
-└── README.md                  # Esta documentación
+├── static/                    # CSS, JS, imágenes
+├── Procfile                   # Comando para Railway
+├── runtime.txt                # Python 3.11
+├── requirements.txt           # Dependencias
+└── README.md                  # Documentación
 ```
 
-## Modelos de Datos
+## 💵 Formato de Moneda
 
-### PerfilUsuario
-Extiende el usuario de Django con roles y permisos.
+El sistema usa formato argentino:
+- Separador de miles: punto (.)
+- Separador decimal: coma (,)
+- Ejemplo: `$1.234.567,89`
 
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| user | OneToOne(User) | Usuario de Django |
-| rol | CharField | AD=Admin, SU=Supervisor, CO=Cobrador |
-| telefono | CharField | Teléfono de contacto |
-| activo | Boolean | Estado del perfil |
-
-### Cliente
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| nombre | CharField | Nombre del cliente |
-| apellido | CharField | Apellido del cliente |
-| telefono | CharField | Teléfono principal |
-| direccion | TextField | Dirección completa |
-| categoria | CharField | EX=Excelente, RE=Regular, MO=Moroso, NU=Nuevo |
-| estado | CharField | AC=Activo, IN=Inactivo |
-
-### Préstamo
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| cliente | ForeignKey | Cliente asociado |
-| monto_solicitado | Decimal | Monto del préstamo |
-| tasa_interes | Decimal | Porcentaje de interés |
-| cuotas_pactadas | Integer | Número de cuotas |
-| frecuencia | CharField | DI=Diario, SE=Semanal, QU=Quincenal, ME=Mensual |
-| fecha_inicio | Date | Fecha de inicio |
-| estado | CharField | AC=Activo, FI=Finalizado, CA=Cancelado, RE=Renovado |
-
-### Cuota
-
-| Campo | Tipo | Descripción |
-|-------|------|-------------|
-| prestamo | ForeignKey | Préstamo asociado |
-| numero_cuota | Integer | Número de la cuota |
-| monto_cuota | Decimal | Monto a pagar |
-| fecha_vencimiento | Date | Fecha límite de pago |
-| monto_pagado | Decimal | Monto pagado (parciales) |
-| fecha_pago_real | DateTime | Fecha en que se pagó |
-| estado | CharField | PE=Pendiente, PA=Pagado, PC=Parcial |
-
-## URLs y Navegación
-
-### Públicas (requieren login)
-
-| URL | Vista | Descripción |
-|-----|-------|-------------|
-| `/` | Dashboard | Panel principal con resumen |
-| `/cobros/` | Cobros | Lista de cobros del día |
-| `/clientes/` | ClienteList | Lista de clientes |
-| `/clientes/nuevo/` | ClienteCreate | Crear cliente |
-| `/clientes/<id>/editar/` | ClienteUpdate | Editar cliente |
-| `/prestamos/` | PrestamoList | Lista de préstamos |
-| `/prestamos/nuevo/` | PrestamoCreate | Crear préstamo |
-| `/prestamos/<id>/renovar/` | RenovarPrestamo | Renovar préstamo |
-| `/cierre-caja/` | CierreCaja | Cierre de caja diario |
-| `/reportes/` | Reportes | Reportes generales |
-| `/planilla/` | Planilla | Planilla para imprimir |
-
-### Administración
-
-| URL | Descripción |
-|-----|-------------|
-| `/usuarios/` | Gestión de usuarios (solo admin) |
-| `/usuarios/nuevo/` | Crear usuario |
-| `/usuarios/<id>/editar/` | Editar usuario |
-| `/admin/` | Panel de administración Django |
-
-### API (AJAX)
-
-| Método | URL | Descripción |
-|--------|-----|-------------|
-| POST | `/api/cobrar/<cuota_id>/` | Registrar cobro |
-| POST | `/api/cobrar-parcial/<cuota_id>/` | Cobro parcial con opciones |
-
-## API de Cobros
-
-### Cobro Completo
-```javascript
-POST /api/cobrar/<cuota_id>/
-Content-Type: application/json
-
-Response: { "success": true, "message": "Cuota cobrada" }
-```
-
-### Cobro Parcial
-```javascript
-POST /api/cobrar-parcial/<cuota_id>/
-Content-Type: application/json
-
-{
-    "monto": 15000,
-    "accion_restante": "proxima"  // "ignorar" | "proxima" | "especial"
-}
-
-Response: { "success": true, "message": "Pago parcial registrado" }
-```
-
-## Roles y Permisos
+## 🔐 Roles y Permisos
 
 | Rol | Cobros | Clientes | Préstamos | Usuarios | Admin |
 |-----|--------|----------|-----------|----------|-------|
@@ -281,63 +227,30 @@ Response: { "success": true, "message": "Pago parcial registrado" }
 
 *👁️ = Solo lectura*
 
-## Colores del Sistema
+## 📱 Capturas de Pantalla
 
-| Color | Código | Uso |
-|-------|--------|-----|
-| Verde | #198754 | Pagado, Excelente |
-| Naranja | #fd7e14 | Pendiente, Regular |
-| Rojo | #dc3545 | Moroso, Vencido |
-| Azul | #0d6efd | Nuevo, Info |
-| Gris | #6c757d | Inactivo |
+### Dashboard
+Panel principal con estadísticas del día: cobros realizados, pendientes, clientes activos.
 
-## Configuración para Producción
+### Cobros
+Vista optimizada para cobrar en la calle con botones grandes y confirmación visual.
 
-### 1. Variables de entorno
+### Planilla
+Vista de impresión con cuotas del día y próximos 7 días.
 
-```env
-DEBUG=False
-SECRET_KEY=clave-super-segura-generada-aleatoriamente
-DATABASE_URL=postgres://user:password@host:5432/dbname
-ALLOWED_HOSTS=tudominio.com,www.tudominio.com
-```
+## 🎨 Colores del Sistema
 
-### 2. Instalar dependencias adicionales
+| Estado | Color | Uso |
+|--------|-------|-----|
+| Pagado/Excelente | 🟢 Verde | #198754 |
+| Pendiente/Regular | 🟠 Naranja | #fd7e14 |
+| Moroso/Vencido | 🔴 Rojo | #dc3545 |
+| Nuevo/Info | 🔵 Azul | #0d6efd |
 
-```bash
-pip install psycopg2-binary gunicorn whitenoise
-```
-
-### 3. Configurar archivos estáticos
-
-```bash
-python manage.py collectstatic
-```
-
-### 4. Ejecutar con Gunicorn
-
-```bash
-gunicorn prestamos_config.wsgi:application --bind 0.0.0.0:8000
-```
-
-## Credenciales por Defecto
-
-Si ejecutaste `cargar_datos.py`:
-
-| Usuario | Contraseña | Rol |
-|---------|------------|-----|
-| admin | admin123 | Administrador |
-
-> **Importante**: Cambia estas credenciales en producción.
-
-## Soporte
-
-Para reportar bugs o solicitar funcionalidades, crea un issue en el repositorio.
-
-## Licencia
+## 📄 Licencia
 
 Proyecto privado - Todos los derechos reservados.
 
 ---
 
-Desarrollado con Django y Bootstrap 5
+Desarrollado con ❤️ usando Django y Bootstrap 5

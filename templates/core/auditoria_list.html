@@ -1,0 +1,170 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Auditoría - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-clock-history me-2"></i>Historial de Auditoría
+        </h1>
+        <span class="badge bg-secondary">{{ registros.paginator.count }} registros</span>
+    </div>
+    
+    <!-- Filtros -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-12 col-md-2">
+                    <label class="form-label mb-1 small">Usuario:</label>
+                    <select name="usuario" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        {% for user in usuarios %}
+                        <option value="{{ user.pk }}" {% if request.GET.usuario == user.pk|stringformat:"i" %}selected{% endif %}>
+                            {{ user.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label mb-1 small">Acción:</label>
+                    <select name="tipo_accion" class="form-select form-select-sm">
+                        <option value="">Todas</option>
+                        {% for value, label in tipos_accion %}
+                        <option value="{{ value }}" {% if request.GET.tipo_accion == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label mb-1 small">Modelo:</label>
+                    <select name="tipo_modelo" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        {% for value, label in tipos_modelo %}
+                        <option value="{{ value }}" {% if request.GET.tipo_modelo == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label mb-1 small">Desde:</label>
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm" 
+                           value="{{ request.GET.fecha_desde }}">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label mb-1 small">Hasta:</label>
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm" 
+                           value="{{ request.GET.fecha_hasta }}">
+                </div>
+                <div class="col-12 col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-search me-1"></i>Filtrar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Lista de registros -->
+    <section>
+        {% if registros %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 150px;">Fecha/Hora</th>
+                        <th style="width: 100px;">Usuario</th>
+                        <th style="width: 100px;">Acción</th>
+                        <th style="width: 100px;">Modelo</th>
+                        <th>Descripción</th>
+                        <th style="width: 100px;">IP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for registro in registros %}
+                    <tr>
+                        <td>
+                            <small>{{ registro.fecha_hora|date:"d/m/Y" }}</small><br>
+                            <small class="text-muted">{{ registro.fecha_hora|time:"H:i:s" }}</small>
+                        </td>
+                        <td>
+                            {% if registro.usuario %}
+                            <span class="badge bg-secondary">{{ registro.usuario.username }}</span>
+                            {% else %}
+                            <span class="badge bg-light text-dark">Sistema</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if registro.tipo_accion == 'CR' %}
+                            <span class="badge bg-success">{{ registro.get_tipo_accion_display }}</span>
+                            {% elif registro.tipo_accion == 'ED' %}
+                            <span class="badge bg-warning text-dark">{{ registro.get_tipo_accion_display }}</span>
+                            {% elif registro.tipo_accion == 'EL' %}
+                            <span class="badge bg-danger">{{ registro.get_tipo_accion_display }}</span>
+                            {% elif registro.tipo_accion == 'CO' %}
+                            <span class="badge bg-primary">{{ registro.get_tipo_accion_display }}</span>
+                            {% else %}
+                            <span class="badge bg-info text-dark">{{ registro.get_tipo_accion_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-muted">{{ registro.get_tipo_modelo_display }}</span>
+                            {% if registro.modelo_id %}
+                            <small class="d-block text-muted">#{{ registro.modelo_id }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ registro.descripcion|truncatechars:100 }}</small>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ registro.ip_address|default:"-" }}</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Paginación -->
+        {% if is_paginated %}
+        <nav aria-label="Navegación de auditoría" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}&{{ request.GET.urlencode }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                
+                <li class="page-item disabled">
+                    <span class="page-link">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}&{{ request.GET.urlencode }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-clock-history"></i>
+                <h3>Sin registros</h3>
+                <p>No hay registros de auditoría con los filtros seleccionados.</p>
+            </div>
+        {% endif %}
+    </section>
+    
+</div>
+{% endblock %}

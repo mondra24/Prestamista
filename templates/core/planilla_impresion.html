@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load currency_filters %}
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -269,6 +270,18 @@
                 {% endfor %}
             </select>
         </div>
+        <div class="filter-group">
+            <label>
+                <input type="checkbox" id="filtro-vencidas" {% if incluir_vencidas %}checked{% endif %} onchange="aplicarFiltros()">
+                Incluir vencidas
+            </label>
+        </div>
+        <div class="filter-group">
+            <label>
+                <input type="checkbox" id="filtro-proximas" {% if mostrar_proximas %}checked{% endif %} onchange="aplicarFiltros()">
+                Próximos 7 días
+            </label>
+        </div>
         {% if configuraciones %}
         <div class="filter-group">
             <label>Plantilla:</label>
@@ -298,7 +311,7 @@
             </div>
             {% if config.mostrar_totales or config.mostrar_totales is None %}
             <div>
-                <strong>Total esperado:</strong> ${{ total_esperado|floatformat:0 }}
+                <strong>Total esperado:</strong> {{ total_esperado|dinero }}
             </div>
             {% endif %}
         </div>
@@ -351,9 +364,9 @@
                             {% elif columna.nombre_columna == 'cuota_actual' %}
                             <td class="text-center">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</td>
                             {% elif columna.nombre_columna == 'monto_cuota' %}
-                            <td class="text-right"><strong>${{ cuota.monto_cuota|floatformat:0 }}</strong></td>
+                            <td class="text-right"><strong>{{ cuota.monto_cuota|dinero }}</strong></td>
                             {% elif columna.nombre_columna == 'monto_pendiente' %}
-                            <td class="text-right">${{ cuota.prestamo.monto_pendiente|floatformat:0 }}</td>
+                            <td class="text-right">{{ cuota.prestamo.monto_pendiente|dinero }}</td>
                             {% elif columna.nombre_columna == 'fecha_vencimiento' %}
                             <td class="text-center">{{ cuota.fecha_vencimiento|date:"d/m" }}</td>
                             {% elif columna.nombre_columna == 'fecha_fin_prestamo' %}
@@ -369,9 +382,9 @@
                             {% elif columna.nombre_columna == 'dia_pago' %}
                             <td class="text-center">{{ cuota.prestamo.cliente.dia_pago_preferido|default:"-" }}</td>
                             {% elif columna.nombre_columna == 'monto_solicitado' %}
-                            <td class="text-right">${{ cuota.prestamo.monto_solicitado|floatformat:0 }}</td>
+                            <td class="text-right">{{ cuota.prestamo.monto_solicitado|dinero }}</td>
                             {% elif columna.nombre_columna == 'monto_total' %}
-                            <td class="text-right">${{ cuota.prestamo.monto_total_a_pagar|floatformat:0 }}</td>
+                            <td class="text-right">{{ cuota.prestamo.monto_total_a_pagar|dinero }}</td>
                             {% elif columna.nombre_columna == 'espacio_cobrado' %}
                             <td style="border: 2px dashed #999; background: #fff;"></td>
                             {% elif columna.nombre_columna == 'espacio_firma' %}
@@ -397,7 +410,7 @@
         <table>
             <tr class="total-row">
                 <td colspan="{{ columnas|length|add:'-1' }}" class="text-right">TOTAL ESPERADO DEL DÍA:</td>
-                <td class="text-right">${{ total_esperado|floatformat:0 }}</td>
+                <td class="text-right">{{ total_esperado|dinero }}</td>
             </tr>
         </table>
         {% endif %}
@@ -432,10 +445,14 @@
             const ruta = document.getElementById('filtro-ruta').value;
             const configEl = document.getElementById('filtro-config');
             const config = configEl ? configEl.value : '';
+            const vencidas = document.getElementById('filtro-vencidas').checked;
+            const proximas = document.getElementById('filtro-proximas').checked;
             
             let url = '{% url "core:planilla_impresion" %}?fecha=' + fecha;
             if (ruta) url += '&ruta=' + ruta;
             if (config) url += '&config=' + config;
+            url += '&incluir_vencidas=' + (vencidas ? '1' : '0');
+            url += '&proximas=' + (proximas ? '1' : '0');
             
             window.location.href = url;
         }
@@ -461,7 +478,7 @@
         
         function compartirWhatsApp() {
             const fecha = '{{ fecha|date:"d/m/Y" }}';
-            const total = '{{ total_esperado|floatformat:0 }}';
+            const total = '{{ total_esperado|formato_ars }}';
             const cantidad = '{{ cuotas_pendientes|length }}';
             
             // Crear resumen de texto
@@ -472,7 +489,7 @@
             mensaje += `📍 *Detalle por cliente:*\n`;
             
             {% for cuota in cuotas_pendientes %}
-            mensaje += `• {{ cuota.prestamo.cliente.nombre_completo }} - ${{ cuota.monto_cuota|floatformat:0 }} ({{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }})\n`;
+            mensaje += `• {{ cuota.prestamo.cliente.nombre_completo }} - {{ cuota.monto_cuota|dinero }} ({{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }})\n`;
             {% endfor %}
             
             // Generar PDF y compartir

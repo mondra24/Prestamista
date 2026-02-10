@@ -6,7 +6,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from .models import (
     Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro,
-    TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla
+    TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
+    RegistroAuditoria, Notificacion, ConfiguracionRespaldo
 )
 
 User = get_user_model()
@@ -205,4 +206,55 @@ class CuotaAdmin(admin.ModelAdmin):
     list_filter = ['estado', 'fecha_vencimiento']
     search_fields = ['prestamo__cliente__nombre', 'prestamo__cliente__apellido']
     raw_id_fields = ['prestamo']
+
+
+# ==================== AUDITORÍA Y NOTIFICACIONES ====================
+
+@admin.register(RegistroAuditoria)
+class RegistroAuditoriaAdmin(admin.ModelAdmin):
+    list_display = ['fecha_hora', 'usuario', 'tipo_accion', 'tipo_modelo', 'modelo_id', 'descripcion_corta']
+    list_filter = ['tipo_accion', 'tipo_modelo', 'fecha_hora']
+    search_fields = ['descripcion', 'usuario__username']
+    readonly_fields = ['usuario', 'tipo_accion', 'tipo_modelo', 'modelo_id', 'descripcion', 
+                       'datos_anteriores', 'datos_nuevos', 'ip_address', 'fecha_hora']
+    date_hierarchy = 'fecha_hora'
+    
+    def descripcion_corta(self, obj):
+        return obj.descripcion[:100] + '...' if len(obj.descripcion) > 100 else obj.descripcion
+    descripcion_corta.short_description = 'Descripción'
+    
+    def has_add_permission(self, request):
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+
+@admin.register(Notificacion)
+class NotificacionAdmin(admin.ModelAdmin):
+    list_display = ['titulo', 'tipo', 'prioridad', 'usuario', 'leida', 'fecha_creacion']
+    list_filter = ['tipo', 'prioridad', 'leida', 'fecha_creacion']
+    search_fields = ['titulo', 'mensaje', 'usuario__username']
+    readonly_fields = ['fecha_creacion', 'fecha_lectura']
+    list_editable = ['leida']
+    date_hierarchy = 'fecha_creacion'
+    
+    actions = ['marcar_leidas', 'marcar_no_leidas']
+    
+    def marcar_leidas(self, request, queryset):
+        queryset.update(leida=True)
+    marcar_leidas.short_description = 'Marcar como leídas'
+    
+    def marcar_no_leidas(self, request, queryset):
+        queryset.update(leida=False)
+    marcar_no_leidas.short_description = 'Marcar como no leídas'
+
+
+@admin.register(ConfiguracionRespaldo)
+class ConfiguracionRespaldoAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'activo', 'frecuencia_horas', 'mantener_ultimos', 'ultimo_respaldo']
+    list_editable = ['activo', 'frecuencia_horas', 'mantener_ultimos']
 

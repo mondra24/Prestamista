@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load currency_filters %}
+
+{% block title %}Notificaciones - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-bell me-2"></i>Notificaciones
+            {% if no_leidas_count > 0 %}
+            <span class="badge bg-danger">{{ no_leidas_count }}</span>
+            {% endif %}
+        </h1>
+        {% if notificaciones %}
+        <a href="{% url 'core:notificaciones_todas_leidas' %}" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-check-all me-1"></i>Marcar todas leídas
+        </a>
+        {% endif %}
+    </div>
+    
+    <!-- Filtros -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto">
+                    <label class="form-label mb-0 small">Tipo:</label>
+                    <select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Todas</option>
+                        {% for value, label in tipos_notificacion %}
+                        <option value="{{ value }}" {% if request.GET.tipo == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" name="no_leidas" id="no_leidas" 
+                               {% if request.GET.no_leidas %}checked{% endif %} onchange="this.form.submit()">
+                        <label class="form-check-label" for="no_leidas">Solo no leídas</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Lista de notificaciones -->
+    <section>
+        {% if notificaciones %}
+            {% for notificacion in notificaciones %}
+            <div class="card border-0 shadow-sm mb-2 {% if not notificacion.leida %}bg-light{% endif %}">
+                <div class="card-body py-3">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0 me-3">
+                            {% if notificacion.tipo == 'CV' %}
+                            <div class="rounded-circle bg-danger bg-opacity-10 p-2">
+                                <i class="bi bi-exclamation-circle text-danger"></i>
+                            </div>
+                            {% elif notificacion.tipo == 'CP' %}
+                            <div class="rounded-circle bg-warning bg-opacity-10 p-2">
+                                <i class="bi bi-clock text-warning"></i>
+                            </div>
+                            {% elif notificacion.tipo == 'CR' %}
+                            <div class="rounded-circle bg-success bg-opacity-10 p-2">
+                                <i class="bi bi-check-circle text-success"></i>
+                            </div>
+                            {% elif notificacion.tipo == 'PF' %}
+                            <div class="rounded-circle bg-primary bg-opacity-10 p-2">
+                                <i class="bi bi-flag text-primary"></i>
+                            </div>
+                            {% else %}
+                            <div class="rounded-circle bg-info bg-opacity-10 p-2">
+                                <i class="bi bi-bell text-info"></i>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <h6 class="mb-1 {% if not notificacion.leida %}fw-bold{% endif %}">
+                                    {{ notificacion.titulo }}
+                                </h6>
+                                <small class="text-muted">{{ notificacion.fecha_creacion|timesince }} atrás</small>
+                            </div>
+                            <p class="mb-1 text-muted small">{{ notificacion.mensaje }}</p>
+                            <div class="d-flex gap-2 mt-2">
+                                {% if notificacion.enlace %}
+                                <a href="{{ notificacion.enlace }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye me-1"></i>Ver
+                                </a>
+                                {% endif %}
+                                {% if not notificacion.leida %}
+                                <a href="{% url 'core:notificacion_leida' notificacion.pk %}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-check me-1"></i>Marcar leída
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <!-- Paginación -->
+            {% if is_paginated %}
+            <nav aria-label="Navegación de notificaciones" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.tipo %}&tipo={{ request.GET.tipo }}{% endif %}{% if request.GET.no_leidas %}&no_leidas=1{% endif %}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    <li class="page-item disabled">
+                        <span class="page-link">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.tipo %}&tipo={{ request.GET.tipo }}{% endif %}{% if request.GET.no_leidas %}&no_leidas=1{% endif %}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+            
+        {% else %}
+            <div class="empty-state">
+                <i class="bi bi-bell-slash"></i>
+                <h3>Sin notificaciones</h3>
+                <p>No tienes notificaciones pendientes.</p>
+            </div>
+        {% endif %}
+    </section>
+    
+</div>
+{% endblock %}

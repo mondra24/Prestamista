@@ -1,10 +1,23 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load currency_filters %}
 
 {% block title %}Cobros del Día - Préstamos{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-2 px-lg-4">
+    
+    <!-- Barra de acciones -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h5 mb-0 d-none d-lg-block">
+            <i class="bi bi-cash-stack me-2"></i>Cobros del Día
+        </h1>
+        <div class="ms-auto">
+            <a href="{% url 'core:exportar_planilla_excel' %}?fecha={{ fecha_hoy|date:'Y-m-d' }}" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
+            </a>
+        </div>
+    </div>
     
     <!-- Resumen rápido -->
     <div class="row g-2 mb-4">
@@ -14,7 +27,7 @@
                     <i class="bi bi-cash-stack"></i>
                 </div>
                 <div class="stat-value text-success" id="total-cobrado-hoy">
-                    ${{ total_cobrado_hoy|floatformat:0 }}
+                    {{ total_cobrado_hoy|dinero }}
                 </div>
                 <div class="stat-label">Cobrado</div>
             </div>
@@ -24,7 +37,7 @@
                 <div class="stat-icon bg-warning bg-opacity-10 text-warning">
                     <i class="bi bi-clock-history"></i>
                 </div>
-                <div class="stat-value">${{ total_por_cobrar|floatformat:0 }}</div>
+                <div class="stat-value">{{ total_por_cobrar|dinero }}</div>
                 <div class="stat-label">Por Cobrar</div>
             </div>
         </div>
@@ -60,7 +73,7 @@
                 </div>
             </div>
             <div class="cobro-monto text-end me-2">
-                <div class="monto-valor fw-bold">${{ cuota.monto_restante|floatformat:0 }}</div>
+                <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
             </div>
             <div class="btn-group">
                 <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
@@ -117,7 +130,7 @@
                     </div>
                 </div>
                 <div class="cobro-monto text-end me-2">
-                    <div class="monto-valor fw-bold">${{ cuota.monto_restante|floatformat:0 }}</div>
+                    <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
@@ -141,6 +154,45 @@
             </div>
         {% endif %}
     </section>
+    
+    <!-- Cuotas Próximas (7 días) -->
+    {% if cuotas_proximas %}
+    <section class="mb-4">
+        <h2 class="section-title text-info">
+            <i class="bi bi-calendar-week"></i>
+            Próximos 7 días
+            <span class="badge bg-info ms-2">{{ cuotas_proximas|length }}</span>
+            <small class="text-muted ms-2">{{ total_proximas|dinero }}</small>
+        </h2>
+        
+        {% for cuota in cuotas_proximas %}
+        <div class="cobro-card filtrable" data-cuota-id="{{ cuota.pk }}" style="border-left: 4px solid #0dcaf0; opacity: 0.85;">
+            <div class="cliente-avatar" style="background: linear-gradient(135deg, #0dcaf0, #087990);">
+                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+            </div>
+            <div class="cobro-info flex-grow-1">
+                <div class="d-flex align-items-center gap-2">
+                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                        {{ cuota.prestamo.cliente.nombre_completo }}
+                    </a>
+                    <span class="badge bg-info text-dark">
+                        {{ cuota.fecha_vencimiento|date:"d/m" }}
+                    </span>
+                </div>
+                <div class="cuota-info">
+                    Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
+                    {% if cuota.prestamo.cliente.tipo_comercio %}
+                    <span class="text-muted ms-1">· {{ cuota.prestamo.cliente.tipo_comercio }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="cobro-monto text-end">
+                <div class="monto-valor fw-bold text-info">{{ cuota.monto_restante|dinero }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
     
 </div>
 

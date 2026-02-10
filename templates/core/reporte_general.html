@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load currency_filters %}
 
 {% block title %}Reportes - Préstamos{% endblock %}
 
@@ -36,7 +37,7 @@
                 <div class="stat-icon bg-warning bg-opacity-10 text-warning">
                     <i class="bi bi-cash-coin"></i>
                 </div>
-                <div class="stat-value">${{ capital_en_calle|floatformat:0 }}</div>
+                <div class="stat-value">{{ capital_en_calle|dinero }}</div>
                 <div class="stat-label">Capital en Calle</div>
             </div>
         </div>

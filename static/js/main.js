@@ -6,9 +6,10 @@
 // Configuración global
 const CONFIG = {
     CSRF_TOKEN: null,
-    CURRENCY_FORMAT: new Intl.NumberFormat('es-CO', {
+    // Formato de pesos argentinos: punto como separador de miles
+    CURRENCY_FORMAT: new Intl.NumberFormat('es-AR', {
         style: 'currency',
-        currency: 'COP',
+        currency: 'ARS',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
     })
@@ -50,10 +51,32 @@ function getCookie(name) {
 }
 
 /**
- * Formatear moneda
+ * Formatear número con separador de miles argentino (punto) y decimales con coma
+ * Ejemplo: 1234567.89 -> 1.234.567,89
  */
-function formatCurrency(amount) {
-    return CONFIG.CURRENCY_FORMAT.format(amount);
+function formatNumber(num, decimals = 0) {
+    if (num === null || num === undefined) return '0';
+    const number = parseFloat(num);
+    
+    // Redondear según decimales
+    const rounded = decimals > 0 ? number.toFixed(decimals) : Math.round(number).toString();
+    
+    // Separar parte entera y decimal
+    const parts = rounded.split('.');
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const decPart = parts[1] || '';
+    
+    // Usar coma para decimales (formato argentino)
+    return decPart ? `${intPart},${decPart}` : intPart;
+}
+
+/**
+ * Formatear moneda en pesos argentinos
+ * Ejemplo: 1234567 -> $1.234.567
+ * Ejemplo con decimales: 1234567.50 -> $1.234.567,50
+ */
+function formatCurrency(amount, decimals = 0) {
+    return '$' + formatNumber(amount, decimals);
 }
 
 /**
@@ -109,8 +132,10 @@ async function handleCobro(event) {
             card.classList.add('pulse');
             setTimeout(() => card.classList.remove('pulse'), 300);
             
-            // Actualizar estadísticas si existen
-            updateStats();
+            // Actualizar estadísticas con datos del servidor
+            if (data.estadisticas) {
+                updateStatsFromServer(data.estadisticas);
+            }
             
             // Opcional: Ocultar tarjeta después de un momento
             setTimeout(() => {
@@ -247,7 +272,24 @@ function confirmarPagoParcial() {
 }
 
 /**
- * Actualizar estadísticas del dashboard
+ * Actualizar estadísticas desde respuesta del servidor
+ */
+function updateStatsFromServer(stats) {
+    const totalCobradoEl = document.getElementById('total-cobrado-hoy');
+    const cantidadCobrosEl = document.getElementById('cantidad-cobros-hoy');
+    
+    if (totalCobradoEl && stats.total_cobrado_hoy !== undefined) {
+        // Usar formatCurrency para mostrar sin decimales
+        totalCobradoEl.textContent = formatCurrency(stats.total_cobrado_hoy);
+    }
+    
+    if (cantidadCobrosEl && stats.cantidad_cobros_hoy !== undefined) {
+        cantidadCobrosEl.textContent = stats.cantidad_cobros_hoy;
+    }
+}
+
+/**
+ * Actualizar estadísticas del dashboard (fallback)
  */
 function updateStats() {
     const totalCobradoEl = document.getElementById('total-cobrado-hoy');
@@ -258,8 +300,7 @@ function updateStats() {
         const currentCount = parseInt(cantidadCobrosEl.textContent) || 0;
         cantidadCobrosEl.textContent = currentCount + 1;
         
-        // Nota: Para actualizar el total correctamente,
-        // necesitaríamos hacer otra petición AJAX
+        // Nota: El total se actualiza desde el servidor
     }
 }
 

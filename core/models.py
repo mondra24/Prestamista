@@ -926,3 +926,312 @@ class Cuota(models.Model):
         
         return self
 
+
+# ==================== SISTEMA DE AUDITORÍA ====================
+
+class RegistroAuditoria(models.Model):
+    """
+    Modelo para registrar todas las acciones importantes del sistema.
+    Permite rastrear quién hizo qué y cuándo.
+    """
+    
+    class TipoAccion(models.TextChoices):
+        CREAR = 'CR', 'Crear'
+        EDITAR = 'ED', 'Editar'
+        ELIMINAR = 'EL', 'Eliminar'
+        COBRO = 'CO', 'Cobro'
+        RENOVACION = 'RE', 'Renovación'
+        LOGIN = 'LO', 'Inicio de Sesión'
+        LOGOUT = 'LU', 'Cierre de Sesión'
+        CAMBIO_ESTADO = 'CE', 'Cambio de Estado'
+        RESPALDO = 'RS', 'Respaldo'
+        OTRO = 'OT', 'Otro'
+    
+    class TipoModelo(models.TextChoices):
+        CLIENTE = 'CL', 'Cliente'
+        PRESTAMO = 'PR', 'Préstamo'
+        CUOTA = 'CU', 'Cuota'
+        USUARIO = 'US', 'Usuario'
+        CONFIGURACION = 'CF', 'Configuración'
+        SISTEMA = 'SI', 'Sistema'
+    
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registros_auditoria',
+        verbose_name='Usuario'
+    )
+    tipo_accion = models.CharField(
+        max_length=2,
+        choices=TipoAccion.choices,
+        verbose_name='Tipo de Acción'
+    )
+    tipo_modelo = models.CharField(
+        max_length=2,
+        choices=TipoModelo.choices,
+        verbose_name='Tipo de Modelo'
+    )
+    modelo_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='ID del Registro'
+    )
+    descripcion = models.TextField(
+        verbose_name='Descripción'
+    )
+    datos_anteriores = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Datos Anteriores',
+        help_text='JSON con los datos antes del cambio'
+    )
+    datos_nuevos = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name='Datos Nuevos',
+        help_text='JSON con los datos después del cambio'
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name='Dirección IP'
+    )
+    fecha_hora = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha y Hora'
+    )
+    
+    class Meta:
+        verbose_name = 'Registro de Auditoría'
+        verbose_name_plural = 'Registros de Auditoría'
+        ordering = ['-fecha_hora']
+        indexes = [
+            models.Index(fields=['-fecha_hora']),
+            models.Index(fields=['tipo_accion']),
+            models.Index(fields=['usuario']),
+            models.Index(fields=['tipo_modelo', 'modelo_id']),
+        ]
+    
+    def __str__(self):
+        usuario_str = self.usuario.username if self.usuario else 'Sistema'
+        return f"[{self.fecha_hora.strftime('%d/%m/%Y %H:%M')}] {usuario_str}: {self.get_tipo_accion_display()}"
+    
+    @classmethod
+    def registrar(cls, usuario, tipo_accion, tipo_modelo, descripcion, 
+                  modelo_id=None, datos_anteriores=None, datos_nuevos=None, ip_address=None):
+        """Método de conveniencia para crear registros de auditoría"""
+        return cls.objects.create(
+            usuario=usuario,
+            tipo_accion=tipo_accion,
+            tipo_modelo=tipo_modelo,
+            modelo_id=modelo_id,
+            descripcion=descripcion,
+            datos_anteriores=datos_anteriores,
+            datos_nuevos=datos_nuevos,
+            ip_address=ip_address
+        )
+
+
+# ==================== SISTEMA DE NOTIFICACIONES ====================
+
+class Notificacion(models.Model):
+    """
+    Modelo para gestionar notificaciones y alertas del sistema.
+    """
+    
+    class TipoNotificacion(models.TextChoices):
+        CUOTA_VENCIDA = 'CV', 'Cuota Vencida'
+        CUOTA_POR_VENCER = 'CP', 'Cuota por Vencer'
+        PRESTAMO_FINALIZADO = 'PF', 'Préstamo Finalizado'
+        CLIENTE_MOROSO = 'CM', 'Cliente Moroso'
+        COBRO_REALIZADO = 'CR', 'Cobro Realizado'
+        RENOVACION = 'RN', 'Renovación'
+        ALERTA_SISTEMA = 'AS', 'Alerta del Sistema'
+        INFO = 'IN', 'Información'
+    
+    class Prioridad(models.TextChoices):
+        ALTA = 'AL', 'Alta'
+        MEDIA = 'ME', 'Media'
+        BAJA = 'BA', 'Baja'
+    
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notificaciones',
+        verbose_name='Usuario',
+        help_text='Usuario destinatario. Si es null, es para todos.'
+    )
+    tipo = models.CharField(
+        max_length=2,
+        choices=TipoNotificacion.choices,
+        verbose_name='Tipo'
+    )
+    prioridad = models.CharField(
+        max_length=2,
+        choices=Prioridad.choices,
+        default=Prioridad.MEDIA,
+        verbose_name='Prioridad'
+    )
+    titulo = models.CharField(
+        max_length=200,
+        verbose_name='Título'
+    )
+    mensaje = models.TextField(
+        verbose_name='Mensaje'
+    )
+    enlace = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name='Enlace',
+        help_text='URL para redireccionar al hacer clic'
+    )
+    leida = models.BooleanField(
+        default=False,
+        verbose_name='Leída'
+    )
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de Creación'
+    )
+    fecha_lectura = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de Lectura'
+    )
+    
+    class Meta:
+        verbose_name = 'Notificación'
+        verbose_name_plural = 'Notificaciones'
+        ordering = ['-fecha_creacion']
+    
+    def __str__(self):
+        return f"{self.titulo} - {self.get_tipo_display()}"
+    
+    def marcar_como_leida(self):
+        """Marca la notificación como leída"""
+        if not self.leida:
+            self.leida = True
+            self.fecha_lectura = timezone.now()
+            self.save()
+    
+    @classmethod
+    def crear_notificacion(cls, tipo, titulo, mensaje, usuario=None, prioridad='ME', enlace=None):
+        """Método de conveniencia para crear notificaciones"""
+        return cls.objects.create(
+            usuario=usuario,
+            tipo=tipo,
+            prioridad=prioridad,
+            titulo=titulo,
+            mensaje=mensaje,
+            enlace=enlace
+        )
+    
+    @classmethod
+    def notificar_cuotas_vencidas(cls):
+        """Crea notificaciones para cuotas vencidas"""
+        hoy = timezone.now().date()
+        cuotas_vencidas = Cuota.objects.filter(
+            fecha_vencimiento__lt=hoy,
+            estado__in=['PE', 'PC'],
+            prestamo__estado='AC'
+        ).select_related('prestamo', 'prestamo__cliente')
+        
+        for cuota in cuotas_vencidas:
+            # Verificar si ya existe notificación para esta cuota
+            existe = cls.objects.filter(
+                tipo='CV',
+                titulo__contains=f'#{cuota.pk}',
+                fecha_creacion__date=hoy,
+                leida=False
+            ).exists()
+            
+            if not existe:
+                dias = (hoy - cuota.fecha_vencimiento).days
+                cls.crear_notificacion(
+                    tipo='CV',
+                    titulo=f'Cuota #{cuota.pk} vencida - {cuota.prestamo.cliente.nombre_completo}',
+                    mensaje=f'La cuota {cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas} de {cuota.prestamo.cliente.nombre_completo} tiene {dias} días vencida. Monto pendiente: ${cuota.monto_restante}',
+                    prioridad='AL' if dias > 7 else 'ME',
+                    enlace=f'/prestamos/{cuota.prestamo.pk}/'
+                )
+    
+    @classmethod
+    def notificar_cuotas_por_vencer(cls, dias_anticipacion=1):
+        """Crea notificaciones para cuotas que vencen pronto"""
+        hoy = timezone.now().date()
+        fecha_limite = hoy + timedelta(days=dias_anticipacion)
+        
+        cuotas = Cuota.objects.filter(
+            fecha_vencimiento=fecha_limite,
+            estado='PE',
+            prestamo__estado='AC'
+        ).select_related('prestamo', 'prestamo__cliente')
+        
+        for cuota in cuotas:
+            existe = cls.objects.filter(
+                tipo='CP',
+                titulo__contains=f'#{cuota.pk}',
+                fecha_creacion__date=hoy
+            ).exists()
+            
+            if not existe:
+                cls.crear_notificacion(
+                    tipo='CP',
+                    titulo=f'Cuota por vencer - {cuota.prestamo.cliente.nombre_completo}',
+                    mensaje=f'La cuota {cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas} vence mañana. Monto: ${cuota.monto_cuota}',
+                    prioridad='BA',
+                    enlace=f'/cobros/'
+                )
+
+
+# ==================== CONFIGURACIÓN DE RESPALDOS ====================
+
+class ConfiguracionRespaldo(models.Model):
+    """Configuración para respaldos automáticos"""
+    
+    nombre = models.CharField(
+        max_length=100,
+        default='Respaldo Automático',
+        verbose_name='Nombre'
+    )
+    activo = models.BooleanField(
+        default=True,
+        verbose_name='Activo'
+    )
+    frecuencia_horas = models.PositiveIntegerField(
+        default=24,
+        verbose_name='Frecuencia (horas)',
+        help_text='Cada cuántas horas hacer respaldo'
+    )
+    ruta_destino = models.CharField(
+        max_length=500,
+        default='backups/',
+        verbose_name='Ruta de Destino',
+        help_text='Carpeta donde se guardarán los respaldos'
+    )
+    mantener_ultimos = models.PositiveIntegerField(
+        default=7,
+        verbose_name='Mantener Últimos',
+        help_text='Cantidad de respaldos a mantener (los más antiguos se eliminan)'
+    )
+    ultimo_respaldo = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Último Respaldo'
+    )
+    incluir_media = models.BooleanField(
+        default=False,
+        verbose_name='Incluir Archivos Media'
+    )
+    
+    class Meta:
+        verbose_name = 'Configuración de Respaldo'
+        verbose_name_plural = 'Configuraciones de Respaldo'
+    
+    def __str__(self):
+        return self.nombre
