@@ -5,25 +5,26 @@ Sistema de Gestión de Préstamos - PWA Ready
 
 import os
 from pathlib import Path
-import environ
 import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Inicializar django-environ
-env = environ.Env(
-    DEBUG=(bool, False)
-)
-
-# Leer archivo .env
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+# Cargar .env solo si existe (desarrollo local)
+try:
+    import environ
+    env = environ.Env(DEBUG=(bool, False))
+    env_file = os.path.join(BASE_DIR, '.env')
+    if os.path.exists(env_file):
+        environ.Env.read_env(env_file)
+except ImportError:
+    pass
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-cambiar-en-produccion')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-cambiar-en-produccion')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env('DEBUG')
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = ['*']  # Railway asigna dominio dinámicamente
 
@@ -80,12 +81,20 @@ WSGI_APPLICATION = 'prestamos_config.wsgi.application'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 # SQLite para desarrollo local, PostgreSQL para Railway
 
-DATABASES = {
-    'default': dj_database_url.config(
-        default='sqlite:///' + str(BASE_DIR / 'db.sqlite3'),
-        conn_max_age=600
-    )
-}
+# Railway puede usar DATABASE_URL o DATABASE_PUBLIC_URL
+DATABASE_URL = os.environ.get('DATABASE_URL') or os.environ.get('DATABASE_PUBLIC_URL')
+
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
