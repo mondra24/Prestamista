@@ -1,5 +1,5 @@
 # Sistema de Gestión de Préstamos - PrestaFácil
-# Requisitos de Python
+# Requisitos de Python - Railway Deploy
 
 # Django Core
 Django>=4.2,<5.0
