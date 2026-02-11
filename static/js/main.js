@@ -220,7 +220,6 @@ function showPagoParcialModal(cuotaId, montoRestante, nombreCliente = '') {
     document.getElementById('pago-monto-max').value = montoNumerico;
     document.getElementById('pago-monto-max-label').textContent = formatCurrency(montoNumerico);
     document.getElementById('pago-monto').value = '';
-    document.getElementById('pago-monto').max = montoNumerico;
     document.getElementById('pago-monto').placeholder = formatNumber(montoNumerico);
     
     // Resetear opciones
@@ -247,6 +246,50 @@ function showPagoParcialModal(cuotaId, montoRestante, nombreCliente = '') {
 }
 
 /**
+ * Parsear monto desde string formateado con puntos
+ * Ejemplo: "1.234.567" -> 1234567
+ */
+function parsearMonto(montoString) {
+    if (!montoString) return 0;
+    // Quitar puntos de miles y convertir coma decimal a punto (si existe)
+    const limpio = montoString.toString().replace(/\./g, '').replace(',', '.');
+    return parseFloat(limpio) || 0;
+}
+
+/**
+ * Formatear input de monto mientras el usuario escribe
+ * Agrega puntos como separador de miles
+ */
+function formatearInputMonto(input) {
+    // Obtener posición del cursor
+    const cursorPos = input.selectionStart;
+    const oldValue = input.value;
+    const oldLength = oldValue.length;
+    
+    // Quitar todo excepto números
+    let valor = input.value.replace(/[^\d]/g, '');
+    
+    // Si está vacío, dejarlo así
+    if (!valor) {
+        input.value = '';
+        return;
+    }
+    
+    // Formatear con puntos de miles
+    input.value = formatNumber(parseInt(valor));
+    
+    // Ajustar posición del cursor
+    const newLength = input.value.length;
+    const diff = newLength - oldLength;
+    const newPos = Math.max(0, cursorPos + diff);
+    
+    // Restaurar posición del cursor
+    setTimeout(() => {
+        input.setSelectionRange(newPos, newPos);
+    }, 0);
+}
+
+/**
  * Actualizar etiqueta con monto formateado mientras el usuario escribe
  */
 function actualizarMontoFormateado() {
@@ -255,7 +298,7 @@ function actualizarMontoFormateado() {
     
     if (!input || !label) return;
     
-    const valor = parseFloat(input.value);
+    const valor = parsearMonto(input.value);
     
     if (valor && valor > 0) {
         label.innerHTML = `<strong class="text-success">Cobrando: ${formatCurrency(valor)}</strong>`;
@@ -291,7 +334,8 @@ function toggleFechaEspecial() {
 function confirmarPagoParcial() {
     const cuotaId = document.getElementById('pago-cuota-id').value;
     const montoMax = parseFloat(document.getElementById('pago-monto-max').value);
-    const monto = parseFloat(document.getElementById('pago-monto').value);
+    const montoInput = document.getElementById('pago-monto').value;
+    const monto = parsearMonto(montoInput);
     const accionRestante = document.getElementById('pago-accion-restante')?.value || 'ignorar';
     const fechaEspecial = document.getElementById('pago-fecha-especial')?.value || null;
     

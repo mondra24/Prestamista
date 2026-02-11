@@ -11,13 +11,16 @@
         <a href="{% url 'core:cliente_list' %}" class="btn btn-outline-secondary me-3">
             <i class="bi bi-arrow-left"></i>
         </a>
-        <h1 class="h4 mb-0">
+        <h1 class="h4 mb-0 flex-grow-1">
             {% if object %}
                 <i class="bi bi-person-gear me-2"></i>Editar Cliente
             {% else %}
                 <i class="bi bi-person-plus me-2"></i>Nuevo Cliente
             {% endif %}
         </h1>
+        <button type="button" class="btn btn-outline-primary" id="btn-importar-contacto" title="Importar desde contactos">
+            <i class="bi bi-person-vcard me-1"></i><span class="d-none d-sm-inline">Contactos</span>
+        </button>
     </div>
     
     <!-- Formulario -->
@@ -31,4 +34,230 @@
     </div>
     
 </div>
+
+<!-- Modal para importar contacto -->
+<div class="modal fade" id="modal-importar-contacto" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-person-vcard me-2"></i>Importar Contacto
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Elige cómo importar el contacto:</p>
+                
+                <!-- Opción 1: Contact Picker (Android Chrome) -->
+                <div class="d-grid gap-2 mb-3" id="opcion-contact-picker" style="display: none;">
+                    <button type="button" class="btn btn-lg btn-outline-primary" id="btn-abrir-contactos">
+                        <i class="bi bi-phone me-2"></i>Abrir Contactos del Teléfono
+                    </button>
+                    <small class="text-muted text-center">Selecciona directamente desde tu lista de contactos</small>
+                </div>
+                
+                <!-- Opción 2: Archivo vCard (iPhone/Todos) -->
+                <div class="d-grid gap-2">
+                    <label class="btn btn-lg btn-outline-success" for="input-vcard">
+                        <i class="bi bi-file-earmark-person me-2"></i>Importar archivo vCard (.vcf)
+                    </label>
+                    <input type="file" id="input-vcard" accept=".vcf,text/vcard" class="d-none">
+                    <small class="text-muted text-center">
+                        <strong>iPhone:</strong> Ve a Contactos → Selecciona contacto → Compartir → Guardar en Archivos → Selecciónalo aquí
+                    </small>
+                </div>
+                
+                <hr class="my-3">
+                
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <small>
+                        <strong>Tip para iPhone:</strong><br>
+                        1. Abre la app <strong>Contactos</strong><br>
+                        2. Selecciona el contacto<br>
+                        3. Toca <strong>Compartir contacto</strong><br>
+                        4. Elige <strong>Guardar en Archivos</strong><br>
+                        5. Vuelve aquí y toca "Importar archivo vCard"
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnImportar = document.getElementById('btn-importar-contacto');
+    const modal = new bootstrap.Modal(document.getElementById('modal-importar-contacto'));
+    const opcionContactPicker = document.getElementById('opcion-contact-picker');
+    const btnAbrirContactos = document.getElementById('btn-abrir-contactos');
+    const inputVcard = document.getElementById('input-vcard');
+    
+    // Detectar si Contact Picker API está disponible (Chrome Android)
+    const soportaContactPicker = 'contacts' in navigator && 'ContactsManager' in window;
+    
+    if (soportaContactPicker && opcionContactPicker) {
+        opcionContactPicker.style.display = 'block';
+    }
+    
+    // Abrir modal al hacer clic en el botón
+    if (btnImportar) {
+        btnImportar.addEventListener('click', function() {
+            modal.show();
+        });
+    }
+    
+    // Contact Picker API (Android Chrome)
+    if (btnAbrirContactos) {
+        btnAbrirContactos.addEventListener('click', async function() {
+            if (soportaContactPicker) {
+                try {
+                    const props = ['name', 'tel', 'address'];
+                    const opts = { multiple: false };
+                    
+                    const contacts = await navigator.contacts.select(props, opts);
+                    
+                    if (contacts.length > 0) {
+                        llenarFormularioDesdeContacto(contacts[0]);
+                        modal.hide();
+                        showToast('Contacto importado correctamente', 'success');
+                    }
+                } catch (error) {
+                    console.error('Error al acceder a contactos:', error);
+                    showToast('No se pudo acceder a los contactos', 'error');
+                }
+            }
+        });
+    }
+    
+    // Importar archivo vCard
+    if (inputVcard) {
+        inputVcard.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const vcardData = event.target.result;
+                    const contacto = parsearVCard(vcardData);
+                    
+                    if (contacto.nombre || contacto.telefono) {
+                        llenarFormularioDesdeVCard(contacto);
+                        modal.hide();
+                        showToast('Contacto importado correctamente', 'success');
+                    } else {
+                        showToast('No se pudo leer el archivo vCard', 'error');
+                    }
+                };
+                reader.readAsText(file);
+            }
+            // Limpiar input para permitir seleccionar el mismo archivo de nuevo
+            inputVcard.value = '';
+        });
+    }
+    
+    // Función para parsear archivo vCard
+    function parsearVCard(vcardText) {
+        const contacto = {
+            nombre: '',
+            apellido: '',
+            telefono: '',
+            direccion: ''
+        };
+        
+        const lineas = vcardText.split(/\r?\n/);
+        
+        for (let linea of lineas) {
+            // Nombre completo (FN)
+            if (linea.startsWith('FN:') || linea.startsWith('FN;')) {
+                const valor = linea.split(':').slice(1).join(':');
+                const partes = valor.trim().split(' ');
+                if (partes.length >= 2) {
+                    contacto.nombre = partes[0];
+                    contacto.apellido = partes.slice(1).join(' ');
+                } else {
+                    contacto.nombre = valor.trim();
+                }
+            }
+            
+            // Nombre estructurado (N)
+            if (linea.startsWith('N:') || linea.startsWith('N;')) {
+                const valor = linea.split(':').slice(1).join(':');
+                const partes = valor.split(';');
+                if (partes.length >= 2) {
+                    contacto.apellido = partes[0] || contacto.apellido;
+                    contacto.nombre = partes[1] || contacto.nombre;
+                }
+            }
+            
+            // Teléfono (TEL)
+            if (linea.startsWith('TEL') && !contacto.telefono) {
+                const valor = linea.split(':').slice(1).join(':');
+                contacto.telefono = valor.trim();
+            }
+            
+            // Dirección (ADR)
+            if (linea.startsWith('ADR')) {
+                const valor = linea.split(':').slice(1).join(':');
+                const partes = valor.split(';').filter(p => p.trim());
+                contacto.direccion = partes.join(', ');
+            }
+        }
+        
+        return contacto;
+    }
+    
+    // Función para llenar formulario desde Contact Picker API
+    function llenarFormularioDesdeContacto(contacto) {
+        // Llenar nombre
+        if (contacto.name && contacto.name.length > 0) {
+            const nombreCompleto = contacto.name[0];
+            const partes = nombreCompleto.split(' ');
+            
+            const campoNombre = document.querySelector('[name="nombre"]');
+            const campoApellido = document.querySelector('[name="apellido"]');
+            
+            if (partes.length >= 2) {
+                if (campoNombre) campoNombre.value = partes[0];
+                if (campoApellido) campoApellido.value = partes.slice(1).join(' ');
+            } else {
+                if (campoNombre) campoNombre.value = nombreCompleto;
+            }
+        }
+        
+        // Llenar teléfono
+        if (contacto.tel && contacto.tel.length > 0) {
+            const campoTelefono = document.querySelector('[name="telefono"]');
+            if (campoTelefono) campoTelefono.value = contacto.tel[0];
+        }
+        
+        // Llenar dirección
+        if (contacto.address && contacto.address.length > 0) {
+            const direccion = contacto.address[0];
+            const campoDireccion = document.querySelector('[name="direccion"]');
+            if (campoDireccion) {
+                let dirCompleta = '';
+                if (direccion.streetAddress) dirCompleta += direccion.streetAddress;
+                if (direccion.city) dirCompleta += ', ' + direccion.city;
+                if (direccion.region) dirCompleta += ', ' + direccion.region;
+                campoDireccion.value = dirCompleta || (typeof direccion === 'string' ? direccion : '');
+            }
+        }
+    }
+    
+    // Función para llenar formulario desde vCard
+    function llenarFormularioDesdeVCard(contacto) {
+        const campoNombre = document.querySelector('[name="nombre"]');
+        const campoApellido = document.querySelector('[name="apellido"]');
+        const campoTelefono = document.querySelector('[name="telefono"]');
+        const campoDireccion = document.querySelector('[name="direccion"]');
+        
+        if (campoNombre && contacto.nombre) campoNombre.value = contacto.nombre;
+        if (campoApellido && contacto.apellido) campoApellido.value = contacto.apellido;
+        if (campoTelefono && contacto.telefono) campoTelefono.value = contacto.telefono;
+        if (campoDireccion && contacto.direccion) campoDireccion.value = contacto.direccion;
+    }
+});
+</script>
 {% endblock %}

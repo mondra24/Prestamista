@@ -884,9 +884,9 @@ class Cuota(models.Model):
         
         # Manejar el monto restante según la acción elegida
         if restante > 0 and accion_restante == 'proxima':
-            # Sumar a la próxima cuota pendiente
+            # Sumar a la próxima cuota pendiente o parcial
             proxima = self.prestamo.cuotas.filter(
-                estado='PE',
+                estado__in=['PE', 'PC'],
                 numero_cuota__gt=self.numero_cuota
             ).order_by('numero_cuota').first()
             
