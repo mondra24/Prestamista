@@ -10,6 +10,17 @@ from .models import Cliente, Prestamo, RutaCobro, TipoNegocio
 class ClienteForm(forms.ModelForm):
     """Formulario para crear/editar clientes"""
     
+    # Redefinir como CharField para aceptar formato con puntos de miles
+    limite_credito = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-lg input-monto-formateado',
+            'placeholder': 'Límite individual (0 = usar límite de categoría)',
+            'inputmode': 'numeric',
+            'autocomplete': 'off'
+        })
+    )
+    
     class Meta:
         model = Cliente
         fields = ['nombre', 'apellido', 'telefono', 'direccion', 'tipo_negocio', 'tipo_comercio', 
@@ -43,12 +54,6 @@ class ClienteForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Descripción adicional del negocio'
             }),
-            'limite_credito': forms.TextInput(attrs={
-                'class': 'form-control form-control-lg input-monto-formateado',
-                'placeholder': 'Límite individual (0 = usar límite de categoría)',
-                'inputmode': 'numeric',
-                'autocomplete': 'off'
-            }),
             'ruta': forms.Select(attrs={
                 'class': 'form-select'
             }),
@@ -75,6 +80,14 @@ class ClienteForm(forms.ModelForm):
         self.fields['ruta'].required = False
         self.fields['tipo_negocio'].queryset = TipoNegocio.objects.filter(activo=True)
         self.fields['tipo_negocio'].required = False
+        
+        # Formatear el valor inicial de limite_credito con puntos de miles
+        if self.instance and self.instance.pk and self.instance.limite_credito:
+            from decimal import Decimal
+            valor = int(self.instance.limite_credito)
+            # Formatear con puntos de miles
+            self.initial['limite_credito'] = '{:,}'.format(valor).replace(',', '.')
+        
         self.helper = FormHelper()
         self.helper.form_method = 'post'
         self.helper.layout = Layout(
@@ -121,6 +134,16 @@ class ClienteForm(forms.ModelForm):
 class PrestamoForm(forms.ModelForm):
     """Formulario para crear préstamos"""
     
+    # Redefinir como CharField para aceptar formato con puntos de miles
+    monto_solicitado = forms.CharField(
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-lg input-monto-formateado',
+            'placeholder': 'Monto solicitado',
+            'inputmode': 'numeric',
+            'autocomplete': 'off'
+        })
+    )
+    
     class Meta:
         model = Prestamo
         fields = ['cliente', 'monto_solicitado', 'tasa_interes_porcentaje', 
@@ -128,12 +151,6 @@ class PrestamoForm(forms.ModelForm):
         widgets = {
             'cliente': forms.Select(attrs={
                 'class': 'form-select form-select-lg'
-            }),
-            'monto_solicitado': forms.TextInput(attrs={
-                'class': 'form-control form-control-lg input-monto-formateado',
-                'placeholder': 'Monto solicitado',
-                'inputmode': 'numeric',
-                'autocomplete': 'off'
             }),
             'tasa_interes_porcentaje': forms.NumberInput(attrs={
                 'class': 'form-control form-control-lg',
@@ -242,10 +259,8 @@ class PrestamoForm(forms.ModelForm):
 class RenovacionPrestamoForm(forms.Form):
     """Formulario para renovar préstamos"""
     
-    nuevo_monto = forms.DecimalField(
-        max_digits=12, 
-        decimal_places=2,
-        min_value=0,
+    # Usar CharField para aceptar formato con puntos de miles
+    nuevo_monto = forms.CharField(
         required=False,
         label='Nuevo Capital Adicional',
         widget=forms.TextInput(attrs={

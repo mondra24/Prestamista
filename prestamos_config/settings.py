@@ -161,10 +161,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
-# Formato de moneda y números
+# Formato de moneda y números (estilo argentino)
+# Punto para separador de miles, coma para decimales
 USE_THOUSAND_SEPARATOR = True
-THOUSAND_SEPARATOR = ','
-DECIMAL_SEPARATOR = '.'
+THOUSAND_SEPARATOR = '.'
+DECIMAL_SEPARATOR = ','
 
 # Autenticación
 LOGIN_URL = 'login'
