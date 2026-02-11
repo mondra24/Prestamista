@@ -117,12 +117,11 @@ class PrestamoForm(forms.ModelForm):
             'cliente': forms.Select(attrs={
                 'class': 'form-select form-select-lg'
             }),
-            'monto_solicitado': forms.NumberInput(attrs={
-                'class': 'form-control form-control-lg',
+            'monto_solicitado': forms.TextInput(attrs={
+                'class': 'form-control form-control-lg input-monto-formateado',
                 'placeholder': 'Monto solicitado',
-                'inputmode': 'decimal',
-                'min': '1',
-                'step': '0.01'
+                'inputmode': 'numeric',
+                'autocomplete': 'off'
             }),
             'tasa_interes_porcentaje': forms.NumberInput(attrs={
                 'class': 'form-control form-control-lg',
@@ -191,6 +190,41 @@ class PrestamoForm(forms.ModelForm):
                 css_class='d-grid'
             )
         )
+    
+    def clean_monto_solicitado(self):
+        """Limpiar y convertir monto con formato de puntos de miles"""
+        monto = self.data.get('monto_solicitado', '')
+        if isinstance(monto, str):
+            # Quitar puntos de miles y convertir coma decimal a punto
+            monto = monto.replace('.', '').replace(',', '.')
+        try:
+            from decimal import Decimal
+            return Decimal(monto)
+        except:
+            raise forms.ValidationError('Ingrese un monto válido')
+    
+    def clean(self):
+        """Validar límite de crédito del cliente"""
+        cleaned_data = super().clean()
+        cliente = cleaned_data.get('cliente')
+        monto = cleaned_data.get('monto_solicitado')
+        
+        if cliente and monto:
+            maximo = cliente.maximo_prestable
+            if maximo is not None and monto > maximo:
+                from decimal import Decimal
+                if maximo <= Decimal('0'):
+                    raise forms.ValidationError(
+                        f'El cliente {cliente.nombre_completo} no tiene crédito disponible. '
+                        f'Deuda actual: ${cliente.credito_usado:,.0f}'.replace(',', '.')
+                    )
+                else:
+                    raise forms.ValidationError(
+                        f'El monto solicitado (${monto:,.0f}) excede el límite de crédito disponible '
+                        f'para {cliente.nombre_completo}. Máximo prestable: ${maximo:,.0f}'.replace(',', '.')
+                    )
+        
+        return cleaned_data
 
 
 class RenovacionPrestamoForm(forms.Form):
@@ -200,13 +234,13 @@ class RenovacionPrestamoForm(forms.Form):
         max_digits=12, 
         decimal_places=2,
         min_value=0,
+        required=False,
         label='Nuevo Capital Adicional',
-        widget=forms.NumberInput(attrs={
-            'class': 'form-control form-control-lg',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control form-control-lg input-monto-formateado',
             'placeholder': 'Capital adicional (0 si solo renueva deuda)',
-            'inputmode': 'decimal',
-            'min': '0',
-            'step': '0.01'
+            'inputmode': 'numeric',
+            'autocomplete': 'off'
         })
     )
     
@@ -246,6 +280,8 @@ class RenovacionPrestamoForm(forms.Form):
     )
     
     def __init__(self, *args, **kwargs):
+        self.cliente = kwargs.pop('cliente', None)
+        self.saldo_pendiente = kwargs.pop('saldo_pendiente', 0)
         super().__init__(*args, **kwargs)
         self.helper = FormHelper()
         self.helper.form_method = 'post'
@@ -261,6 +297,49 @@ class RenovacionPrestamoForm(forms.Form):
                 css_class='d-grid'
             )
         )
+    
+    def clean_nuevo_monto(self):
+        """Limpiar y convertir monto con formato de puntos de miles"""
+        monto = self.data.get('nuevo_monto', '0')
+        if isinstance(monto, str):
+            monto = monto.replace('.', '').replace(',', '.')
+            if not monto:
+                monto = '0'
+        try:
+            from decimal import Decimal
+            return Decimal(monto)
+        except:
+            raise forms.ValidationError('Ingrese un monto válido')
+    
+    def clean(self):
+        """Validar límite de crédito del cliente para renovación"""
+        cleaned_data = super().clean()
+        nuevo_monto = cleaned_data.get('nuevo_monto', 0) or 0
+        
+        if self.cliente and nuevo_monto > 0:
+            from decimal import Decimal
+            # El total nuevo sería el nuevo monto más el saldo pendiente
+            total_renovacion = nuevo_monto + Decimal(str(self.saldo_pendiente))
+            maximo = self.cliente.maximo_prestable
+            
+            # El máximo prestable ya considera la deuda actual, así que para renovación
+            # sumamos el saldo pendiente (que se cancelará) al máximo
+            maximo_para_renovacion = None
+            if maximo is not None:
+                maximo_para_renovacion = maximo + Decimal(str(self.saldo_pendiente))
+            
+            if maximo_para_renovacion is not None and nuevo_monto > maximo_para_renovacion:
+                if maximo_para_renovacion <= Decimal('0'):
+                    raise forms.ValidationError(
+                        f'El cliente no tiene crédito disponible para capital adicional.'
+                    )
+                else:
+                    raise forms.ValidationError(
+                        f'El capital adicional (${nuevo_monto:,.0f}) excede el límite disponible. '
+                        f'Máximo capital adicional: ${maximo_para_renovacion:,.0f}'.replace(',', '.')
+                    )
+        
+        return cleaned_data
 
 
 class UsuarioForm(forms.Form):

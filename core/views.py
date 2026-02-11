@@ -283,23 +283,36 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         prestamo = self.get_prestamo()
+        saldo_pendiente = prestamo.calcular_saldo_para_renovacion()
         context['prestamo'] = prestamo
-        context['saldo_pendiente'] = prestamo.calcular_saldo_para_renovacion()
-        context['form'] = kwargs.get('form', RenovacionPrestamoForm(initial={
-            'nueva_tasa': prestamo.tasa_interes_porcentaje,
-            'nuevas_cuotas': prestamo.cuotas_pactadas,
-            'nueva_frecuencia': prestamo.frecuencia,
-        }))
+        context['saldo_pendiente'] = saldo_pendiente
+        context['form'] = kwargs.get('form', RenovacionPrestamoForm(
+            cliente=prestamo.cliente,
+            saldo_pendiente=saldo_pendiente,
+            initial={
+                'nueva_tasa': prestamo.tasa_interes_porcentaje,
+                'nuevas_cuotas': prestamo.cuotas_pactadas,
+                'nueva_frecuencia': prestamo.frecuencia,
+            }
+        ))
+        # Agregar información del límite de crédito
+        context['maximo_capital_adicional'] = prestamo.cliente.maximo_prestable
+        if context['maximo_capital_adicional'] is not None:
+            context['maximo_capital_adicional'] += saldo_pendiente
         return context
     
     def get(self, request, *args, **kwargs):
         return self.render_to_response(self.get_context_data())
     
     def post(self, request, *args, **kwargs):
-        form = RenovacionPrestamoForm(request.POST)
+        prestamo_anterior = self.get_prestamo()
+        saldo_pendiente = prestamo_anterior.calcular_saldo_para_renovacion()
+        form = RenovacionPrestamoForm(
+            request.POST,
+            cliente=prestamo_anterior.cliente,
+            saldo_pendiente=saldo_pendiente
+        )
         if form.is_valid():
-            prestamo_anterior = self.get_prestamo()
-            
             nuevo_prestamo = Prestamo.renovar_prestamo(
                 prestamo_anterior=prestamo_anterior,
                 nuevo_monto=form.cleaned_data['nuevo_monto'],

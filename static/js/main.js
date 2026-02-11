@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initCobros();
     initCalculadoraPrestamo();
     initBusqueda();
+    initFormateoMontos();
 });
 
 /**
@@ -403,7 +404,8 @@ function initCalculadoraPrestamo() {
     if (!montoInput || !tasaInput || !cuotasInput || !resumenDiv) return;
     
     const calcular = () => {
-        const monto = parseFloat(montoInput.value) || 0;
+        // Usar parsearMonto para manejar formato con puntos de miles
+        const monto = parsearMonto(montoInput.value);
         const tasa = parseFloat(tasaInput.value) || 0;
         const cuotas = parseInt(cuotasInput.value) || 1;
         
@@ -415,12 +417,15 @@ function initCalculadoraPrestamo() {
             document.getElementById('total-pagar').textContent = formatCurrency(total);
             document.getElementById('valor-cuota').textContent = formatCurrency(valorCuota);
             resumenDiv.style.display = 'block';
+            
+            // Validar límite de crédito
+            validarLimiteCredito(monto);
         } else {
             resumenDiv.style.display = 'none';
         }
     };
     
-    montoInput.addEventListener('input', calcular);
+    // No agregar listener a monto ya que se maneja en initFormateoMontos
     tasaInput.addEventListener('input', calcular);
     cuotasInput.addEventListener('input', calcular);
     
@@ -553,3 +558,99 @@ document.addEventListener('click', (e) => {
         vibrate(50);
     }
 });
+
+/**
+ * Inicializar formateo de montos en inputs con clase .input-monto-formateado
+ */
+function initFormateoMontos() {
+    const inputs = document.querySelectorAll('.input-monto-formateado');
+    
+    inputs.forEach(input => {
+        // Formatear valor inicial si existe
+        if (input.value) {
+            const valor = parsearMonto(input.value);
+            if (valor > 0) {
+                input.value = formatNumber(valor);
+            }
+        }
+        
+        // Evento de input para formatear mientras se escribe
+        input.addEventListener('input', function(e) {
+            formatearInputMonto(this);
+            
+            // Disparar evento para actualizar calculadora si existe
+            const montoInput = document.getElementById('id_monto_solicitado');
+            if (this === montoInput) {
+                actualizarCalculadoraPrestamo();
+            }
+        });
+        
+        // Evento de focus para seleccionar todo el texto
+        input.addEventListener('focus', function() {
+            setTimeout(() => this.select(), 50);
+        });
+    });
+}
+
+/**
+ * Actualizar calculadora de préstamo con valores formateados
+ */
+function actualizarCalculadoraPrestamo() {
+    const montoInput = document.getElementById('id_monto_solicitado');
+    const tasaInput = document.getElementById('id_tasa_interes_porcentaje');
+    const cuotasInput = document.getElementById('id_cuotas_pactadas');
+    const resumenDiv = document.getElementById('resumen-prestamo');
+    
+    if (!montoInput || !tasaInput || !cuotasInput || !resumenDiv) return;
+    
+    const monto = parsearMonto(montoInput.value);
+    const tasa = parseFloat(tasaInput.value) || 0;
+    const cuotas = parseInt(cuotasInput.value) || 1;
+    
+    if (monto > 0) {
+        const interes = monto * (tasa / 100);
+        const total = monto + interes;
+        const valorCuota = total / cuotas;
+        
+        document.getElementById('total-pagar').textContent = formatCurrency(total);
+        document.getElementById('valor-cuota').textContent = formatCurrency(valorCuota);
+        resumenDiv.style.display = 'block';
+        
+        // Validar límite de crédito si hay cliente seleccionado
+        validarLimiteCredito(monto);
+    } else {
+        resumenDiv.style.display = 'none';
+    }
+}
+
+/**
+ * Validar límite de crédito en tiempo real
+ */
+function validarLimiteCredito(monto) {
+    const selectCliente = document.getElementById('id_cliente');
+    const alertaCredito = document.getElementById('alerta-credito');
+    
+    if (!selectCliente || !alertaCredito || typeof clientesData === 'undefined') return;
+    
+    const clienteId = selectCliente.value;
+    if (!clienteId || !clientesData[clienteId]) return;
+    
+    const cliente = clientesData[clienteId];
+    
+    if (cliente.maximoPrestable !== null && monto > cliente.maximoPrestable) {
+        document.getElementById('alerta-credito-texto').innerHTML = 
+            `<strong>¡Atención!</strong> El monto ingresado ($${formatNumber(monto)}) excede el límite de crédito disponible ($${formatNumber(cliente.maximoPrestable)}).`;
+        alertaCredito.classList.remove('d-none');
+        alertaCredito.classList.remove('alert-warning');
+        alertaCredito.classList.add('alert-danger');
+    } else if (cliente.maximoPrestable !== null && monto > cliente.maximoPrestable * 0.8) {
+        // Advertencia si está cerca del límite (80%)
+        document.getElementById('alerta-credito-texto').innerHTML = 
+            `El monto está cerca del límite de crédito disponible ($${formatNumber(cliente.maximoPrestable)}).`;
+        alertaCredito.classList.remove('d-none');
+        alertaCredito.classList.add('alert-warning');
+        alertaCredito.classList.remove('alert-danger');
+    } else {
+        alertaCredito.classList.add('d-none');
+    }
+}
