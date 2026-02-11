@@ -78,7 +78,7 @@
             <div class="btn-group">
                 <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
                         data-cuota-id="{{ cuota.pk }}" 
-                        data-monto="{{ cuota.monto_restante }}"
+                        data-monto="{{ cuota.monto_restante|numero_raw }}"
                         data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                         title="Cobro personalizado">
                     <i class="bi bi-pencil"></i>
@@ -135,7 +135,7 @@
                 <div class="btn-group">
                     <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
                             data-cuota-id="{{ cuota.pk }}" 
-                            data-monto="{{ cuota.monto_restante }}"
+                            data-monto="{{ cuota.monto_restante|numero_raw }}"
                             data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                             title="Cobro personalizado">
                         <i class="bi bi-pencil"></i>

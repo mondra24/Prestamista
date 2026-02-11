@@ -110,3 +110,25 @@ def formato_miles(value):
     Ejemplo: 1234567 -> 1.234.567
     """
     return formato_ars(value, 0)
+
+
+@register.filter(name='numero_raw')
+def numero_raw(value):
+    """
+    Devuelve el número sin formato, ideal para data attributes de HTML.
+    Usa punto como separador decimal (formato JavaScript/internacional).
+    
+    Ejemplo: 100000.50 -> 100000.50
+    
+    Uso en template: data-monto="{{ monto|numero_raw }}"
+    """
+    if value is None:
+        return '0'
+    
+    try:
+        if isinstance(value, str):
+            # Convertir de formato argentino a número
+            value = value.replace('.', '').replace(',', '.')
+        return str(float(value))
+    except (ValueError, TypeError):
+        return '0'
