@@ -1386,21 +1386,57 @@ def crear_respaldo(request):
         return redirect('core:dashboard')
     
     import shutil
+    import json
     from django.conf import settings
+    from django.core import serializers
     
     try:
         # Crear directorio de respaldos si no existe
         backup_dir = os.path.join(settings.BASE_DIR, 'backups')
         os.makedirs(backup_dir, exist_ok=True)
         
-        # Nombre del archivo de respaldo
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_name = f'backup_{timestamp}.sqlite3'
-        backup_path = os.path.join(backup_dir, backup_name)
+        db_engine = settings.DATABASES['default']['ENGINE']
         
-        # Copiar base de datos
-        db_path = settings.DATABASES['default']['NAME']
-        shutil.copy2(db_path, backup_path)
+        # Verificar si es PostgreSQL o SQLite
+        if 'postgresql' in db_engine:
+            # PostgreSQL: exportar datos a JSON
+            backup_name = f'backup_{timestamp}.json'
+            backup_path = os.path.join(backup_dir, backup_name)
+            
+            # Exportar todos los modelos a JSON
+            from core.models import (
+                Cliente, Prestamo, Cuota, TipoNegocio, RutaCobro,
+                ConfiguracionCredito, ConfiguracionPlanilla, PerfilUsuario,
+                RegistroAuditoria, Notificacion
+            )
+            from django.contrib.auth.models import User
+            
+            all_data = {}
+            models_to_export = [
+                ('users', User),
+                ('perfiles', PerfilUsuario),
+                ('tipos_negocio', TipoNegocio),
+                ('rutas_cobro', RutaCobro),
+                ('config_credito', ConfiguracionCredito),
+                ('config_planilla', ConfiguracionPlanilla),
+                ('clientes', Cliente),
+                ('prestamos', Prestamo),
+                ('cuotas', Cuota),
+            ]
+            
+            for name, model in models_to_export:
+                all_data[name] = json.loads(serializers.serialize('json', model.objects.all()))
+            
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                json.dump(all_data, f, ensure_ascii=False, indent=2, default=str)
+                
+        else:
+            # SQLite: copiar archivo
+            backup_name = f'backup_{timestamp}.sqlite3'
+            backup_path = os.path.join(backup_dir, backup_name)
+            db_path = settings.DATABASES['default']['NAME']
+            shutil.copy2(db_path, backup_path)
         
         # Registrar auditoría
         RegistroAuditoria.registrar(
