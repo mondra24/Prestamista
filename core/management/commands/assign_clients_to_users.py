@@ -1,6 +1,7 @@
 """
 Comando para asignar clientes a usuarios.
 Cada usuario tendrá su lista separada de clientes.
+Solo se ejecuta si no hay clientes con usuario asignado.
 """
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
@@ -15,6 +16,13 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from core.models import Cliente, PerfilUsuario
+        
+        # Verificar si ya hay clientes con usuario asignado - NO hacer nada
+        if Cliente.objects.filter(usuario__isnull=False).exists():
+            self.stdout.write(self.style.SUCCESS(
+                'Ya existen clientes asignados a usuarios. Saltando...'
+            ))
+            return
         
         self.stdout.write('=== ASIGNANDO CLIENTES A USUARIOS ===\n')
         
