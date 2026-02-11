@@ -33,10 +33,16 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         hoy = timezone.now().date()
         
+        # Filtro base por usuario (admin ve todo)
+        cliente_filter = {}
+        if not self.request.user.is_superuser:
+            cliente_filter['prestamo__cliente__usuario'] = self.request.user
+        
         # Estadísticas del día
         cobros_realizados_hoy = Cuota.objects.filter(
             fecha_pago_real=hoy,
-            estado='PA'
+            estado='PA',
+            **cliente_filter
         ).aggregate(
             total=Sum('monto_pagado'),
             cantidad=Count('id')
@@ -46,32 +52,42 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         cuotas_pendientes_hoy = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **cliente_filter
         ).count()
         
         # Cuotas vencidas total
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **cliente_filter
         ).count()
         
         # Total por cobrar hoy
         total_por_cobrar = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **cliente_filter
         ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         
-        # Estadísticas generales
-        prestamos_activos = Prestamo.objects.filter(estado='AC').count()
-        clientes_activos = Cliente.objects.filter(estado='AC').count()
-        
-        # Monto total por cobrar (todas las cuotas pendientes)
-        total_cartera = Cuota.objects.filter(
-            estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
-        ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
+        # Estadísticas generales (filtradas por usuario)
+        if not self.request.user.is_superuser:
+            prestamos_activos = Prestamo.objects.filter(estado='AC', cliente__usuario=self.request.user).count()
+            clientes_activos = Cliente.objects.filter(estado='AC', usuario=self.request.user).count()
+            total_cartera = Cuota.objects.filter(
+                estado__in=['PE', 'PC'],
+                prestamo__estado='AC',
+                prestamo__cliente__usuario=self.request.user
+            ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
+        else:
+            prestamos_activos = Prestamo.objects.filter(estado='AC').count()
+            clientes_activos = Cliente.objects.filter(estado='AC').count()
+            total_cartera = Cuota.objects.filter(
+                estado__in=['PE', 'PC'],
+                prestamo__estado='AC'
+            ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         
         context.update({
             'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
@@ -96,18 +112,25 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         from datetime import timedelta
         hoy = timezone.now().date()
         
+        # Base queryset - filtrar por usuario si no es admin
+        base_filter = {}
+        if not self.request.user.is_superuser:
+            base_filter['prestamo__cliente__usuario'] = self.request.user
+        
         # Cuotas del día (pendientes)
         cuotas_hoy = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **base_filter
         ).select_related('prestamo', 'prestamo__cliente').order_by('prestamo__cliente__apellido')
         
         # Cuotas vencidas (días anteriores)
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **base_filter
         ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
         
         # Cuotas próximas (próximos 7 días)
@@ -115,13 +138,17 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             fecha_vencimiento__gt=hoy,
             fecha_vencimiento__lte=hoy + timedelta(days=7),
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
+            prestamo__estado='AC',
+            **base_filter
         ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
         
         # Estadísticas del día
+        cobros_filter = {'fecha_pago_real': hoy, 'estado': 'PA'}
+        if not self.request.user.is_superuser:
+            cobros_filter['prestamo__cliente__usuario'] = self.request.user
+        
         cobros_realizados_hoy = Cuota.objects.filter(
-            fecha_pago_real=hoy,
-            estado='PA'
+            **cobros_filter
         ).aggregate(
             total=Sum('monto_pagado'),
             cantidad=Count('id')
@@ -160,6 +187,11 @@ class ClienteListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        
+        # Filtrar por usuario (admin ve todos, otros solo los suyos)
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(usuario=self.request.user)
+        
         busqueda = self.request.GET.get('q', '')
         categoria = self.request.GET.get('categoria', '')
         
@@ -189,6 +221,8 @@ class ClienteCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('core:cliente_list')
     
     def form_valid(self, form):
+        # Asignar el usuario actual al cliente
+        form.instance.usuario = self.request.user
         messages.success(self.request, 'Cliente creado exitosamente.')
         return super().form_valid(form)
 
@@ -200,6 +234,13 @@ class ClienteUpdateView(LoginRequiredMixin, UpdateView):
     template_name = 'core/cliente_form.html'
     success_url = reverse_lazy('core:cliente_list')
     
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Admin puede editar todos, otros solo los suyos
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(usuario=self.request.user)
+        return queryset
+    
     def form_valid(self, form):
         messages.success(self.request, 'Cliente actualizado exitosamente.')
         return super().form_valid(form)
@@ -210,6 +251,13 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     model = Cliente
     template_name = 'core/cliente_detail.html'
     context_object_name = 'cliente'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Admin puede ver todos, otros solo los suyos
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(usuario=self.request.user)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -227,6 +275,11 @@ class PrestamoListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        
+        # Filtrar por clientes del usuario (admin ve todos)
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(cliente__usuario=self.request.user)
+        
         estado = self.request.GET.get('estado', '')
         
         if estado:
@@ -250,10 +303,24 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
         initial['fecha_inicio'] = timezone.now().date()
         return initial
     
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Filtrar clientes por usuario (admin ve todos)
+        if not self.request.user.is_superuser:
+            form.fields['cliente'].queryset = Cliente.objects.filter(
+                estado='AC', usuario=self.request.user
+            )
+        else:
+            form.fields['cliente'].queryset = Cliente.objects.filter(estado='AC')
+        return form
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Pasar datos de clientes para mostrar límite de crédito
-        context['clientes'] = Cliente.objects.filter(estado='AC')
+        if not self.request.user.is_superuser:
+            context['clientes'] = Cliente.objects.filter(estado='AC', usuario=self.request.user)
+        else:
+            context['clientes'] = Cliente.objects.filter(estado='AC')
         return context
     
     def form_valid(self, form):
@@ -266,6 +333,13 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
     model = Prestamo
     template_name = 'core/prestamo_detail.html'
     context_object_name = 'prestamo'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Admin puede ver todos, otros solo los de sus clientes
+        if not self.request.user.is_superuser:
+            queryset = queryset.filter(cliente__usuario=self.request.user)
+        return queryset
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

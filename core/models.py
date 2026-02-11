@@ -362,6 +362,15 @@ class Cliente(models.Model):
     )
     fecha_registro = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Registro')
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='clientes',
+        verbose_name='Usuario/Cobrador',
+        help_text='Usuario que gestiona este cliente',
+        null=True,
+        blank=True
+    )
     
     class Meta:
         verbose_name = 'Cliente'

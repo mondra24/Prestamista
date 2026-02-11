@@ -53,17 +53,22 @@ for idx, (username, _) in enumerate(usuarios_data):
     print(f"\nClientes para {username}:")
     for i, (nombre, apellido) in enumerate(clientes_data[idx]):
         # Verificar si ya existe por nombre y apellido
-        if not Cliente.objects.filter(nombre=nombre, apellido=apellido).exists():
+        cliente = Cliente.objects.filter(nombre=nombre, apellido=apellido).first()
+        if not cliente:
             Cliente.objects.create(
                 nombre=nombre,
                 apellido=apellido,
                 telefono=telefonos[i % len(telefonos)],
                 direccion=direcciones[i % len(direcciones)],
                 limite_credito=Decimal(random.choice([50000, 100000, 150000, 200000])),
+                usuario=user
             )
             print(f"  + {nombre} {apellido}")
         else:
-            print(f"  - {nombre} {apellido} ya existe")
+            # Actualizar el usuario si el cliente ya existe
+            cliente.usuario = user
+            cliente.save()
+            print(f"  ~ {nombre} {apellido} (asignado a {username})")
 
 print("\n=== RESUMEN ===")
 print(f"Total usuarios: {User.objects.count()}")
