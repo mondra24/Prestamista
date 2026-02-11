@@ -28,12 +28,13 @@ for data in tipos_negocio:
 print(f"   Total tipos de negocio: {TipoNegocio.objects.count()}")
 
 # 2. Crear configuraciones de crédito por categoría
+# limite_maximo = 0 significa "sin límite por categoría" (solo aplica el límite individual del cliente)
 print("\n2. Creando configuraciones de crédito...")
 configs_credito = [
-    {'categoria': 'EX', 'limite_maximo': Decimal('200000.00'), 'porcentaje_sobre_deuda': 50, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 7, 'activo': True},
-    {'categoria': 'RE', 'limite_maximo': Decimal('100000.00'), 'porcentaje_sobre_deuda': 30, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 14, 'activo': True},
-    {'categoria': 'MO', 'limite_maximo': Decimal('30000.00'), 'porcentaje_sobre_deuda': 0, 'puede_renovar_con_deuda': False, 'dias_minimos_para_renovar': 30, 'activo': True},
-    {'categoria': 'NU', 'limite_maximo': Decimal('50000.00'), 'porcentaje_sobre_deuda': 20, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 0, 'activo': True},
+    {'categoria': 'EX', 'limite_maximo': Decimal('0.00'), 'porcentaje_sobre_deuda': 50, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 7, 'activo': True},
+    {'categoria': 'RE', 'limite_maximo': Decimal('0.00'), 'porcentaje_sobre_deuda': 30, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 14, 'activo': True},
+    {'categoria': 'MO', 'limite_maximo': Decimal('0.00'), 'porcentaje_sobre_deuda': 0, 'puede_renovar_con_deuda': False, 'dias_minimos_para_renovar': 30, 'activo': True},
+    {'categoria': 'NU', 'limite_maximo': Decimal('0.00'), 'porcentaje_sobre_deuda': 20, 'puede_renovar_con_deuda': True, 'dias_minimos_para_renovar': 0, 'activo': True},
 ]
 for data in configs_credito:
     obj, created = ConfiguracionCredito.objects.get_or_create(categoria=data['categoria'], defaults=data)
