@@ -580,8 +580,13 @@ function initFormateoMontos() {
             
             // Disparar evento para actualizar calculadora si existe
             const montoInput = document.getElementById('id_monto_solicitado');
+            const nuevoMontoInput = document.getElementById('id_nuevo_monto');
+            
             if (this === montoInput) {
                 actualizarCalculadoraPrestamo();
+            }
+            if (this === nuevoMontoInput) {
+                validarLimiteRenovacion();
             }
         });
         
@@ -590,6 +595,41 @@ function initFormateoMontos() {
             setTimeout(() => this.select(), 50);
         });
     });
+    
+    // También agregar listener al cambio de cliente para validar límites
+    const selectCliente = document.getElementById('id_cliente');
+    if (selectCliente) {
+        selectCliente.addEventListener('change', function() {
+            // Recalcular cuando cambia el cliente
+            setTimeout(() => {
+                const montoInput = document.getElementById('id_monto_solicitado');
+                if (montoInput && montoInput.value) {
+                    actualizarCalculadoraPrestamo();
+                }
+            }, 100);
+        });
+    }
+}
+
+/**
+ * Validar límite en renovación
+ */
+function validarLimiteRenovacion() {
+    const montoInput = document.getElementById('id_nuevo_monto');
+    const alertaLimite = document.getElementById('alerta-limite');
+    
+    if (!montoInput || !alertaLimite) return;
+    if (typeof maximoCapitalAdicional === 'undefined') return;
+    
+    const monto = parsearMonto(montoInput.value);
+    
+    if (maximoCapitalAdicional !== null && monto > maximoCapitalAdicional) {
+        document.getElementById('alerta-limite-texto').innerHTML = 
+            `<strong>¡Atención!</strong> El capital adicional (${formatCurrency(monto)}) excede el límite disponible (${formatCurrency(maximoCapitalAdicional)}).`;
+        alertaLimite.classList.remove('d-none');
+    } else {
+        alertaLimite.classList.add('d-none');
+    }
 }
 
 /**
@@ -630,26 +670,39 @@ function validarLimiteCredito(monto) {
     const selectCliente = document.getElementById('id_cliente');
     const alertaCredito = document.getElementById('alerta-credito');
     
-    if (!selectCliente || !alertaCredito || typeof clientesData === 'undefined') return;
+    if (!selectCliente || !alertaCredito) return;
+    
+    // Verificar si clientesData existe
+    if (typeof clientesData === 'undefined') {
+        console.log('clientesData no definido');
+        return;
+    }
     
     const clienteId = selectCliente.value;
     if (!clienteId || !clientesData[clienteId]) return;
     
     const cliente = clientesData[clienteId];
     
+    // Si el máximo prestable es 0 o negativo, no tiene crédito disponible
+    if (cliente.maximoPrestable !== null && cliente.maximoPrestable <= 0) {
+        document.getElementById('alerta-credito-texto').innerHTML = 
+            `<strong>¡Sin crédito disponible!</strong> Este cliente ha alcanzado su límite de crédito. Deuda actual: ${formatCurrency(cliente.deudaTotal)}.`;
+        alertaCredito.classList.remove('d-none', 'alert-warning');
+        alertaCredito.classList.add('alert-danger');
+        return;
+    }
+    
     if (cliente.maximoPrestable !== null && monto > cliente.maximoPrestable) {
         document.getElementById('alerta-credito-texto').innerHTML = 
-            `<strong>¡Atención!</strong> El monto ingresado ($${formatNumber(monto)}) excede el límite de crédito disponible ($${formatNumber(cliente.maximoPrestable)}).`;
-        alertaCredito.classList.remove('d-none');
-        alertaCredito.classList.remove('alert-warning');
+            `<strong>¡Excede el límite!</strong> Monto ingresado: ${formatCurrency(monto)}. Máximo disponible: ${formatCurrency(cliente.maximoPrestable)}.`;
+        alertaCredito.classList.remove('d-none', 'alert-warning');
         alertaCredito.classList.add('alert-danger');
     } else if (cliente.maximoPrestable !== null && monto > cliente.maximoPrestable * 0.8) {
         // Advertencia si está cerca del límite (80%)
         document.getElementById('alerta-credito-texto').innerHTML = 
-            `El monto está cerca del límite de crédito disponible ($${formatNumber(cliente.maximoPrestable)}).`;
-        alertaCredito.classList.remove('d-none');
+            `<strong>Cerca del límite:</strong> Disponible: ${formatCurrency(cliente.maximoPrestable)}.`;
+        alertaCredito.classList.remove('d-none', 'alert-danger');
         alertaCredito.classList.add('alert-warning');
-        alertaCredito.classList.remove('alert-danger');
     } else {
         alertaCredito.classList.add('d-none');
     }

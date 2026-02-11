@@ -134,17 +134,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 else if (cliente.categoriaCod === 'MO') badgeCat.classList.add('bg-danger');
                 else badgeCat.classList.add('bg-info');
                 
-                // Máximo prestable
+                // Máximo prestable - usar formatNumber para formato con puntos
                 if (cliente.maximoPrestable !== null) {
-                    document.getElementById('info-cliente-maximo').textContent = '$' + cliente.maximoPrestable.toLocaleString();
+                    document.getElementById('info-cliente-maximo').textContent = formatCurrency(cliente.maximoPrestable);
                     document.getElementById('info-cliente-maximo').className = 'text-primary';
                 } else {
                     document.getElementById('info-cliente-maximo').textContent = 'Sin límite';
                     document.getElementById('info-cliente-maximo').className = 'text-success';
                 }
                 
-                // Deuda total
-                document.getElementById('info-cliente-deuda').textContent = '$' + cliente.deudaTotal.toLocaleString();
+                // Deuda total - usar formatCurrency
+                document.getElementById('info-cliente-deuda').textContent = formatCurrency(cliente.deudaTotal);
                 if (cliente.deudaTotal > 0) {
                     document.getElementById('info-cliente-deuda').className = 'text-warning';
                 } else {
@@ -175,19 +175,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     prestamoActivoDiv.classList.add('d-none');
                 }
                 
-                // Explicación del límite
+                // Explicación del límite - usar formatCurrency para formato correcto
                 let explicacionLimite = [];
                 if (cliente.limiteIndividual > 0) {
-                    explicacionLimite.push('Límite individual: $' + cliente.limiteIndividual.toLocaleString());
+                    explicacionLimite.push('Límite individual: ' + formatCurrency(cliente.limiteIndividual));
                 }
                 if (cliente.limitePorCategoria !== null) {
-                    explicacionLimite.push('Por categoría (' + cliente.categoria + '): $' + cliente.limitePorCategoria.toLocaleString());
+                    explicacionLimite.push('Por categoría (' + cliente.categoria + '): ' + formatCurrency(cliente.limitePorCategoria));
                 }
                 if (cliente.limitePorTipoNegocio !== null) {
-                    explicacionLimite.push('Por tipo negocio (' + cliente.tipoNegocio + '): $' + cliente.limitePorTipoNegocio.toLocaleString());
+                    explicacionLimite.push('Por tipo negocio (' + cliente.tipoNegocio + '): ' + formatCurrency(cliente.limitePorTipoNegocio));
                 }
                 if (cliente.limiteSobreDeuda !== null) {
-                    explicacionLimite.push('Límite sobre deuda: $' + cliente.limiteSobreDeuda.toLocaleString());
+                    explicacionLimite.push('Límite sobre deuda: ' + formatCurrency(cliente.limiteSobreDeuda));
                 }
                 
                 const explicacionDiv = document.getElementById('info-limite-explicacion');

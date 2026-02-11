@@ -43,12 +43,11 @@ class ClienteForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Descripción adicional del negocio'
             }),
-            'limite_credito': forms.NumberInput(attrs={
-                'class': 'form-control form-control-lg',
+            'limite_credito': forms.TextInput(attrs={
+                'class': 'form-control form-control-lg input-monto-formateado',
                 'placeholder': 'Límite individual (0 = usar límite de categoría)',
-                'inputmode': 'decimal',
-                'min': '0',
-                'step': '0.01'
+                'inputmode': 'numeric',
+                'autocomplete': 'off'
             }),
             'ruta': forms.Select(attrs={
                 'class': 'form-select'
@@ -104,6 +103,19 @@ class ClienteForm(forms.ModelForm):
                 css_class='d-grid'
             )
         )
+    
+    def clean_limite_credito(self):
+        """Limpiar y convertir límite de crédito con formato de puntos de miles"""
+        limite = self.data.get('limite_credito', '0')
+        if isinstance(limite, str):
+            limite = limite.replace('.', '').replace(',', '.')
+            if not limite:
+                limite = '0'
+        try:
+            from decimal import Decimal
+            return Decimal(limite)
+        except:
+            raise forms.ValidationError('Ingrese un monto válido')
 
 
 class PrestamoForm(forms.ModelForm):

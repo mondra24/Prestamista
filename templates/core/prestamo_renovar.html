@@ -81,18 +81,31 @@ document.addEventListener('DOMContentLoaded', function() {
     const montoInput = document.getElementById('id_nuevo_monto');
     const alertaLimite = document.getElementById('alerta-limite');
     
-    if (montoInput) {
-        montoInput.addEventListener('input', function() {
-            const monto = parsearMonto(this.value);
+    if (montoInput && alertaLimite) {
+        // Función para validar límite
+        function validarLimite() {
+            const monto = parsearMonto(montoInput.value);
             
-            if (maximoCapitalAdicional !== null && monto > maximoCapitalAdicional) {
+            if (maximoCapitalAdicional !== null && maximoCapitalAdicional <= 0 && monto > 0) {
                 document.getElementById('alerta-limite-texto').innerHTML = 
-                    `<strong>¡Atención!</strong> El capital adicional ($${formatNumber(monto)}) excede el límite disponible ($${formatNumber(maximoCapitalAdicional)}).`;
+                    `<strong>¡Sin crédito disponible!</strong> Este cliente ha alcanzado su límite de crédito.`;
+                alertaLimite.classList.remove('d-none');
+            } else if (maximoCapitalAdicional !== null && monto > maximoCapitalAdicional) {
+                document.getElementById('alerta-limite-texto').innerHTML = 
+                    `<strong>¡Excede el límite!</strong> Capital adicional: ${formatCurrency(monto)}. Máximo permitido: ${formatCurrency(maximoCapitalAdicional)}.`;
                 alertaLimite.classList.remove('d-none');
             } else {
                 alertaLimite.classList.add('d-none');
             }
-        });
+        }
+        
+        // Escuchar cambios en el input
+        montoInput.addEventListener('input', validarLimite);
+        
+        // Validar al cargar si hay valor
+        if (montoInput.value) {
+            validarLimite();
+        }
     }
 });
 </script>
