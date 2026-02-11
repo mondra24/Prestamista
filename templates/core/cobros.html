@@ -232,8 +232,11 @@
                         <i class="bi bi-cash me-1"></i>Monto a cobrar ahora:
                     </label>
                     <input type="number" class="form-control form-control-lg" id="pago-monto" 
-                           inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
-                    <div class="form-text">Ingrese el monto que el cliente pagará</div>
+                           inputmode="decimal" step="0.01" min="0.01" placeholder="0.00"
+                           oninput="actualizarMontoFormateado()">
+                    <div class="form-text">
+                        <span id="monto-formateado-label"></span>
+                    </div>
                 </div>
                 
                 <div class="mb-3">

@@ -55,19 +55,34 @@ function getCookie(name) {
  * Ejemplo: 1234567.89 -> 1.234.567,89
  */
 function formatNumber(num, decimals = 0) {
-    if (num === null || num === undefined) return '0';
+    if (num === null || num === undefined || isNaN(num)) return '0';
     const number = parseFloat(num);
     
     // Redondear según decimales
-    const rounded = decimals > 0 ? number.toFixed(decimals) : Math.round(number).toString();
+    let rounded;
+    if (decimals > 0) {
+        rounded = number.toFixed(decimals);
+    } else {
+        rounded = Math.round(number).toString();
+    }
     
     // Separar parte entera y decimal
     const parts = rounded.split('.');
-    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    
+    // Formatear parte entera con puntos como separadores de miles
+    let intPart = parts[0];
+    let formattedInt = '';
+    for (let i = intPart.length - 1, count = 0; i >= 0; i--, count++) {
+        if (count > 0 && count % 3 === 0) {
+            formattedInt = '.' + formattedInt;
+        }
+        formattedInt = intPart[i] + formattedInt;
+    }
+    
     const decPart = parts[1] || '';
     
     // Usar coma para decimales (formato argentino)
-    return decPart ? `${intPart},${decPart}` : intPart;
+    return decPart ? `${formattedInt},${decPart}` : formattedInt;
 }
 
 /**
@@ -198,11 +213,15 @@ function showPagoParcialModal(cuotaId, montoRestante, nombreCliente = '') {
     const modal = document.getElementById('modal-pago-parcial');
     if (!modal) return;
     
+    // Asegurar que el monto es un número válido
+    const montoNumerico = parseFloat(montoRestante) || 0;
+    
     document.getElementById('pago-cuota-id').value = cuotaId;
-    document.getElementById('pago-monto-max').value = montoRestante;
-    document.getElementById('pago-monto-max-label').textContent = formatCurrency(montoRestante);
+    document.getElementById('pago-monto-max').value = montoNumerico;
+    document.getElementById('pago-monto-max-label').textContent = formatCurrency(montoNumerico);
     document.getElementById('pago-monto').value = '';
-    document.getElementById('pago-monto').max = montoRestante;
+    document.getElementById('pago-monto').max = montoNumerico;
+    document.getElementById('pago-monto').placeholder = formatNumber(montoNumerico);
     
     // Resetear opciones
     const accionSelect = document.getElementById('pago-accion-restante');
@@ -219,6 +238,30 @@ function showPagoParcialModal(cuotaId, montoRestante, nombreCliente = '') {
     
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
+    
+    // Limpiar label de monto formateado
+    const montoLabel = document.getElementById('monto-formateado-label');
+    if (montoLabel) {
+        montoLabel.textContent = 'Ingrese el monto que el cliente pagará';
+    }
+}
+
+/**
+ * Actualizar etiqueta con monto formateado mientras el usuario escribe
+ */
+function actualizarMontoFormateado() {
+    const input = document.getElementById('pago-monto');
+    const label = document.getElementById('monto-formateado-label');
+    
+    if (!input || !label) return;
+    
+    const valor = parseFloat(input.value);
+    
+    if (valor && valor > 0) {
+        label.innerHTML = `<strong class="text-success">Cobrando: ${formatCurrency(valor)}</strong>`;
+    } else {
+        label.textContent = 'Ingrese el monto que el cliente pagará';
+    }
 }
 
 /**
