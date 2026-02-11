@@ -99,6 +99,10 @@ if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
+    print(f"[INFO] Usando PostgreSQL: {DATABASE_URL[:50]}...")
+elif os.environ.get('RAILWAY_ENVIRONMENT'):
+    # Estamos en Railway pero sin DATABASE_URL - ERROR!
+    raise Exception("ERROR: DATABASE_URL no está configurada en Railway. Configura la variable de entorno.")
 else:
     DATABASES = {
         'default': {
@@ -106,7 +110,7 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
-
+    print("[INFO] Usando SQLite local (desarrollo)")
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
