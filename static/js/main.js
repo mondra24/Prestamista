@@ -111,7 +111,7 @@ async function handleCobro(event) {
     event.preventDefault();
     const btn = event.currentTarget;
     const cuotaId = btn.dataset.cuotaId;
-    const card = btn.closest('.cobro-card');
+    const card = btn.closest('.cobro-card') || btn.closest('.payment-card');
     
     // Evitar doble click
     if (btn.disabled) return;
@@ -136,27 +136,29 @@ async function handleCobro(event) {
             // Feedback de éxito
             showToast('¡Pago registrado!', 'success');
             
-            // Actualizar UI de la tarjeta
-            card.classList.add('estado-pagado');
-            card.classList.remove('estado-pendiente', 'estado-vencido');
+            // Actualizar UI de la tarjeta (si existe)
+            if (card) {
+                card.classList.add('estado-pagado');
+                card.classList.remove('estado-pendiente', 'estado-vencido');
+                
+                // Animación
+                card.classList.add('pulse');
+                setTimeout(() => card.classList.remove('pulse'), 300);
+                
+                // Opcional: Ocultar tarjeta después de un momento
+                setTimeout(() => {
+                    card.style.opacity = '0.5';
+                }, 1000);
+            }
             
             // Cambiar botón
             btn.innerHTML = '<i class="bi bi-check-lg"></i>';
             btn.classList.add('cobrado');
             
-            // Animación
-            card.classList.add('pulse');
-            setTimeout(() => card.classList.remove('pulse'), 300);
-            
             // Actualizar estadísticas con datos del servidor
             if (data.estadisticas) {
                 updateStatsFromServer(data.estadisticas);
             }
-            
-            // Opcional: Ocultar tarjeta después de un momento
-            setTimeout(() => {
-                card.style.opacity = '0.5';
-            }, 1000);
             
         } else {
             throw new Error(data.message || 'Error al procesar el pago');

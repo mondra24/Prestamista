@@ -876,9 +876,11 @@ document.addEventListener('contextmenu', function(e) {
     const btn = e.target.closest('.btn-cobrar');
     if (btn) {
         e.preventDefault();
-        const card = btn.closest('.cobro-card');
-        const editBtn = card.querySelector('.btn-editar-cobro');
-        if (editBtn) editBtn.click();
+        const card = btn.closest('.payment-card') || btn.closest('.cobro-card');
+        if (card) {
+            const editBtn = card.querySelector('.btn-editar-cobro');
+            if (editBtn) editBtn.click();
+        }
     }
 });
 
