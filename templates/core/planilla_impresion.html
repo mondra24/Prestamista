@@ -369,8 +369,20 @@
                             <td class="text-right">{{ cuota.prestamo.monto_pendiente|dinero }}</td>
                             {% elif columna.nombre_columna == 'fecha_vencimiento' %}
                             <td class="text-center">{{ cuota.fecha_vencimiento|date:"d/m" }}</td>
+                            {% elif columna.nombre_columna == 'fecha_cobro' %}
+                            <td class="text-center">{{ cuota.fecha_pago_real|date:"d/m/Y"|default:"-" }}</td>
                             {% elif columna.nombre_columna == 'fecha_fin_prestamo' %}
                             <td class="text-center">{{ cuota.prestamo.cliente.fecha_fin_prestamo_activo|date:"d/m/Y"|default:"-" }}</td>
+                            {% elif columna.nombre_columna == 'prestamo_pagado' %}
+                            <td class="text-center">
+                                {% if cuota.prestamo.estado == 'FI' %}
+                                <span class="badge" style="background: #198754; color: white;">PAGADO</span>
+                                {% elif cuota.numero_cuota == cuota.prestamo.cuotas_pactadas and cuota.estado == 'PA' %}
+                                <span class="badge" style="background: #198754; color: white;">PAGADO</span>
+                                {% else %}
+                                <span style="color: #6c757d;">-</span>
+                                {% endif %}
+                            </td>
                             {% elif columna.nombre_columna == 'es_renovacion' %}
                             <td class="text-center">
                                 {% if cuota.prestamo.es_renovacion %}

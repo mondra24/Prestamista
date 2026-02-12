@@ -71,12 +71,39 @@
                 </div>
                 <div class="flex-grow-1">
                     <div class="fw-semibold">{{ pago.prestamo.cliente.nombre_completo }}</div>
-                    <small class="text-muted">
-                        Cuota {{ pago.numero_cuota }}/{{ pago.prestamo.cuotas_pactadas }}
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <small class="text-muted">
+                            Cuota {{ pago.numero_cuota }}/{{ pago.prestamo.cuotas_pactadas }}
+                        </small>
+                        {% if pago.fecha_pago_real %}
+                        <small class="badge bg-secondary bg-opacity-25 text-secondary">
+                            <i class="bi bi-calendar-check me-1"></i>{{ pago.fecha_pago_real|date:"d/m/Y" }}
+                        </small>
+                        {% endif %}
+                        {% if pago.metodo_pago %}
+                        <small class="badge bg-info bg-opacity-25 text-info">
+                            {{ pago.get_metodo_pago_display }}
+                        </small>
+                        {% endif %}
+                        {% if pago.prestamo.estado == 'FI' and pago.numero_cuota == pago.prestamo.cuotas_pactadas %}
+                        <small class="badge bg-success">
+                            <i class="bi bi-check-circle me-1"></i>PRÉSTAMO PAGADO
+                        </small>
+                        {% endif %}
+                    </div>
+                    {% if pago.interes_mora and pago.interes_mora > 0 %}
+                    <small class="text-warning">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Mora: {{ pago.interes_mora|dinero }}
                     </small>
+                    {% endif %}
                 </div>
                 <div class="text-end">
                     <div class="fw-bold text-success">{{ pago.monto_pagado|dinero }}</div>
+                    {% if pago.prestamo.fecha_finalizacion %}
+                    <small class="text-muted d-block">
+                        Fin: {{ pago.prestamo.fecha_finalizacion|date:"d/m/Y" }}
+                    </small>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
