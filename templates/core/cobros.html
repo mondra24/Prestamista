@@ -306,7 +306,7 @@
                     <label class="form-label fw-semibold small">Monto a cobrar:</label>
                     <input type="text" class="form-control form-control-lg text-center" id="pago-monto" 
                            inputmode="numeric" placeholder="0"
-                           oninput="formatearInputMonto(this); calcularResumenPago()">
+                           oninput="formatearInputMonto(this); calcularResumenPago(); calcularInteresDesdeporcentaje()">
                 </div>
                 
                 <!-- Calculador de Interés -->
@@ -569,21 +569,38 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     modal.show();
 }
 
-// Calcula el interés en base al % y días ingresados
+// Calcula el interés en base al % y días ingresados - sobre el RESTANTE
 function calcularInteresDesdeporcentaje() {
     const porcentaje = parseFloat(document.getElementById('pago-porcentaje-input').value) || 0;
     const dias = parseInt(document.getElementById('pago-dias-mora-input').value) || 0;
+    const montoStr = document.getElementById('pago-monto').value;
+    const montoCobrar = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
     
-    const interes = Math.round((montoMaxActual * porcentaje / 100) * dias);
-    document.getElementById('interes-calculado-preview').textContent = formatearMoneda(interes);
+    // Calcular sobre lo que queda pendiente
+    const restante = montoMaxActual - montoCobrar;
+    const baseCalculo = restante > 0 ? restante : montoMaxActual;
+    
+    const interes = Math.round((baseCalculo * porcentaje / 100) * dias);
+    
+    // Mostrar sobre qué monto se calcula
+    const label = restante > 0 ? 
+        `Sobre restante (${formatearMoneda(restante)})` : 
+        `Sobre cuota (${formatearMoneda(montoMaxActual)})`;
+    document.getElementById('interes-calculado-preview').innerHTML = 
+        `${formatearMoneda(interes)}<br><small class="text-muted">${label}</small>`;
 }
 
 // Aplica el interés calculado al campo de interés
 function aplicarInteresCalculado() {
     const porcentaje = parseFloat(document.getElementById('pago-porcentaje-input').value) || 0;
     const dias = parseInt(document.getElementById('pago-dias-mora-input').value) || 0;
+    const montoStr = document.getElementById('pago-monto').value;
+    const montoCobrar = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
     
-    const interes = Math.round((montoMaxActual * porcentaje / 100) * dias);
+    const restante = montoMaxActual - montoCobrar;
+    const baseCalculo = restante > 0 ? restante : montoMaxActual;
+    
+    const interes = Math.round((baseCalculo * porcentaje / 100) * dias);
     document.getElementById('pago-interes-mora').value = formatearNumero(interes);
     calcularResumenPago();
 }
