@@ -450,6 +450,180 @@ body {
     font-size: 1rem;
 }
 
+/* Botones minimalistas de acción */
+.action-btn-mini {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+    background: white;
+    color: #757575;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn-mini:hover {
+    background: #f5f5f5;
+    border-color: #bdbdbd;
+    transform: scale(1.05);
+}
+
+.action-btn-mini.primary {
+    background: #43a047;
+    border-color: #43a047;
+    color: white;
+}
+
+.action-btn-mini.primary:hover {
+    background: #388e3c;
+    border-color: #388e3c;
+    transform: scale(1.05);
+}
+
+.action-btn-mini i {
+    font-size: 1.1rem;
+}
+
+/* Modal de confirmación de cobro */
+.confirm-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+
+.confirm-modal-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.confirm-modal {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+    transform: scale(0.9);
+    transition: transform 0.2s ease;
+}
+
+.confirm-modal-overlay.show .confirm-modal {
+    transform: scale(1);
+}
+
+.confirm-modal-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 1.8rem;
+}
+
+.confirm-modal h5 {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.confirm-modal-amount {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #43a047;
+    margin-bottom: 16px;
+}
+
+.confirm-modal-client {
+    font-size: 0.9rem;
+    color: #666;
+    margin-bottom: 20px;
+}
+
+.confirm-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.confirm-modal-actions button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.confirm-modal-actions .btn-cancelar {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    color: #666;
+}
+
+.confirm-modal-actions .btn-confirmar {
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+    border: none;
+    color: white;
+}
+
+.confirm-modal-actions .btn-confirmar:hover {
+    background: linear-gradient(135deg, #388e3c 0%, #1b5e20 100%);
+}
+
+/* Resumen de pago en modal */
+.pago-resumen {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 16px;
+}
+
+.pago-resumen-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 0.9rem;
+}
+
+.pago-resumen-row.total {
+    border-top: 2px solid #dee2e6;
+    margin-top: 8px;
+    padding-top: 12px;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.pago-resumen-row .label {
+    color: #6c757d;
+}
+
+.pago-resumen-row .valor {
+    font-weight: 600;
+}
+
+.pago-resumen-row .valor.text-danger {
+    color: #dc3545;
+}
+
+.pago-resumen-row .valor.text-success {
+    color: #198754;
+}
+
 /* Legacy styles for compatibility */
 .cobro-card {
     background: var(--bg-card);

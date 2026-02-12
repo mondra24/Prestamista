@@ -105,16 +105,21 @@
                             </div>
                         </div>
                         <div class="payment-card-actions">
-                            <button type="button" class="action-btn secondary btn-editar-cobro"
+                            <button type="button" class="action-btn-mini btn-editar-cobro"
                                     data-cuota-id="{{ cuota.pk }}"
                                     data-monto="{{ cuota.monto_restante|numero_raw }}"
                                     data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
                                     data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                                    data-dias-vencida="{{ cuota.dias_vencida }}">
-                                <i class="bi bi-sliders"></i> Parcial
+                                    data-dias-vencida="{{ cuota.dias_vencida }}"
+                                    title="Cobro parcial">
+                                <i class="bi bi-pencil-square"></i>
                             </button>
-                            <button type="button" class="action-btn primary btn-cobrar" data-cuota-id="{{ cuota.pk }}">
-                                <i class="bi bi-check2-circle"></i> Cobrar
+                            <button type="button" class="action-btn-mini primary btn-cobrar" 
+                                    data-cuota-id="{{ cuota.pk }}"
+                                    data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                    data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                                    title="Cobrar completo">
+                                <i class="bi bi-check-lg"></i>
                             </button>
                         </div>
                     </div>
@@ -165,16 +170,21 @@
                                 </div>
                             </div>
                             <div class="payment-card-actions">
-                                <button type="button" class="action-btn secondary btn-editar-cobro"
+                                <button type="button" class="action-btn-mini btn-editar-cobro"
                                         data-cuota-id="{{ cuota.pk }}"
                                         data-monto="{{ cuota.monto_restante|numero_raw }}"
                                         data-mora="0"
                                         data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                                        data-dias-vencida="0">
-                                    <i class="bi bi-sliders"></i> Parcial
+                                        data-dias-vencida="0"
+                                        title="Cobro parcial">
+                                    <i class="bi bi-pencil-square"></i>
                                 </button>
-                                <button type="button" class="action-btn primary btn-cobrar" data-cuota-id="{{ cuota.pk }}">
-                                    <i class="bi bi-check2-circle"></i> Cobrar
+                                <button type="button" class="action-btn-mini primary btn-cobrar" 
+                                        data-cuota-id="{{ cuota.pk }}"
+                                        data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                        data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                                        title="Cobrar completo">
+                                    <i class="bi bi-check-lg"></i>
                                 </button>
                             </div>
                         </div>
@@ -246,132 +256,147 @@
     <i class="bi bi-plus-lg"></i>
 </a>
 
+<!-- Modal de confirmación de cobro rápido -->
+<div class="confirm-modal-overlay" id="confirm-cobro-modal">
+    <div class="confirm-modal">
+        <div class="confirm-modal-icon">
+            <i class="bi bi-cash-coin"></i>
+        </div>
+        <h5>Confirmar Cobro</h5>
+        <div class="confirm-modal-amount" id="confirm-monto">$0</div>
+        <div class="confirm-modal-client" id="confirm-cliente">Cliente</div>
+        <input type="hidden" id="confirm-cuota-id">
+        <div class="confirm-modal-actions">
+            <button type="button" class="btn-cancelar" onclick="cerrarConfirmacion()">Cancelar</button>
+            <button type="button" class="btn-confirmar" onclick="ejecutarCobro()">Cobrar</button>
+        </div>
+    </div>
+</div>
+
 <!-- Modal para cobro personalizado -->
 <div class="modal fade" id="modal-pago-parcial" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
+            <div class="modal-header bg-primary text-white py-3">
                 <h5 class="modal-title">
-                    <i class="bi bi-cash-stack me-2"></i>Cobro Personalizado
+                    <i class="bi bi-receipt me-2"></i>Cobro Personalizado
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="pago-cuota-id">
                 <input type="hidden" id="pago-monto-max">
+                <input type="hidden" id="pago-porcentaje-mora" value="{{ config_mora.porcentaje_diario|default:'0' }}">
+                <input type="hidden" id="pago-dias-gracia" value="{{ config_mora.dias_gracia|default:'0' }}">
                 
-                <div class="alert alert-light border mb-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Cliente:</span>
-                        <strong id="pago-cliente-nombre"></strong>
-                    </div>
-                    <hr class="my-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <span>Monto de cuota:</span>
-                        <strong id="pago-monto-max-label" class="text-primary fs-5">$0</strong>
-                    </div>
-                    <div id="info-mora-container" style="display: none;">
-                        <hr class="my-2">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span>Días de atraso:</span>
-                            <strong id="pago-dias-vencida" class="text-danger">0</strong>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span>Interés por mora sugerido:</span>
-                            <strong id="pago-mora-sugerida" class="text-warning">$0</strong>
-                        </div>
+                <!-- Info del cliente -->
+                <div class="text-center mb-3">
+                    <h6 class="mb-1" id="pago-cliente-nombre">Cliente</h6>
+                    <div class="text-muted small">Monto de cuota: <strong id="pago-monto-max-label" class="text-primary">$0</strong></div>
+                </div>
+                
+                <!-- Alerta de días vencidos -->
+                <div id="info-mora-container" class="alert alert-warning py-2 mb-3" style="display: none;">
+                    <div class="d-flex justify-content-between small">
+                        <span><i class="bi bi-exclamation-triangle me-1"></i>Vencida hace:</span>
+                        <strong id="pago-dias-vencida">0 días</strong>
                     </div>
                 </div>
                 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-cash me-1"></i>Monto a cobrar:
-                            </label>
-                            <input type="text" class="form-control form-control-lg" id="pago-monto" 
-                                   inputmode="numeric" placeholder="0"
-                                   oninput="formatearInputMonto(this); actualizarMontoFormateado()">
-                            <div class="form-text">
-                                <span id="monto-formateado-label"></span>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3" id="mora-container">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-percent me-1"></i>Interés por mora a cobrar:
-                            </label>
-                            <input type="text" class="form-control" id="pago-interes-mora" 
-                                   inputmode="numeric" placeholder="0"
-                                   oninput="formatearInputMonto(this)">
-                            <div class="form-text">Dejar en 0 si no cobrará mora</div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-credit-card me-1"></i>Método de pago:
-                            </label>
-                            <select class="form-select" id="pago-metodo" onchange="toggleMetodoPago()">
-                                <option value="EF">Efectivo</option>
-                                <option value="TR">Transferencia</option>
-                                <option value="MX">Mixto (Efectivo + Transferencia)</option>
-                            </select>
-                        </div>
-                        
-                        <div id="metodo-mixto-container" style="display: none;">
-                            <div class="mb-2">
-                                <label class="form-label small">Monto en efectivo:</label>
-                                <input type="text" class="form-control" id="pago-monto-efectivo" 
-                                       inputmode="numeric" placeholder="0"
-                                       oninput="formatearInputMonto(this); validarMontosMixtos()">
-                            </div>
-                            <div class="mb-2">
-                                <label class="form-label small">Monto en transferencia:</label>
-                                <input type="text" class="form-control" id="pago-monto-transferencia" 
-                                       inputmode="numeric" placeholder="0"
-                                       oninput="formatearInputMonto(this); validarMontosMixtos()">
-                            </div>
-                        </div>
-                        
-                        <div id="referencia-container" style="display: none;">
-                            <div class="mb-2">
-                                <label class="form-label small">Referencia/Nº operación:</label>
-                                <input type="text" class="form-control" id="pago-referencia" 
-                                       placeholder="Número de operación">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <hr>
-                
+                <!-- Monto a cobrar -->
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">
-                        <i class="bi bi-arrow-repeat me-1"></i>¿Qué hacer con el restante?
+                    <label class="form-label fw-semibold small">Monto a cobrar:</label>
+                    <input type="text" class="form-control form-control-lg text-center" id="pago-monto" 
+                           inputmode="numeric" placeholder="0"
+                           oninput="formatearInputMonto(this); calcularResumenPago()">
+                </div>
+                
+                <!-- Interés por mora -->
+                <div class="mb-3" id="mora-container" style="display: none;">
+                    <label class="form-label fw-semibold small">
+                        Interés por mora: 
+                        <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="calcularMoraAutomatica()">
+                            <i class="bi bi-calculator"></i> Calcular
+                        </button>
                     </label>
+                    <input type="text" class="form-control text-center" id="pago-interes-mora" 
+                           inputmode="numeric" placeholder="0"
+                           oninput="formatearInputMonto(this); calcularResumenPago()">
+                    <div class="form-text small" id="mora-sugerida-text"></div>
+                </div>
+                
+                <!-- Método de pago -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small">Método de pago:</label>
+                    <select class="form-select" id="pago-metodo" onchange="toggleMetodoPago()">
+                        <option value="EF">Efectivo</option>
+                        <option value="TR">Transferencia</option>
+                        <option value="MX">Mixto</option>
+                    </select>
+                </div>
+                
+                <div id="metodo-mixto-container" style="display: none;">
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small">Efectivo:</label>
+                            <input type="text" class="form-control" id="pago-monto-efectivo" 
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this); validarMontosMixtos()">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Transferencia:</label>
+                            <input type="text" class="form-control" id="pago-monto-transferencia" 
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this); validarMontosMixtos()">
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="referencia-container" style="display: none;">
+                    <div class="mb-3">
+                        <label class="form-label small">Referencia/Nº operación:</label>
+                        <input type="text" class="form-control" id="pago-referencia" placeholder="Número de operación">
+                    </div>
+                </div>
+                
+                <!-- Qué hacer con el restante -->
+                <div class="mb-3" id="accion-restante-container" style="display: none;">
+                    <label class="form-label fw-semibold small">¿Qué hacer con el restante?</label>
                     <select class="form-select" id="pago-accion-restante" onchange="toggleFechaEspecial()">
                         <option value="ignorar">Dejar pendiente en esta cuota</option>
                         <option value="proxima">Sumar a la próxima cuota</option>
-                        <option value="especial">Agendar cuota especial en otra fecha</option>
+                        <option value="especial">Agendar en otra fecha</option>
                     </select>
-                    <small class="text-muted">Si cobra el monto completo, esta opción se ignora</small>
                 </div>
                 
                 <div class="mb-3" id="fecha-especial-container" style="display: none;">
-                    <label class="form-label fw-semibold">
-                        <i class="bi bi-calendar-event me-1"></i>Fecha de cuota especial:
-                    </label>
+                    <label class="form-label small">Fecha de cuota especial:</label>
                     <input type="date" class="form-control" id="pago-fecha-especial">
-                    <div class="form-text">Se creará una nueva cuota para esta fecha</div>
+                </div>
+                
+                <!-- Resumen de pago -->
+                <div class="pago-resumen" id="pago-resumen">
+                    <div class="pago-resumen-row">
+                        <span class="label">Monto a cobrar:</span>
+                        <span class="valor" id="resumen-monto-cobrar">$0</span>
+                    </div>
+                    <div class="pago-resumen-row" id="resumen-mora-row" style="display: none;">
+                        <span class="label">Interés por mora:</span>
+                        <span class="valor" id="resumen-mora">$0</span>
+                    </div>
+                    <div class="pago-resumen-row total">
+                        <span class="label">Total a recibir:</span>
+                        <span class="valor text-success" id="resumen-total">$0</span>
+                    </div>
+                    <div class="pago-resumen-row" id="resumen-restante-row" style="display: none;">
+                        <span class="label">Quedará pendiente:</span>
+                        <span class="valor text-danger" id="resumen-restante">$0</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x me-1"></i>Cancelar
-                </button>
-                <button type="button" class="btn btn-success btn-lg" onclick="confirmarPagoParcial()">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success" onclick="confirmarPagoParcial()">
                     <i class="bi bi-check-lg me-1"></i>Registrar Cobro
                 </button>
             </div>
@@ -463,7 +488,13 @@ function validarMontosMixtos() {
 }
 
 // ============ MODAL DE PAGO PARCIAL ============
+let diasVencidaActual = 0;
+let montoMaxActual = 0;
+
 function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0) {
+    diasVencidaActual = diasVencida;
+    montoMaxActual = monto;
+    
     document.getElementById('pago-cuota-id').value = cuotaId;
     document.getElementById('pago-monto-max').value = monto;
     document.getElementById('pago-cliente-nombre').textContent = cliente;
@@ -471,7 +502,6 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     document.getElementById('pago-monto').value = formatearNumero(monto);
     document.getElementById('pago-accion-restante').value = 'ignorar';
     document.getElementById('pago-metodo').value = 'EF';
-    document.getElementById('pago-interes-mora').value = mora > 0 ? formatearNumero(mora) : '0';
     document.getElementById('pago-monto-efectivo').value = '';
     document.getElementById('pago-monto-transferencia').value = '';
     document.getElementById('pago-referencia').value = '';
@@ -479,22 +509,81 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     // Mostrar info de mora si hay días vencidos
     const infoMoraContainer = document.getElementById('info-mora-container');
     const moraContainer = document.getElementById('mora-container');
+    const accionRestanteContainer = document.getElementById('accion-restante-container');
+    
     if (diasVencida > 0) {
         infoMoraContainer.style.display = 'block';
         moraContainer.style.display = 'block';
         document.getElementById('pago-dias-vencida').textContent = diasVencida + ' días';
-        document.getElementById('pago-mora-sugerida').textContent = formatearMoneda(mora);
+        
+        // Calcular mora sugerida automáticamente
+        calcularMoraAutomatica();
     } else {
         infoMoraContainer.style.display = 'none';
         moraContainer.style.display = 'none';
+        document.getElementById('pago-interes-mora').value = '0';
     }
     
     toggleFechaEspecial();
     toggleMetodoPago();
-    actualizarMontoFormateado();
+    calcularResumenPago();
     
     const modal = new bootstrap.Modal(document.getElementById('modal-pago-parcial'));
     modal.show();
+}
+
+function calcularMoraAutomatica() {
+    const porcentajeMora = parseFloat(document.getElementById('pago-porcentaje-mora').value) || 0;
+    const diasGracia = parseInt(document.getElementById('pago-dias-gracia').value) || 0;
+    
+    if (diasVencidaActual <= diasGracia) {
+        document.getElementById('pago-interes-mora').value = '0';
+        document.getElementById('mora-sugerida-text').textContent = 'Dentro del período de gracia';
+    } else {
+        const diasEfectivos = diasVencidaActual - diasGracia;
+        const interesMora = Math.round((montoMaxActual * porcentajeMora / 100) * diasEfectivos);
+        document.getElementById('pago-interes-mora').value = formatearNumero(interesMora);
+        document.getElementById('mora-sugerida-text').textContent = 
+            `${diasEfectivos} días × ${porcentajeMora}% = ${formatearMoneda(interesMora)}`;
+    }
+    calcularResumenPago();
+}
+
+function calcularResumenPago() {
+    const montoStr = document.getElementById('pago-monto').value;
+    const interesMoraStr = document.getElementById('pago-interes-mora').value;
+    
+    const monto = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const interesMora = parseFloat(interesMoraStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoMax = montoMaxActual;
+    
+    // Actualizar resumen
+    document.getElementById('resumen-monto-cobrar').textContent = formatearMoneda(monto);
+    
+    const moraRow = document.getElementById('resumen-mora-row');
+    if (interesMora > 0) {
+        moraRow.style.display = 'flex';
+        document.getElementById('resumen-mora').textContent = formatearMoneda(interesMora);
+    } else {
+        moraRow.style.display = 'none';
+    }
+    
+    const total = monto + interesMora;
+    document.getElementById('resumen-total').textContent = formatearMoneda(total);
+    
+    // Monto restante
+    const restante = montoMax - monto;
+    const restanteRow = document.getElementById('resumen-restante-row');
+    const accionContainer = document.getElementById('accion-restante-container');
+    
+    if (restante > 0) {
+        restanteRow.style.display = 'flex';
+        document.getElementById('resumen-restante').textContent = formatearMoneda(restante);
+        accionContainer.style.display = 'block';
+    } else {
+        restanteRow.style.display = 'none';
+        accionContainer.style.display = 'none';
+    }
 }
 
 function toggleFechaEspecial() {
@@ -503,18 +592,71 @@ function toggleFechaEspecial() {
         accion === 'especial' ? 'block' : 'none';
 }
 
-function actualizarMontoFormateado() {
-    const montoInput = document.getElementById('pago-monto').value;
-    const monto = parseFloat(montoInput.replace(/\./g, '').replace(',', '.')) || 0;
-    document.getElementById('monto-formateado-label').textContent = formatearMoneda(monto);
-}
-
 function formatearNumero(num) {
     return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 
 function formatearMoneda(num) {
     return '$ ' + formatearNumero(num);
+}
+
+// ============ CONFIRMACIÓN DE COBRO RÁPIDO ============
+function mostrarConfirmacion(cuotaId, monto, cliente) {
+    document.getElementById('confirm-cuota-id').value = cuotaId;
+    document.getElementById('confirm-monto').textContent = formatearMoneda(monto);
+    document.getElementById('confirm-cliente').textContent = cliente;
+    document.getElementById('confirm-cobro-modal').classList.add('show');
+}
+
+function cerrarConfirmacion() {
+    document.getElementById('confirm-cobro-modal').classList.remove('show');
+}
+
+async function ejecutarCobro() {
+    const cuotaId = document.getElementById('confirm-cuota-id').value;
+    const btnConfirmar = document.querySelector('.confirm-modal .btn-confirmar');
+    btnConfirmar.disabled = true;
+    btnConfirmar.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+    
+    try {
+        const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({})
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(result.message, 'success');
+            
+            // Ocultar la card
+            const card = document.querySelector(`.payment-card button[data-cuota-id="${cuotaId}"]`)?.closest('.payment-card');
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(100%)';
+                setTimeout(() => card.remove(), 300);
+            }
+            
+            // Actualizar estadísticas
+            if (result.estadisticas) {
+                document.getElementById('total-cobrado-hoy').textContent = 
+                    formatearMoneda(result.estadisticas.total_cobrado_hoy);
+            }
+        } else {
+            showToast(result.message || 'Error', 'danger');
+        }
+    } catch (error) {
+        showToast('Error de conexión', 'danger');
+    }
+    
+    btnConfirmar.disabled = false;
+    btnConfirmar.textContent = 'Cobrar';
+    cerrarConfirmacion();
 }
 
 async function confirmarPagoParcial() {
@@ -615,50 +757,19 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Delegación de eventos para botón cobrar completo
-document.addEventListener('click', async function(e) {
+// Delegación de eventos para botón cobrar completo - MUESTRA CONFIRMACIÓN
+document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-cobrar');
     if (!btn) return;
     
     e.preventDefault();
     e.stopPropagation();
-    const cuotaId = btn.dataset.cuotaId;
     
-    try {
-        const response = await fetch(`/api/cobrar/${cuotaId}/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({})
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showToast(result.message, 'success');
-            
-            // Ocultar la card
-            const card = btn.closest('.payment-card');
-            if (card) {
-                card.style.transition = 'all 0.3s ease';
-                card.style.opacity = '0';
-                card.style.transform = 'translateX(100%)';
-                setTimeout(() => card.remove(), 300);
-            }
-            
-            // Actualizar estadísticas
-            if (result.estadisticas) {
-                document.getElementById('total-cobrado-hoy').textContent = 
-                    formatearMoneda(result.estadisticas.total_cobrado_hoy);
-            }
-        } else {
-            showToast(result.message || 'Error', 'danger');
-        }
-    } catch (error) {
-        showToast('Error de conexión', 'danger');
-    }
+    const cuotaId = btn.dataset.cuotaId;
+    const monto = parseFloat(btn.dataset.monto) || 0;
+    const cliente = btn.dataset.cliente || 'Cliente';
+    
+    mostrarConfirmacion(cuotaId, monto, cliente);
 });
 
 // Context menu y long press para abrir modal desde botón cobrar
