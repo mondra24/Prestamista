@@ -640,6 +640,10 @@ body {
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     transition: all 0.2s ease;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
 }
 
 .cobro-card.estado-pagado {
@@ -755,8 +759,16 @@ body {
 }
 
 .btn-cobrar.cobrado {
-    background: var(--color-pagado-light);
-    color: var(--color-pagado);
+    background: var(--color-pagado);
+    color: white;
+    box-shadow: none;
+    width: 40px;
+    height: 40px;
+    font-size: 1.1rem;
+}
+
+.btn-cobrar.cobrado i {
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));
 }
 
 /* ============== BADGES DE ESTADO ============== */
@@ -911,6 +923,146 @@ body {
 
 .section-title i {
     color: var(--color-pagado);
+}
+
+/* ============== CUOTAS EN DETALLE PRÉSTAMO ============== */
+.cuota-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.cuota-item.pagada {
+    background: linear-gradient(135deg, rgba(25,135,84,0.08) 0%, rgba(25,135,84,0.03) 100%);
+}
+
+.cuota-item.vencida {
+    background: linear-gradient(135deg, rgba(220,53,69,0.08) 0%, rgba(220,53,69,0.03) 100%);
+}
+
+.cuota-numero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 40px;
+}
+
+.cuota-numero .numero {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.cuota-numero .total {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.cuota-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.cuota-fecha {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+}
+
+.cuota-estado {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+.cuota-estado.pagada {
+    background: var(--color-pagado);
+    color: white;
+}
+
+.cuota-estado.parcial {
+    background: var(--color-pendiente);
+    color: white;
+}
+
+.cuota-estado.vencida {
+    background: var(--color-moroso);
+    color: white;
+}
+
+.cuota-estado.pendiente {
+    background: #e9ecef;
+    color: #6c757d;
+}
+
+.cuota-monto {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.cuota-monto .monto-principal {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cuota-monto .monto-restante {
+    font-size: 0.75rem;
+    color: var(--color-moroso);
+}
+
+.cuota-monto .fecha-pago {
+    font-size: 0.7rem;
+    color: var(--color-pagado);
+}
+
+.cuota-accion {
+    flex-shrink: 0;
+}
+
+.check-pagado {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-pagado);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.btn-cobrar-cuota {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    border: none;
+    color: white;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(25,135,84,0.3);
+    transition: all 0.2s ease;
+}
+
+.btn-cobrar-cuota:hover {
+    transform: scale(1.05);
+}
+
+.btn-cobrar-cuota:active {
+    transform: scale(0.95);
 }
 
 /* ============== VALORES DE CARTERA ============== */

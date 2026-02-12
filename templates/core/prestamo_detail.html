@@ -111,49 +111,48 @@
         </h3>
         
         {% for cuota in cuotas %}
-        <div class="cobro-card {% if cuota.estado == 'PA' %}estado-pagado{% elif cuota.esta_vencida %}estado-vencido{% else %}estado-pendiente{% endif %}">
-            <div class="text-center" style="min-width: 45px;">
-                <div class="fw-bold fs-5">{{ cuota.numero_cuota }}</div>
-                <small class="text-muted">de {{ prestamo.cuotas_pactadas }}</small>
+        <div class="cuota-item {% if cuota.estado == 'PA' %}pagada{% elif cuota.esta_vencida %}vencida{% else %}pendiente{% endif %}">
+            <div class="cuota-numero">
+                <span class="numero">{{ cuota.numero_cuota }}</span>
+                <span class="total">de {{ prestamo.cuotas_pactadas }}</span>
             </div>
             
-            <div class="flex-grow-1 ps-2">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                        <small class="text-muted">{{ cuota.fecha_vencimiento|date:"d M Y" }}</small>
-                        {% if cuota.estado == 'PA' %}
-                            <span class="badge bg-success ms-2">Pagado</span>
-                        {% elif cuota.estado == 'PC' %}
-                            <span class="badge bg-warning text-dark ms-2">Parcial</span>
-                        {% elif cuota.esta_vencida %}
-                            <span class="badge bg-danger ms-2">{{ cuota.dias_vencida }}d vencida</span>
-                        {% endif %}
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold">{{ cuota.monto_cuota|dinero }}</div>
-                        {% if cuota.estado == 'PC' %}
-                        <small class="text-muted">Resta: {{ cuota.monto_restante|dinero }}</small>
-                        {% endif %}
-                    </div>
+            <div class="cuota-info">
+                <div class="cuota-fecha">
+                    <i class="bi bi-calendar3 me-1"></i>{{ cuota.fecha_vencimiento|date:"d M Y" }}
                 </div>
-                
-                {% if cuota.fecha_pago_real %}
-                <small class="text-success">
-                    <i class="bi bi-check-circle me-1"></i>
-                    Pagado el {{ cuota.fecha_pago_real|date:"d/m/Y" }}
-                </small>
+                {% if cuota.estado == 'PA' %}
+                    <span class="cuota-estado pagada"><i class="bi bi-check-circle-fill me-1"></i>Pagado</span>
+                {% elif cuota.estado == 'PC' %}
+                    <span class="cuota-estado parcial"><i class="bi bi-pie-chart-fill me-1"></i>Parcial</span>
+                {% elif cuota.esta_vencida %}
+                    <span class="cuota-estado vencida"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ cuota.dias_vencida }}d</span>
+                {% else %}
+                    <span class="cuota-estado pendiente"><i class="bi bi-clock me-1"></i>Pendiente</span>
                 {% endif %}
             </div>
             
-            {% if cuota.estado != 'PA' and prestamo.estado == 'AC' %}
-            <button class="btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
-                <i class="bi bi-check-lg"></i>
-            </button>
-            {% elif cuota.estado == 'PA' %}
-            <div class="btn-cobrar cobrado" style="cursor: default;">
-                <i class="bi bi-check-lg"></i>
+            <div class="cuota-monto">
+                <div class="monto-principal">{{ cuota.monto_cuota|dinero }}</div>
+                {% if cuota.estado == 'PC' %}
+                <div class="monto-restante">Resta: {{ cuota.monto_restante|dinero }}</div>
+                {% endif %}
+                {% if cuota.fecha_pago_real %}
+                <div class="fecha-pago"><i class="bi bi-check2"></i> {{ cuota.fecha_pago_real|date:"d/m" }}</div>
+                {% endif %}
             </div>
-            {% endif %}
+            
+            <div class="cuota-accion">
+                {% if cuota.estado == 'PA' %}
+                    <div class="check-pagado">
+                        <i class="bi bi-check-lg"></i>
+                    </div>
+                {% elif prestamo.estado == 'AC' %}
+                    <button class="btn-cobrar-cuota" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                {% endif %}
+            </div>
         </div>
         {% endfor %}
     </section>
