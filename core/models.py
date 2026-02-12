@@ -802,6 +802,11 @@ class Cuota(models.Model):
         PAGADO = 'PA', 'Pagado'
         PARCIAL = 'PC', 'Pago Parcial'
     
+    class MetodoPago(models.TextChoices):
+        EFECTIVO = 'EF', 'Efectivo'
+        TRANSFERENCIA = 'TR', 'Transferencia'
+        MIXTO = 'MX', 'Mixto'
+    
     prestamo = models.ForeignKey(
         Prestamo,
         on_delete=models.CASCADE,
@@ -832,6 +837,45 @@ class Cuota(models.Model):
         blank=True,
         verbose_name='Fecha de Pago Real'
     )
+    # Campos para método de pago
+    metodo_pago = models.CharField(
+        max_length=2,
+        choices=MetodoPago.choices,
+        default=MetodoPago.EFECTIVO,
+        blank=True,
+        null=True,
+        verbose_name='Método de Pago'
+    )
+    monto_efectivo = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        blank=True,
+        null=True,
+        verbose_name='Monto en Efectivo'
+    )
+    monto_transferencia = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        blank=True,
+        null=True,
+        verbose_name='Monto en Transferencia'
+    )
+    referencia_transferencia = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='Referencia de Transferencia',
+        help_text='Número de operación o referencia bancaria'
+    )
+    # Campo para interés por mora cobrado
+    interes_mora_cobrado = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name='Interés por Mora Cobrado'
+    )
     
     class Meta:
         verbose_name = 'Cuota'
@@ -861,7 +905,26 @@ class Cuota(models.Model):
             return 0
         return (timezone.now().date() - self.fecha_vencimiento).days
     
-    def registrar_pago(self, monto=None, accion_restante='ignorar', fecha_especial=None):
+    @property
+    def interes_mora_pendiente(self):
+        """Calcula el interés por mora pendiente de esta cuota"""
+        if not self.esta_vencida:
+            return Decimal('0.00')
+        
+        config = ConfiguracionMora.obtener_config_activa()
+        if not config:
+            return Decimal('0.00')
+        
+        return config.calcular_interes(self.monto_restante, self.dias_vencida)
+    
+    @property
+    def monto_total_con_mora(self):
+        """Monto total a pagar incluyendo interés por mora"""
+        return self.monto_restante + self.interes_mora_pendiente
+    
+    def registrar_pago(self, monto=None, accion_restante='ignorar', fecha_especial=None,
+                       metodo_pago='EF', monto_efectivo=None, monto_transferencia=None,
+                       referencia_transferencia=None, interes_mora=None):
         """
         Registra un pago en la cuota.
         Si no se especifica monto, se paga el total.
@@ -870,6 +933,11 @@ class Cuota(models.Model):
         - 'ignorar': El monto restante queda pendiente en esta cuota
         - 'proxima': Suma el restante a la próxima cuota
         - 'especial': Crea una cuota especial en fecha_especial con el monto restante
+        
+        metodo_pago puede ser:
+        - 'EF': Efectivo
+        - 'TR': Transferencia
+        - 'MX': Mixto
         """
         if monto is None:
             monto = self.monto_restante
@@ -879,6 +947,24 @@ class Cuota(models.Model):
         
         self.monto_pagado += monto
         self.fecha_pago_real = timezone.now().date()
+        
+        # Registrar método de pago
+        self.metodo_pago = metodo_pago
+        if metodo_pago == 'EF':
+            self.monto_efectivo = monto
+            self.monto_transferencia = Decimal('0.00')
+        elif metodo_pago == 'TR':
+            self.monto_efectivo = Decimal('0.00')
+            self.monto_transferencia = monto
+            self.referencia_transferencia = referencia_transferencia
+        elif metodo_pago == 'MX':
+            self.monto_efectivo = Decimal(str(monto_efectivo or 0))
+            self.monto_transferencia = Decimal(str(monto_transferencia or 0))
+            self.referencia_transferencia = referencia_transferencia
+        
+        # Registrar interés por mora si se proporcionó
+        if interes_mora is not None and Decimal(str(interes_mora)) > 0:
+            self.interes_mora_cobrado = Decimal(str(interes_mora))
         
         if self.monto_pagado >= self.monto_cuota:
             self.estado = self.Estado.PAGADO
@@ -1244,3 +1330,176 @@ class ConfiguracionRespaldo(models.Model):
     
     def __str__(self):
         return self.nombre
+
+# ==================== CONFIGURACIÓN DE MORA ====================
+
+class ConfiguracionMora(models.Model):
+    """Configuración para cálculo de intereses por mora"""
+    
+    nombre = models.CharField(
+        max_length=100,
+        default='Configuración Principal',
+        verbose_name='Nombre'
+    )
+    porcentaje_diario = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.50'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
+        verbose_name='Porcentaje Diario (%)',
+        help_text='Porcentaje de interés que se aplica por cada día de mora'
+    )
+    dias_gracia = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Días de Gracia',
+        help_text='Días después del vencimiento sin aplicar interés'
+    )
+    aplicar_automaticamente = models.BooleanField(
+        default=True,
+        verbose_name='Aplicar Automáticamente',
+        help_text='Calcular intereses automáticamente al registrar pagos'
+    )
+    monto_minimo_mora = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        verbose_name='Monto Mínimo de Mora',
+        help_text='Monto mínimo para cobrar interés por mora (0 = sin mínimo)'
+    )
+    activo = models.BooleanField(
+        default=True,
+        verbose_name='Activo'
+    )
+    fecha_creacion = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de Creación'
+    )
+    
+    class Meta:
+        verbose_name = 'Configuración de Mora'
+        verbose_name_plural = 'Configuraciones de Mora'
+    
+    def __str__(self):
+        return f"{self.nombre} - {self.porcentaje_diario}% diario"
+    
+    @classmethod
+    def obtener_config_activa(cls):
+        """Obtiene la configuración de mora activa"""
+        return cls.objects.filter(activo=True).first()
+    
+    def calcular_interes(self, monto_cuota, dias_mora):
+        """Calcula el interés por mora para una cuota"""
+        if dias_mora <= self.dias_gracia:
+            return Decimal('0.00')
+        
+        dias_efectivos = dias_mora - self.dias_gracia
+        interes = monto_cuota * (self.porcentaje_diario / 100) * dias_efectivos
+        
+        if interes < self.monto_minimo_mora:
+            return Decimal('0.00')
+        
+        return interes.quantize(Decimal('0.01'))
+
+
+class InteresMora(models.Model):
+    """Registro de intereses por mora aplicados a cuotas"""
+    
+    cuota = models.ForeignKey(
+        'Cuota',
+        on_delete=models.CASCADE,
+        related_name='intereses_mora',
+        verbose_name='Cuota'
+    )
+    fecha_calculo = models.DateField(
+        auto_now_add=True,
+        verbose_name='Fecha de Cálculo'
+    )
+    dias_mora = models.PositiveIntegerField(
+        verbose_name='Días de Mora'
+    )
+    porcentaje_aplicado = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        verbose_name='Porcentaje Aplicado'
+    )
+    monto_base = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Monto Base',
+        help_text='Monto sobre el cual se calculó el interés'
+    )
+    monto_interes = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Monto de Interés'
+    )
+    agregado_manualmente = models.BooleanField(
+        default=False,
+        verbose_name='Agregado Manualmente'
+    )
+    pagado = models.BooleanField(
+        default=False,
+        verbose_name='Pagado'
+    )
+    fecha_pago = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name='Fecha de Pago'
+    )
+    notas = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name='Notas'
+    )
+    
+    class Meta:
+        verbose_name = 'Interés por Mora'
+        verbose_name_plural = 'Intereses por Mora'
+        ordering = ['-fecha_calculo']
+    
+    def __str__(self):
+        return f"Mora Cuota #{self.cuota.pk} - ${self.monto_interes}"
+    
+    @classmethod
+    def calcular_y_registrar(cls, cuota, manual=False, porcentaje_manual=None, monto_manual=None):
+        """
+        Calcula y registra el interés por mora para una cuota.
+        Si manual=True, usar porcentaje_manual o monto_manual.
+        """
+        if not cuota.esta_vencida:
+            return None
+        
+        dias_mora = cuota.dias_vencida
+        monto_base = cuota.monto_restante
+        
+        if manual and monto_manual is not None:
+            # Interés ingresado manualmente
+            monto_interes = Decimal(str(monto_manual))
+            porcentaje = Decimal('0.00')
+        elif manual and porcentaje_manual is not None:
+            # Porcentaje ingresado manualmente
+            porcentaje = Decimal(str(porcentaje_manual))
+            monto_interes = monto_base * (porcentaje / 100) * dias_mora
+        else:
+            # Usar configuración automática
+            config = ConfiguracionMora.obtener_config_activa()
+            if not config or not config.aplicar_automaticamente:
+                return None
+            
+            porcentaje = config.porcentaje_diario
+            monto_interes = config.calcular_interes(monto_base, dias_mora)
+        
+        if monto_interes <= 0:
+            return None
+        
+        # Crear registro
+        interes = cls.objects.create(
+            cuota=cuota,
+            dias_mora=dias_mora,
+            porcentaje_aplicado=porcentaje,
+            monto_base=monto_base,
+            monto_interes=monto_interes.quantize(Decimal('0.01')),
+            agregado_manualmente=manual
+        )
+        
+        return interes

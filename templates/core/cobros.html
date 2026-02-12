@@ -12,9 +12,16 @@
         <h1 class="h5 mb-0 d-none d-lg-block">
             <i class="bi bi-cash-stack me-2"></i>Cobros del Día
         </h1>
-        <div class="ms-auto">
+        <div class="ms-auto d-flex gap-2">
+            <!-- Filtro por zona -->
+            <select class="form-select form-select-sm" id="filtro-zona" style="width: auto;">
+                <option value="">Todas las zonas</option>
+                {% for ruta in rutas %}
+                <option value="{{ ruta.nombre }}">{{ ruta.nombre }}</option>
+                {% endfor %}
+            </select>
             <a href="{% url 'core:exportar_planilla_excel' %}?fecha={{ fecha_hoy|date:'Y-m-d' }}" class="btn btn-sm btn-outline-success">
-                <i class="bi bi-file-earmark-excel me-1"></i> Exportar Excel
+                <i class="bi bi-file-earmark-excel me-1"></i> Excel
             </a>
         </div>
     </div>
@@ -46,153 +53,241 @@
                 <div class="stat-icon bg-danger bg-opacity-10 text-danger">
                     <i class="bi bi-exclamation-triangle"></i>
                 </div>
-                <div class="stat-value">{{ cuotas_vencidas|length }}</div>
+                <div class="stat-value">{{ total_vencidas|dinero }}</div>
                 <div class="stat-label">Vencidas</div>
             </div>
         </div>
     </div>
     
-    <!-- Cuotas vencidas (prioritarias) -->
-    {% if cuotas_vencidas %}
-    <section class="mb-4">
-        <h2 class="section-title text-danger">
-            <i class="bi bi-exclamation-circle-fill"></i>
-            Cuotas Vencidas ({{ cuotas_vencidas|length }})
-        </h2>
+    <!-- Accordion de secciones -->
+    <div class="accordion" id="accordionCobros">
         
-        {% for cuota in cuotas_vencidas %}
-        <div class="cobro-card estado-vencido filtrable" data-cuota-id="{{ cuota.pk }}">
-            <div class="cliente-avatar">
-                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
-            </div>
-            <div class="cobro-info flex-grow-1">
-                <div class="fw-semibold">{{ cuota.prestamo.cliente.nombre_completo }}</div>
-                <div class="cuota-info">
-                    <span class="badge bg-danger me-1">{{ cuota.dias_vencida }} días</span>
-                    Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
+        <!-- Cuotas vencidas (prioritarias) -->
+        {% if cuotas_vencidas %}
+        <div class="accordion-item border-danger">
+            <h2 class="accordion-header">
+                <button class="accordion-button bg-danger bg-opacity-10 text-danger" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVencidas" aria-expanded="true">
+                    <i class="bi bi-exclamation-circle-fill me-2"></i>
+                    <strong>Cuotas Vencidas</strong>
+                    <span class="badge bg-danger ms-2">{{ cuotas_vencidas|length }}</span>
+                    <span class="ms-2 small">{{ total_vencidas|dinero }}</span>
+                </button>
+            </h2>
+            <div id="collapseVencidas" class="accordion-collapse collapse show" data-bs-parent="#accordionCobros">
+                <div class="accordion-body p-2">
+                    {% for cuota in cuotas_vencidas %}
+                    <div class="cobro-card estado-vencido filtrable" 
+                         data-cuota-id="{{ cuota.pk }}"
+                         data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                        <div class="cliente-avatar">
+                            {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                        </div>
+                        <div class="cobro-info flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                                    {{ cuota.prestamo.cliente.nombre_completo }}
+                                </a>
+                                <span class="badge bg-danger">{{ cuota.dias_vencida }} días</span>
+                                {% if cuota.prestamo.cliente.ruta %}
+                                <span class="badge" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">
+                                    {{ cuota.prestamo.cliente.ruta.nombre }}
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="cuota-info small">
+                                <span>Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</span>
+                                <span class="text-muted mx-1">|</span>
+                                <span class="text-muted">
+                                    <i class="bi bi-telephone-fill"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}
+                                </span>
+                            </div>
+                            <div class="small text-muted">
+                                <i class="bi bi-geo-alt-fill"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:8|default:'-' }}
+                            </div>
+                            <div class="small">
+                                <span class="text-muted">Fin préstamo:</span> 
+                                <span class="fw-semibold">{{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                {% if cuota.interes_mora_pendiente > 0 %}
+                                <span class="badge bg-warning text-dark ms-2">
+                                    Mora: {{ cuota.interes_mora_pendiente|dinero }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="cobro-monto text-end me-2">
+                            <div class="monto-valor fw-bold text-danger">{{ cuota.monto_restante|dinero }}</div>
+                            {% if cuota.interes_mora_pendiente > 0 %}
+                            <small class="text-warning">+{{ cuota.interes_mora_pendiente|dinero }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
+                                    data-cuota-id="{{ cuota.pk }}" 
+                                    data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                    data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
+                                    data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                                    data-dias-vencida="{{ cuota.dias_vencida }}"
+                                    title="Cobro personalizado">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
                 </div>
-            </div>
-            <div class="cobro-monto text-end me-2">
-                <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
-            </div>
-            <div class="btn-group">
-                <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
-                        data-cuota-id="{{ cuota.pk }}" 
-                        data-monto="{{ cuota.monto_restante|numero_raw }}"
-                        data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                        title="Cobro personalizado">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
-                    <i class="bi bi-check-lg"></i>
-                </button>
             </div>
         </div>
-        {% endfor %}
-    </section>
-    {% endif %}
-    
-    <!-- Cobros del día -->
-    <section>
-        <h2 class="section-title">
-            <i class="bi bi-calendar-check"></i>
-            Cobros de Hoy
-            <span class="badge bg-primary ms-2">{{ cuotas_hoy|length }}</span>
-        </h2>
-        
-        {% if cuotas_hoy %}
-            {% for cuota in cuotas_hoy %}
-            <div class="cobro-card estado-pendiente filtrable" data-cuota-id="{{ cuota.pk }}">
-                <div class="cliente-avatar">
-                    {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
-                </div>
-                <div class="cobro-info flex-grow-1">
-                    <div class="d-flex align-items-center gap-2">
-                        <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
-                            {{ cuota.prestamo.cliente.nombre_completo }}
-                        </a>
-                        <span class="badge {% if cuota.prestamo.cliente.categoria == 'EX' %}bg-success{% elif cuota.prestamo.cliente.categoria == 'RE' %}bg-warning text-dark{% elif cuota.prestamo.cliente.categoria == 'MO' %}bg-danger{% else %}bg-info{% endif %} btn-categoria" 
-                              style="cursor: pointer;" 
-                              title="Click para cambiar categoría"
-                              data-cliente-id="{{ cuota.prestamo.cliente.pk }}"
-                              data-categoria="{{ cuota.prestamo.cliente.categoria }}">
-                            {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
-                        </span>
-                    </div>
-                    <div class="cuota-info">
-                        Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
-                        {% if cuota.estado == 'PC' %}
-                        <span class="badge bg-warning text-dark ms-1">Parcial</span>
-                        {% endif %}
-                        {% if cuota.prestamo.cliente.tipo_comercio %}
-                        <span class="text-muted ms-1">· {{ cuota.prestamo.cliente.tipo_comercio }}</span>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="cobro-monto text-end me-2">
-                    <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
-                </div>
-                <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
-                            data-cuota-id="{{ cuota.pk }}" 
-                            data-monto="{{ cuota.monto_restante|numero_raw }}"
-                            data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                            title="Cobro personalizado">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
-                        <i class="bi bi-check-lg"></i>
-                    </button>
-                </div>
-            </div>
-            {% endfor %}
-        {% else %}
-            <div class="empty-state">
-                <i class="bi bi-emoji-smile"></i>
-                <h3>¡Sin cobros pendientes!</h3>
-                <p>No hay cuotas programadas para hoy.</p>
-            </div>
         {% endif %}
-    </section>
-    
-    <!-- Cuotas Próximas (7 días) -->
-    {% if cuotas_proximas %}
-    <section class="mb-4">
-        <h2 class="section-title text-info">
-            <i class="bi bi-calendar-week"></i>
-            Próximos 7 días
-            <span class="badge bg-info ms-2">{{ cuotas_proximas|length }}</span>
-            <small class="text-muted ms-2">{{ total_proximas|dinero }}</small>
-        </h2>
         
-        {% for cuota in cuotas_proximas %}
-        <div class="cobro-card filtrable" data-cuota-id="{{ cuota.pk }}" style="border-left: 4px solid #0dcaf0; opacity: 0.85;">
-            <div class="cliente-avatar" style="background: linear-gradient(135deg, #0dcaf0, #087990);">
-                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
-            </div>
-            <div class="cobro-info flex-grow-1">
-                <div class="d-flex align-items-center gap-2">
-                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
-                        {{ cuota.prestamo.cliente.nombre_completo }}
-                    </a>
-                    <span class="badge bg-info text-dark">
-                        {{ cuota.fecha_vencimiento|date:"d/m" }}
-                    </span>
-                </div>
-                <div class="cuota-info">
-                    Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}
-                    {% if cuota.prestamo.cliente.tipo_comercio %}
-                    <span class="text-muted ms-1">· {{ cuota.prestamo.cliente.tipo_comercio }}</span>
+        <!-- Cobros del día -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button {% if cuotas_vencidas %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseHoy" aria-expanded="{% if not cuotas_vencidas %}true{% else %}false{% endif %}">
+                    <i class="bi bi-calendar-check me-2"></i>
+                    <strong>Cobros de Hoy</strong>
+                    <span class="badge bg-primary ms-2">{{ cuotas_hoy|length }}</span>
+                    <span class="ms-2 small">{{ total_por_cobrar|dinero }}</span>
+                </button>
+            </h2>
+            <div id="collapseHoy" class="accordion-collapse collapse {% if not cuotas_vencidas %}show{% endif %}" data-bs-parent="#accordionCobros">
+                <div class="accordion-body p-2">
+                    {% if cuotas_hoy %}
+                        {% for cuota in cuotas_hoy %}
+                        <div class="cobro-card estado-pendiente filtrable" 
+                             data-cuota-id="{{ cuota.pk }}"
+                             data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                            <div class="cliente-avatar">
+                                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                            </div>
+                            <div class="cobro-info flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                                        {{ cuota.prestamo.cliente.nombre_completo }}
+                                    </a>
+                                    <span class="badge {% if cuota.prestamo.cliente.categoria == 'EX' %}bg-success{% elif cuota.prestamo.cliente.categoria == 'RE' %}bg-warning text-dark{% elif cuota.prestamo.cliente.categoria == 'MO' %}bg-danger{% else %}bg-info{% endif %} btn-categoria" 
+                                          style="cursor: pointer;" 
+                                          title="Click para cambiar categoría"
+                                          data-cliente-id="{{ cuota.prestamo.cliente.pk }}"
+                                          data-categoria="{{ cuota.prestamo.cliente.categoria }}">
+                                        {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
+                                    </span>
+                                    {% if cuota.prestamo.cliente.ruta %}
+                                    <span class="badge" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">
+                                        {{ cuota.prestamo.cliente.ruta.nombre }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="cuota-info small">
+                                    <span>Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</span>
+                                    {% if cuota.estado == 'PC' %}
+                                    <span class="badge bg-warning text-dark ms-1">Parcial</span>
+                                    {% endif %}
+                                    <span class="text-muted mx-1">|</span>
+                                    <span class="text-muted">
+                                        <i class="bi bi-telephone-fill"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}
+                                    </span>
+                                </div>
+                                <div class="small text-muted">
+                                    <i class="bi bi-geo-alt-fill"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:8|default:'-' }}
+                                </div>
+                                <div class="small">
+                                    <span class="text-muted">Fin préstamo:</span> 
+                                    <span class="fw-semibold">{{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                </div>
+                            </div>
+                            <div class="cobro-monto text-end me-2">
+                                <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
+                                        data-cuota-id="{{ cuota.pk }}" 
+                                        data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                        data-mora="0"
+                                        data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                                        data-dias-vencida="0"
+                                        title="Cobro personalizado">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state py-4 text-center">
+                            <i class="bi bi-emoji-smile fs-1 text-muted"></i>
+                            <h5 class="mt-2">¡Sin cobros pendientes!</h5>
+                            <p class="text-muted">No hay cuotas programadas para hoy.</p>
+                        </div>
                     {% endif %}
                 </div>
             </div>
-            <div class="cobro-monto text-end">
-                <div class="monto-valor fw-bold text-info">{{ cuota.monto_restante|dinero }}</div>
+        </div>
+        
+        <!-- Cuotas Próximas (7 días) -->
+        {% if cuotas_proximas %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseProximas" aria-expanded="false">
+                    <i class="bi bi-calendar-week me-2 text-info"></i>
+                    <strong>Próximos 7 días</strong>
+                    <span class="badge bg-info ms-2">{{ cuotas_proximas|length }}</span>
+                    <span class="ms-2 small">{{ total_proximas|dinero }}</span>
+                </button>
+            </h2>
+            <div id="collapseProximas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
+                <div class="accordion-body p-2">
+                    {% for cuota in cuotas_proximas %}
+                    <div class="cobro-card filtrable" 
+                         data-cuota-id="{{ cuota.pk }}" 
+                         data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}"
+                         style="border-left: 4px solid #0dcaf0; opacity: 0.9;">
+                        <div class="cliente-avatar" style="background: linear-gradient(135deg, #0dcaf0, #087990);">
+                            {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                        </div>
+                        <div class="cobro-info flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="fw-semibold text-decoration-none text-dark">
+                                    {{ cuota.prestamo.cliente.nombre_completo }}
+                                </a>
+                                <span class="badge bg-info text-dark">
+                                    {{ cuota.fecha_vencimiento|date:"d/m" }}
+                                </span>
+                                {% if cuota.prestamo.cliente.ruta %}
+                                <span class="badge" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">
+                                    {{ cuota.prestamo.cliente.ruta.nombre }}
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="cuota-info small">
+                                <span>Cuota {{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</span>
+                                <span class="text-muted mx-1">|</span>
+                                <span class="text-muted">
+                                    <i class="bi bi-telephone-fill"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}
+                                </span>
+                            </div>
+                            <div class="small text-muted">
+                                <i class="bi bi-geo-alt-fill"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:8|default:'-' }}
+                            </div>
+                            <div class="small">
+                                <span class="text-muted">Fin préstamo:</span> 
+                                <span class="fw-semibold">{{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                            </div>
+                        </div>
+                        <div class="cobro-monto text-end">
+                            <div class="monto-valor fw-bold text-info">{{ cuota.monto_restante|dinero }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
         </div>
-        {% endfor %}
-    </section>
-    {% endif %}
+        {% endif %}
+        
+    </div>
     
 </div>
 
@@ -203,7 +298,7 @@
 
 <!-- Modal para cobro personalizado -->
 <div class="modal fade" id="modal-pago-parcial" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title">
@@ -225,19 +320,82 @@
                         <span>Monto de cuota:</span>
                         <strong id="pago-monto-max-label" class="text-primary fs-5">$0</strong>
                     </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">
-                        <i class="bi bi-cash me-1"></i>Monto a cobrar ahora:
-                    </label>
-                    <input type="text" class="form-control form-control-lg" id="pago-monto" 
-                           inputmode="numeric" placeholder="0"
-                           oninput="formatearInputMonto(this); actualizarMontoFormateado()">
-                    <div class="form-text">
-                        <span id="monto-formateado-label"></span>
+                    <div id="info-mora-container" style="display: none;">
+                        <hr class="my-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Días de atraso:</span>
+                            <strong id="pago-dias-vencida" class="text-danger">0</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Interés por mora sugerido:</span>
+                            <strong id="pago-mora-sugerida" class="text-warning">$0</strong>
+                        </div>
                     </div>
                 </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-cash me-1"></i>Monto a cobrar:
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="pago-monto" 
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this); actualizarMontoFormateado()">
+                            <div class="form-text">
+                                <span id="monto-formateado-label"></span>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3" id="mora-container">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-percent me-1"></i>Interés por mora a cobrar:
+                            </label>
+                            <input type="text" class="form-control" id="pago-interes-mora" 
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this)">
+                            <div class="form-text">Dejar en 0 si no cobrará mora</div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-credit-card me-1"></i>Método de pago:
+                            </label>
+                            <select class="form-select" id="pago-metodo" onchange="toggleMetodoPago()">
+                                <option value="EF">Efectivo</option>
+                                <option value="TR">Transferencia</option>
+                                <option value="MX">Mixto (Efectivo + Transferencia)</option>
+                            </select>
+                        </div>
+                        
+                        <div id="metodo-mixto-container" style="display: none;">
+                            <div class="mb-2">
+                                <label class="form-label small">Monto en efectivo:</label>
+                                <input type="text" class="form-control" id="pago-monto-efectivo" 
+                                       inputmode="numeric" placeholder="0"
+                                       oninput="formatearInputMonto(this); validarMontosMixtos()">
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">Monto en transferencia:</label>
+                                <input type="text" class="form-control" id="pago-monto-transferencia" 
+                                       inputmode="numeric" placeholder="0"
+                                       oninput="formatearInputMonto(this); validarMontosMixtos()">
+                            </div>
+                        </div>
+                        
+                        <div id="referencia-container" style="display: none;">
+                            <div class="mb-2">
+                                <label class="form-label small">Referencia/Nº operación:</label>
+                                <input type="text" class="form-control" id="pago-referencia" 
+                                       placeholder="Número de operación">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
                 
                 <div class="mb-3">
                     <label class="form-label fw-semibold">
@@ -308,6 +466,190 @@
 
 {% block extra_js %}
 <script>
+// ============ FILTRO POR ZONA ============
+document.getElementById('filtro-zona').addEventListener('change', function() {
+    const zonaSeleccionada = this.value.toLowerCase();
+    document.querySelectorAll('.filtrable').forEach(card => {
+        const zonaCard = (card.dataset.zona || '').toLowerCase();
+        if (!zonaSeleccionada || zonaCard.includes(zonaSeleccionada)) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+});
+
+// ============ MÉTODO DE PAGO ============
+function toggleMetodoPago() {
+    const metodo = document.getElementById('pago-metodo').value;
+    const mixtoContainer = document.getElementById('metodo-mixto-container');
+    const referenciaContainer = document.getElementById('referencia-container');
+    
+    if (metodo === 'MX') {
+        mixtoContainer.style.display = 'block';
+        referenciaContainer.style.display = 'block';
+    } else if (metodo === 'TR') {
+        mixtoContainer.style.display = 'none';
+        referenciaContainer.style.display = 'block';
+    } else {
+        mixtoContainer.style.display = 'none';
+        referenciaContainer.style.display = 'none';
+    }
+}
+
+function validarMontosMixtos() {
+    const montoTotal = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoEfectivo = parseFloat(document.getElementById('pago-monto-efectivo').value.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoTransferencia = parseFloat(document.getElementById('pago-monto-transferencia').value.replace(/\./g, '').replace(',', '.')) || 0;
+    
+    const suma = montoEfectivo + montoTransferencia;
+    if (suma !== montoTotal && suma > 0) {
+        document.getElementById('pago-monto-efectivo').classList.add('is-invalid');
+        document.getElementById('pago-monto-transferencia').classList.add('is-invalid');
+    } else {
+        document.getElementById('pago-monto-efectivo').classList.remove('is-invalid');
+        document.getElementById('pago-monto-transferencia').classList.remove('is-invalid');
+    }
+}
+
+// ============ MODAL DE PAGO PARCIAL ============
+function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0) {
+    document.getElementById('pago-cuota-id').value = cuotaId;
+    document.getElementById('pago-monto-max').value = monto;
+    document.getElementById('pago-cliente-nombre').textContent = cliente;
+    document.getElementById('pago-monto-max-label').textContent = formatearMoneda(monto);
+    document.getElementById('pago-monto').value = formatearNumero(monto);
+    document.getElementById('pago-accion-restante').value = 'ignorar';
+    document.getElementById('pago-metodo').value = 'EF';
+    document.getElementById('pago-interes-mora').value = mora > 0 ? formatearNumero(mora) : '0';
+    document.getElementById('pago-monto-efectivo').value = '';
+    document.getElementById('pago-monto-transferencia').value = '';
+    document.getElementById('pago-referencia').value = '';
+    
+    // Mostrar info de mora si hay días vencidos
+    const infoMoraContainer = document.getElementById('info-mora-container');
+    const moraContainer = document.getElementById('mora-container');
+    if (diasVencida > 0) {
+        infoMoraContainer.style.display = 'block';
+        moraContainer.style.display = 'block';
+        document.getElementById('pago-dias-vencida').textContent = diasVencida + ' días';
+        document.getElementById('pago-mora-sugerida').textContent = formatearMoneda(mora);
+    } else {
+        infoMoraContainer.style.display = 'none';
+        moraContainer.style.display = 'none';
+    }
+    
+    toggleFechaEspecial();
+    toggleMetodoPago();
+    actualizarMontoFormateado();
+    
+    const modal = new bootstrap.Modal(document.getElementById('modal-pago-parcial'));
+    modal.show();
+}
+
+function toggleFechaEspecial() {
+    const accion = document.getElementById('pago-accion-restante').value;
+    document.getElementById('fecha-especial-container').style.display = 
+        accion === 'especial' ? 'block' : 'none';
+}
+
+function actualizarMontoFormateado() {
+    const montoInput = document.getElementById('pago-monto').value;
+    const monto = parseFloat(montoInput.replace(/\./g, '').replace(',', '.')) || 0;
+    document.getElementById('monto-formateado-label').textContent = formatearMoneda(monto);
+}
+
+function formatearNumero(num) {
+    return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function formatearMoneda(num) {
+    return '$ ' + formatearNumero(num);
+}
+
+async function confirmarPagoParcial() {
+    const cuotaId = document.getElementById('pago-cuota-id').value;
+    const montoStr = document.getElementById('pago-monto').value;
+    const monto = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const accionRestante = document.getElementById('pago-accion-restante').value;
+    const fechaEspecial = document.getElementById('pago-fecha-especial').value;
+    
+    // Método de pago
+    const metodoPago = document.getElementById('pago-metodo').value;
+    const montoEfectivoStr = document.getElementById('pago-monto-efectivo').value;
+    const montoTransferenciaStr = document.getElementById('pago-monto-transferencia').value;
+    const montoEfectivo = parseFloat(montoEfectivoStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoTransferencia = parseFloat(montoTransferenciaStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const referencia = document.getElementById('pago-referencia').value;
+    
+    // Interés por mora
+    const interesMoraStr = document.getElementById('pago-interes-mora').value;
+    const interesMora = parseFloat(interesMoraStr.replace(/\./g, '').replace(',', '.')) || 0;
+    
+    if (monto <= 0) {
+        showToast('El monto debe ser mayor a 0', 'danger');
+        return;
+    }
+    
+    // Validar montos mixtos
+    if (metodoPago === 'MX' && (montoEfectivo + montoTransferencia) !== monto) {
+        showToast('La suma de efectivo y transferencia debe ser igual al monto total', 'danger');
+        return;
+    }
+    
+    const data = {
+        monto: monto,
+        accion_restante: accionRestante,
+        fecha_especial: fechaEspecial || null,
+        metodo_pago: metodoPago,
+        monto_efectivo: montoEfectivo,
+        monto_transferencia: montoTransferencia,
+        referencia_transferencia: referencia,
+        interes_mora: interesMora
+    };
+    
+    try {
+        const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast(result.message, 'success');
+            
+            // Ocultar la card de la cuota cobrada
+            const card = document.querySelector(`.cobro-card[data-cuota-id="${cuotaId}"]`);
+            if (card) {
+                card.style.transition = 'all 0.3s ease';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(100%)';
+                setTimeout(() => card.remove(), 300);
+            }
+            
+            // Actualizar estadísticas
+            if (result.estadisticas) {
+                document.getElementById('total-cobrado-hoy').textContent = 
+                    formatearMoneda(result.estadisticas.total_cobrado_hoy);
+            }
+            
+            // Cerrar modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
+            if (modal) modal.hide();
+        } else {
+            showToast(result.message || 'Error al registrar el cobro', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error de conexión', 'danger');
+    }
+}
+
 // Botón de editar cobro abre el modal
 document.querySelectorAll('.btn-editar-cobro').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -315,7 +657,9 @@ document.querySelectorAll('.btn-editar-cobro').forEach(btn => {
         const cuotaId = btn.dataset.cuotaId;
         const monto = parseFloat(btn.dataset.monto);
         const cliente = btn.dataset.cliente;
-        showPagoParcialModal(cuotaId, monto, cliente);
+        const mora = parseFloat(btn.dataset.mora || 0);
+        const diasVencida = parseInt(btn.dataset.diasVencida || 0);
+        showPagoParcialModal(cuotaId, monto, cliente, mora, diasVencida);
     });
 });
 
@@ -341,6 +685,48 @@ document.querySelectorAll('.btn-cobrar').forEach(btn => {
     
     btn.addEventListener('touchend', () => clearTimeout(pressTimer));
     btn.addEventListener('touchmove', () => clearTimeout(pressTimer));
+    
+    // Click normal - cobro completo
+    btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const cuotaId = btn.dataset.cuotaId;
+        
+        try {
+            const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({})
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                
+                // Ocultar la card
+                const card = btn.closest('.cobro-card');
+                if (card) {
+                    card.style.transition = 'all 0.3s ease';
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateX(100%)';
+                    setTimeout(() => card.remove(), 300);
+                }
+                
+                // Actualizar estadísticas
+                if (result.estadisticas) {
+                    document.getElementById('total-cobrado-hoy').textContent = 
+                        formatearMoneda(result.estadisticas.total_cobrado_hoy);
+                }
+            } else {
+                showToast(result.message || 'Error', 'danger');
+            }
+        } catch (error) {
+            showToast('Error de conexión', 'danger');
+        }
+    });
 });
 
 // ============ CAMBIO DE CATEGORÍA ============

@@ -7,7 +7,8 @@ from django.contrib.auth import get_user_model
 from .models import (
     Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro,
     TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
-    RegistroAuditoria, Notificacion, ConfiguracionRespaldo
+    RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
+    ConfiguracionMora, InteresMora
 )
 
 User = get_user_model()
@@ -258,3 +259,37 @@ class ConfiguracionRespaldoAdmin(admin.ModelAdmin):
     list_display = ['nombre', 'activo', 'frecuencia_horas', 'mantener_ultimos', 'ultimo_respaldo']
     list_editable = ['activo', 'frecuencia_horas', 'mantener_ultimos']
 
+
+# ==================== CONFIGURACIÓN DE MORA ====================
+
+@admin.register(ConfiguracionMora)
+class ConfiguracionMoraAdmin(admin.ModelAdmin):
+    list_display = ['nombre', 'porcentaje_diario', 'dias_gracia', 'monto_minimo_mora', 
+                    'aplicar_automaticamente', 'activo']
+    list_editable = ['porcentaje_diario', 'dias_gracia', 'aplicar_automaticamente', 'activo']
+    list_filter = ['activo', 'aplicar_automaticamente']
+    
+    fieldsets = (
+        ('Configuración General', {
+            'fields': ('nombre', 'activo')
+        }),
+        ('Cálculo de Interés', {
+            'fields': ('porcentaje_diario', 'dias_gracia', 'monto_minimo_mora'),
+            'description': 'Configure cómo se calculará el interés por mora'
+        }),
+        ('Automatización', {
+            'fields': ('aplicar_automaticamente',),
+            'description': 'Si está activo, el interés se calcula automáticamente al registrar pagos'
+        }),
+    )
+
+
+@admin.register(InteresMora)
+class InteresMoraAdmin(admin.ModelAdmin):
+    list_display = ['cuota', 'fecha_calculo', 'dias_mora', 'porcentaje_aplicado', 
+                    'monto_base', 'monto_interes', 'pagado', 'agregado_manualmente']
+    list_filter = ['pagado', 'agregado_manualmente', 'fecha_calculo']
+    search_fields = ['cuota__prestamo__cliente__nombre', 'cuota__prestamo__cliente__apellido']
+    readonly_fields = ['fecha_calculo']
+    raw_id_fields = ['cuota']
+    date_hierarchy = 'fecha_calculo'

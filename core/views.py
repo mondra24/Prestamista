@@ -110,6 +110,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         from datetime import timedelta
+        from .models import RutaCobro, ConfiguracionMora
         hoy = timezone.now().date()
         
         # Base queryset - filtrar por usuario si no es admin
@@ -117,30 +118,48 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         if not self.request.user.is_superuser:
             base_filter['prestamo__cliente__usuario'] = self.request.user
         
-        # Cuotas del día (pendientes)
+        # Cuotas del día (pendientes) - ordenadas por ruta
         cuotas_hoy = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **base_filter
-        ).select_related('prestamo', 'prestamo__cliente').order_by('prestamo__cliente__apellido')
+        ).select_related(
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+        ).order_by(
+            'prestamo__cliente__ruta__orden',
+            'prestamo__cliente__ruta__nombre',
+            'prestamo__cliente__apellido'
+        )
         
-        # Cuotas vencidas (días anteriores)
+        # Cuotas vencidas (días anteriores) - ordenadas por ruta y fecha
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **base_filter
-        ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+        ).select_related(
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+        ).order_by(
+            'prestamo__cliente__ruta__orden',
+            'prestamo__cliente__ruta__nombre',
+            'fecha_vencimiento'
+        )
         
-        # Cuotas próximas (próximos 7 días)
+        # Cuotas próximas (próximos 7 días) - ordenadas por ruta y fecha
         cuotas_proximas = Cuota.objects.filter(
             fecha_vencimiento__gt=hoy,
             fecha_vencimiento__lte=hoy + timedelta(days=7),
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **base_filter
-        ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+        ).select_related(
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+        ).order_by(
+            'fecha_vencimiento',
+            'prestamo__cliente__ruta__orden',
+            'prestamo__cliente__ruta__nombre'
+        )
         
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado': 'PA'}
@@ -164,6 +183,17 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             total=Sum('monto_cuota')
         )['total'] or Decimal('0.00')
         
+        # Total vencidas
+        total_vencidas = cuotas_vencidas.aggregate(
+            total=Sum('monto_cuota')
+        )['total'] or Decimal('0.00')
+        
+        # Obtener rutas activas para filtrado
+        rutas = RutaCobro.objects.filter(activa=True).order_by('orden', 'nombre')
+        
+        # Obtener configuración de mora
+        config_mora = ConfiguracionMora.obtener_config_activa()
+        
         context.update({
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
@@ -172,7 +202,10 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'total_por_cobrar': total_por_cobrar,
             'total_proximas': total_proximas,
+            'total_vencidas': total_vencidas,
             'fecha_hoy': hoy,
+            'rutas': rutas,
+            'config_mora': config_mora,
         })
         return context
 
@@ -420,6 +453,15 @@ def cobrar_cuota(request, pk):
                 accion_restante = data.get('accion_restante', 'ignorar')  # 'ignorar', 'proxima', 'especial'
                 fecha_especial_str = data.get('fecha_especial', None)
                 
+                # Nuevos campos de método de pago
+                metodo_pago = data.get('metodo_pago', 'EF')  # 'EF', 'TR', 'MX'
+                monto_efectivo = data.get('monto_efectivo')
+                monto_transferencia = data.get('monto_transferencia')
+                referencia_transferencia = data.get('referencia_transferencia')
+                
+                # Interés por mora
+                interes_mora = data.get('interes_mora', 0)
+                
                 # Convertir fecha especial si existe
                 fecha_especial = None
                 if fecha_especial_str and accion_restante == 'especial':
@@ -430,12 +472,26 @@ def cobrar_cuota(request, pk):
                 monto = None
                 accion_restante = 'ignorar'
                 fecha_especial = None
+                metodo_pago = 'EF'
+                monto_efectivo = None
+                monto_transferencia = None
+                referencia_transferencia = None
+                interes_mora = 0
             
             # Calcular restante antes del pago
             monto_restante_antes = float(cuota.monto_restante)
             monto_que_quedara = max(0, monto_restante_antes - float(monto or cuota.monto_restante))
             
-            cuota.registrar_pago(monto, accion_restante, fecha_especial)
+            cuota.registrar_pago(
+                monto=monto, 
+                accion_restante=accion_restante, 
+                fecha_especial=fecha_especial,
+                metodo_pago=metodo_pago,
+                monto_efectivo=monto_efectivo,
+                monto_transferencia=monto_transferencia,
+                referencia_transferencia=referencia_transferencia,
+                interes_mora=interes_mora
+            )
             
             # Mensaje según la acción
             if accion_restante == 'proxima' and monto_que_quedara > 0:
@@ -444,6 +500,12 @@ def cobrar_cuota(request, pk):
                 mensaje = f'Pago registrado. Cuota especial creada por ${monto_que_quedara:.2f}.'
             else:
                 mensaje = 'Pago registrado exitosamente'
+            
+            # Agregar info de método de pago al mensaje
+            if metodo_pago == 'TR':
+                mensaje += ' (Transferencia)'
+            elif metodo_pago == 'MX':
+                mensaje += ' (Mixto)'
             
             # Calcular total cobrado hoy
             hoy = timezone.now().date()
@@ -466,6 +528,8 @@ def cobrar_cuota(request, pk):
                     'estado_display': cuota.get_estado_display(),
                     'monto_pagado': float(cuota.monto_pagado),
                     'monto_restante': float(cuota.monto_restante),
+                    'metodo_pago': cuota.metodo_pago,
+                    'interes_mora_cobrado': float(cuota.interes_mora_cobrado),
                 },
                 'prestamo': {
                     'progreso': cuota.prestamo.progreso_porcentaje,
