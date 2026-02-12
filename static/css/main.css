@@ -184,139 +184,273 @@ body {
     }
 }
 
-/* ============== TARJETAS DE COBRO SIMPLIFICADAS ============== */
-.cobro-card-simple {
-    background: var(--bg-card);
-    border-radius: 10px;
-    margin-bottom: 6px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+/* ============== PAYMENT CARDS - DISEÑO MODERNO ============== */
+.payment-card {
+    background: white;
+    border-radius: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
     overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.cobro-card-simple.estado-vencido {
-    border-left: 3px solid var(--color-moroso);
-    background: rgba(220,53,69,0.03);
+.payment-card:hover {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
 }
 
-.cobro-card-simple.estado-pendiente {
-    border-left: 3px solid var(--color-pendiente);
+.payment-card.vencida {
+    background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+    border-left: 4px solid #e53935;
 }
 
-.cobro-card-simple.estado-proximo {
-    border-left: 3px solid #0dcaf0;
-    opacity: 0.9;
+.payment-card.pendiente {
+    background: linear-gradient(135deg, #fff8e1 0%, #ffffff 100%);
+    border-left: 4px solid #ff9800;
 }
 
-/* Fila principal - siempre visible */
-.card-row-main {
+.payment-card.proxima {
+    background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%);
+    border-left: 4px solid #2196f3;
+}
+
+/* Header de la tarjeta */
+.payment-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 16px 16px 12px;
+}
+
+.client-info {
     display: flex;
     align-items: center;
-    padding: 10px;
-    gap: 10px;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
 }
 
-.card-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--color-nuevo), #0b5ed7);
+.client-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.75rem;
+    font-weight: 700;
+    font-size: 0.95rem;
     flex-shrink: 0;
+    text-transform: uppercase;
 }
 
-.card-avatar.bg-info {
-    background: linear-gradient(135deg, #0dcaf0, #087990);
+.client-avatar.vencida {
+    background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
 }
 
-.card-info {
+.client-avatar.proxima {
+    background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+}
+
+.client-details {
     flex: 1;
     min-width: 0;
-    cursor: pointer;
 }
 
-.card-nombre {
-    display: block;
+.client-name {
+    font-size: 1rem;
     font-weight: 600;
-    font-size: 0.9rem;
-    line-height: 1.2;
+    color: #1a1a2e;
+    margin: 0 0 2px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.card-cuota {
-    display: block;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-}
-
-.card-monto {
-    font-weight: 700;
-    font-size: 0.95rem;
-    white-space: nowrap;
-    padding-right: 5px;
-}
-
-/* Botones de acción rápida */
-.btn-cobrar-rapido {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    border: 1px solid #dee2e6;
-    background: white;
+.loan-progress {
+    font-size: 0.8rem;
     color: #6c757d;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s;
+}
+
+.partial-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #ff9800;
+    border-radius: 50%;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* Sección del monto */
+.amount-section {
+    text-align: right;
     flex-shrink: 0;
 }
 
-.btn-cobrar-rapido:hover {
-    background: #f8f9fa;
+.amount-section .amount {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1a1a2e;
 }
 
-.btn-cobrar-rapido.btn-success-custom {
-    background: var(--color-pagado);
-    border-color: var(--color-pagado);
+.amount-section.vencida .amount {
+    color: #e53935;
+}
+
+.amount-section.proxima .amount {
+    color: #1976d2;
+}
+
+.overdue-badge {
+    display: inline-block;
+    background: #ffebee;
+    color: #c62828;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 4px;
+}
+
+.date-badge {
+    display: inline-block;
+    background: #e3f2fd;
+    color: #1565c0;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-top: 4px;
+}
+
+/* Body - Info chips */
+.payment-card-body {
+    padding: 0 16px 12px;
+    cursor: pointer;
+}
+
+.info-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #f5f5f5;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.chip i {
+    font-size: 0.7rem;
+    color: #999;
+}
+
+.chip.mora {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+/* Contenido expandible */
+.payment-card-expand {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.payment-card.expanded .payment-card-expand {
+    max-height: 200px;
+}
+
+.expand-content {
+    padding: 12px 16px;
+    background: #fafafa;
+    border-top: 1px solid #eee;
+}
+
+.expand-content p {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.expand-content i {
+    color: #999;
+    margin-right: 6px;
+}
+
+.btn-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #667eea;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.btn-link:hover {
+    color: #5a67d8;
+    text-decoration: underline;
+}
+
+/* Botones de acción */
+.payment-card-actions {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #fafafa;
+    border-top: 1px solid #eee;
+}
+
+.action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-btn.secondary {
+    background: white;
+    color: #666;
+    border: 1px solid #ddd;
+}
+
+.action-btn.secondary:hover {
+    background: #f5f5f5;
+    border-color: #ccc;
+}
+
+.action-btn.primary {
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
     color: white;
 }
 
-.btn-cobrar-rapido.btn-success-custom:hover {
-    background: #157347;
+.action-btn.primary:hover {
+    background: linear-gradient(135deg, #388e3c 0%, #1b5e20 100%);
+    transform: translateY(-1px);
 }
 
-/* Detalles expandibles */
-.card-row-details {
-    display: none;
-    padding: 10px 10px 12px 52px;
-    background: #f8f9fa;
-    border-top: 1px solid rgba(0,0,0,0.06);
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+.action-btn i {
+    font-size: 1rem;
 }
 
-.cobro-card-simple.open .card-row-details {
-    display: block;
-}
-
-.card-row-details > div {
-    padding: 3px 0;
-}
-
-.card-row-details i {
-    width: 16px;
-    margin-right: 6px;
-    color: #adb5bd;
-}
-
-/* Estilos legacy para compatibilidad */
+/* Legacy styles for compatibility */
 .cobro-card {
     background: var(--bg-card);
     border-radius: 12px;
