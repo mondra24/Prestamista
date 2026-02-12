@@ -288,24 +288,16 @@
             <div class="modal-body">
                 <input type="hidden" id="pago-cuota-id">
                 <input type="hidden" id="pago-monto-max">
-                <input type="hidden" id="pago-porcentaje-mora" value="{{ config_mora.porcentaje_diario|default:'0.5' }}">
-                <input type="hidden" id="pago-dias-gracia" value="{{ config_mora.dias_gracia|default:'0' }}">
                 
                 <!-- Info del cliente -->
-                <div class="text-center mb-3">
+                <div class="text-center mb-3 pb-2 border-bottom">
                     <h6 class="mb-1" id="pago-cliente-nombre">Cliente</h6>
-                    <div class="text-muted small">Monto de cuota: <strong id="pago-monto-max-label" class="text-primary">$0</strong></div>
-                </div>
-                
-                <!-- Fecha de la cuota -->
-                <div class="info-fecha-cuota mb-3">
-                    <div class="d-flex justify-content-between align-items-center p-2 bg-light rounded">
-                        <span class="small"><i class="bi bi-calendar-event me-1"></i>Fecha de cuota:</span>
-                        <strong id="pago-fecha-cuota" class="text-primary">--</strong>
+                    <div class="d-flex justify-content-center gap-3 small">
+                        <span>Cuota: <strong id="pago-monto-max-label" class="text-primary">$0</strong></span>
+                        <span>Fecha: <strong id="pago-fecha-cuota" class="text-primary">--</strong></span>
                     </div>
-                    <div id="info-mora-container" class="d-flex justify-content-between align-items-center p-2 bg-warning bg-opacity-25 rounded mt-2" style="display: none !important;">
-                        <span class="small"><i class="bi bi-exclamation-triangle me-1"></i>Días vencida:</span>
-                        <strong id="pago-dias-vencida" class="text-danger">0 días</strong>
+                    <div id="info-mora-container" class="mt-2" style="display: none;">
+                        <span class="badge bg-danger"><i class="bi bi-exclamation-triangle me-1"></i>Vencida hace <span id="pago-dias-vencida">0</span> días</span>
                     </div>
                 </div>
                 
@@ -317,20 +309,85 @@
                            oninput="formatearInputMonto(this); calcularResumenPago()">
                 </div>
                 
-                <!-- Interés por mora - SIEMPRE VISIBLE -->
-                <div class="mb-3" id="mora-container">
-                    <label class="form-label fw-semibold small d-flex justify-content-between align-items-center">
-                        <span><i class="bi bi-percent me-1"></i>Interés por mora:</span>
-                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="calcularMoraAutomatica()">
-                            <i class="bi bi-calculator me-1"></i>Calcular Auto
-                        </button>
-                    </label>
+                <!-- Calculador de Interés -->
+                <div class="card bg-light mb-3">
+                    <div class="card-body py-2">
+                        <label class="form-label fw-semibold small mb-2">
+                            <i class="bi bi-percent me-1"></i>Calcular Interés por Mora
+                        </label>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-5">
+                                <label class="form-label small mb-1">% Diario:</label>
+                                <input type="number" step="0.01" class="form-control form-control-sm text-center" 
+                                       id="pago-porcentaje-input" value="{{ config_mora.porcentaje_diario|default:'0.5' }}"
+                                       oninput="calcularInteresDesdeporcentaje()">
+                            </div>
+                            <div class="col-4">
+                                <label class="form-label small mb-1">Días:</label>
+                                <input type="number" class="form-control form-control-sm text-center" 
+                                       id="pago-dias-mora-input" value="0"
+                                       oninput="calcularInteresDesdeporcentaje()">
+                            </div>
+                            <div class="col-3">
+                                <button type="button" class="btn btn-primary btn-sm w-100" onclick="aplicarInteresCalculado()">
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-2 text-center" id="interes-calculado-container">
+                            <small class="text-muted">Interés calculado:</small>
+                            <div class="fw-bold text-warning fs-5" id="interes-calculado-preview">$0</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Interés a cobrar -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small">Interés por mora a cobrar:</label>
                     <input type="text" class="form-control text-center" id="pago-interes-mora" 
                            inputmode="numeric" placeholder="0"
                            oninput="formatearInputMonto(this); calcularResumenPago()">
-                    <div class="form-text small" id="mora-sugerida-text">
-                        <span class="text-muted">Porcentaje diario: <strong id="porcentaje-diario-label">{{ config_mora.porcentaje_diario|default:'0.5' }}%</strong></span>
+                </div>
+                
+                <!-- RESUMEN DESTACADO -->
+                <div class="pago-resumen mb-3">
+                    <div class="pago-resumen-row">
+                        <span class="label">Monto cuota:</span>
+                        <span class="valor" id="resumen-monto-cuota">$0</span>
                     </div>
+                    <div class="pago-resumen-row">
+                        <span class="label">Vas a cobrar:</span>
+                        <span class="valor" id="resumen-monto-cobrar">$0</span>
+                    </div>
+                    <div class="pago-resumen-row" id="resumen-mora-row" style="display: none;">
+                        <span class="label">+ Interés mora:</span>
+                        <span class="valor" id="resumen-mora">$0</span>
+                    </div>
+                    <div class="pago-resumen-row total">
+                        <span class="label">TOTAL A RECIBIR:</span>
+                        <span class="valor text-success" id="resumen-total">$0</span>
+                    </div>
+                    <div class="pago-resumen-row restante" id="resumen-restante-row" style="display: none;">
+                        <span class="label"><i class="bi bi-exclamation-circle me-1"></i>QUEDA PENDIENTE:</span>
+                        <span class="valor text-danger fw-bold" id="resumen-restante">$0</span>
+                    </div>
+                </div>
+                
+                <!-- Qué hacer con el restante -->
+                <div class="mb-3" id="accion-restante-container" style="display: none;">
+                    <label class="form-label fw-semibold small text-danger">
+                        <i class="bi bi-arrow-right-circle me-1"></i>¿Qué hacer con lo pendiente?
+                    </label>
+                    <select class="form-select" id="pago-accion-restante" onchange="toggleFechaEspecial()">
+                        <option value="ignorar">Dejar pendiente en esta cuota</option>
+                        <option value="proxima">Sumar a la próxima cuota</option>
+                        <option value="especial">Agendar para otra fecha</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3" id="fecha-especial-container" style="display: none;">
+                    <label class="form-label small">Fecha para pagar lo pendiente:</label>
+                    <input type="date" class="form-control" id="pago-fecha-especial">
                 </div>
                 
                 <!-- Método de pago -->
@@ -364,41 +421,6 @@
                     <div class="mb-3">
                         <label class="form-label small">Referencia/Nº operación:</label>
                         <input type="text" class="form-control" id="pago-referencia" placeholder="Número de operación">
-                    </div>
-                </div>
-                
-                <!-- Qué hacer con el restante -->
-                <div class="mb-3" id="accion-restante-container" style="display: none;">
-                    <label class="form-label fw-semibold small">¿Qué hacer con el restante?</label>
-                    <select class="form-select" id="pago-accion-restante" onchange="toggleFechaEspecial()">
-                        <option value="ignorar">Dejar pendiente en esta cuota</option>
-                        <option value="proxima">Sumar a la próxima cuota</option>
-                        <option value="especial">Agendar en otra fecha</option>
-                    </select>
-                </div>
-                
-                <div class="mb-3" id="fecha-especial-container" style="display: none;">
-                    <label class="form-label small">Fecha de cuota especial:</label>
-                    <input type="date" class="form-control" id="pago-fecha-especial">
-                </div>
-                
-                <!-- Resumen de pago -->
-                <div class="pago-resumen" id="pago-resumen">
-                    <div class="pago-resumen-row">
-                        <span class="label">Monto a cobrar:</span>
-                        <span class="valor" id="resumen-monto-cobrar">$0</span>
-                    </div>
-                    <div class="pago-resumen-row" id="resumen-mora-row" style="display: none;">
-                        <span class="label">Interés por mora:</span>
-                        <span class="valor" id="resumen-mora">$0</span>
-                    </div>
-                    <div class="pago-resumen-row total">
-                        <span class="label">Total a recibir:</span>
-                        <span class="valor text-success" id="resumen-total">$0</span>
-                    </div>
-                    <div class="pago-resumen-row" id="resumen-restante-row" style="display: none;">
-                        <span class="label">Quedará pendiente:</span>
-                        <span class="valor text-danger" id="resumen-restante">$0</span>
                     </div>
                 </div>
             </div>
@@ -520,24 +542,23 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     // Mostrar fecha de la cuota
     if (fechaCuota) {
         const fecha = new Date(fechaCuota + 'T00:00:00');
-        const opciones = { day: '2-digit', month: 'short', year: 'numeric' };
+        const opciones = { day: '2-digit', month: 'short' };
         document.getElementById('pago-fecha-cuota').textContent = fecha.toLocaleDateString('es-ES', opciones);
     } else {
         document.getElementById('pago-fecha-cuota').textContent = 'Hoy';
     }
     
+    // Configurar calculador de interés
+    document.getElementById('pago-dias-mora-input').value = diasVencida;
+    calcularInteresDesdeporcentaje();
+    
     // Mostrar días vencidos si aplica
     const infoMoraContainer = document.getElementById('info-mora-container');
     if (diasVencida > 0) {
-        infoMoraContainer.style.display = 'flex';
-        document.getElementById('pago-dias-vencida').textContent = diasVencida + ' días';
-        // Calcular mora automáticamente
-        calcularMoraAutomatica();
+        infoMoraContainer.style.display = 'block';
+        document.getElementById('pago-dias-vencida').textContent = diasVencida;
     } else {
         infoMoraContainer.style.display = 'none';
-        document.getElementById('mora-sugerida-text').innerHTML = 
-            '<span class="text-muted">Sin días de mora. Porcentaje diario: <strong>' + 
-            document.getElementById('pago-porcentaje-mora').value + '%</strong></span>';
     }
     
     toggleFechaEspecial();
@@ -548,27 +569,22 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     modal.show();
 }
 
-function calcularMoraAutomatica() {
-    const porcentajeMora = parseFloat(document.getElementById('pago-porcentaje-mora').value) || 0.5;
-    const diasGracia = parseInt(document.getElementById('pago-dias-gracia').value) || 0;
+// Calcula el interés en base al % y días ingresados
+function calcularInteresDesdeporcentaje() {
+    const porcentaje = parseFloat(document.getElementById('pago-porcentaje-input').value) || 0;
+    const dias = parseInt(document.getElementById('pago-dias-mora-input').value) || 0;
     
-    if (diasVencidaActual <= diasGracia) {
-        document.getElementById('pago-interes-mora').value = '0';
-        if (diasGracia > 0) {
-            document.getElementById('mora-sugerida-text').innerHTML = 
-                '<span class="text-info"><i class="bi bi-info-circle me-1"></i>Dentro del período de gracia (' + diasGracia + ' días)</span>';
-        } else {
-            document.getElementById('mora-sugerida-text').innerHTML = 
-                '<span class="text-muted">Sin días de mora</span>';
-        }
-    } else {
-        const diasEfectivos = diasVencidaActual - diasGracia;
-        const interesMora = Math.round((montoMaxActual * porcentajeMora / 100) * diasEfectivos);
-        document.getElementById('pago-interes-mora').value = formatearNumero(interesMora);
-        document.getElementById('mora-sugerida-text').innerHTML = 
-            '<span class="text-warning"><i class="bi bi-calculator me-1"></i>' + 
-            montoMaxActual.toLocaleString() + ' × ' + porcentajeMora + '% × ' + diasEfectivos + ' días = <strong>' + formatearMoneda(interesMora) + '</strong></span>';
-    }
+    const interes = Math.round((montoMaxActual * porcentaje / 100) * dias);
+    document.getElementById('interes-calculado-preview').textContent = formatearMoneda(interes);
+}
+
+// Aplica el interés calculado al campo de interés
+function aplicarInteresCalculado() {
+    const porcentaje = parseFloat(document.getElementById('pago-porcentaje-input').value) || 0;
+    const dias = parseInt(document.getElementById('pago-dias-mora-input').value) || 0;
+    
+    const interes = Math.round((montoMaxActual * porcentaje / 100) * dias);
+    document.getElementById('pago-interes-mora').value = formatearNumero(interes);
     calcularResumenPago();
 }
 
@@ -579,6 +595,9 @@ function calcularResumenPago() {
     const monto = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
     const interesMora = parseFloat(interesMoraStr.replace(/\./g, '').replace(',', '.')) || 0;
     const montoMax = montoMaxActual;
+    
+    // Mostrar monto de cuota
+    document.getElementById('resumen-monto-cuota').textContent = formatearMoneda(montoMax);
     
     // Actualizar resumen
     document.getElementById('resumen-monto-cobrar').textContent = formatearMoneda(monto);
