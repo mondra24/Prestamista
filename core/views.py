@@ -146,10 +146,10 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'fecha_vencimiento'
         )
         
-        # Cuotas próximas (próximos 7 días) - ordenadas por ruta y fecha
+        # Cuotas próximas (próximos 30 días) - ordenadas por fecha y ruta
         cuotas_proximas = Cuota.objects.filter(
             fecha_vencimiento__gt=hoy,
-            fecha_vencimiento__lte=hoy + timedelta(days=7),
+            fecha_vencimiento__lte=hoy + timedelta(days=30),
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **base_filter
@@ -160,6 +160,10 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre'
         )
+        
+        # Separar próxima semana de resto del mes
+        cuotas_semana = [c for c in cuotas_proximas if c.fecha_vencimiento <= hoy + timedelta(days=7)]
+        cuotas_mes = [c for c in cuotas_proximas if c.fecha_vencimiento > hoy + timedelta(days=7)]
         
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado': 'PA'}
@@ -198,6 +202,8 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
             'cuotas_proximas': cuotas_proximas,
+            'cuotas_semana': cuotas_semana,
+            'cuotas_mes': cuotas_mes,
             'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'total_por_cobrar': total_por_cobrar,

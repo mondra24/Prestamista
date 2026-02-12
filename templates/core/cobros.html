@@ -203,19 +203,18 @@
         </div>
         
         <!-- Cuotas Próximas (7 días) -->
-        {% if cuotas_proximas %}
+        {% if cuotas_semana %}
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseProximas" aria-expanded="false">
                     <i class="bi bi-calendar-week me-2 text-info"></i>
                     <strong>Próximos 7 días</strong>
-                    <span class="badge bg-info ms-2">{{ cuotas_proximas|length }}</span>
-                    <span class="ms-2 small">{{ total_proximas|dinero }}</span>
+                    <span class="badge bg-info ms-2">{{ cuotas_semana|length }}</span>
                 </button>
             </h2>
             <div id="collapseProximas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
-                    {% for cuota in cuotas_proximas %}
+                    {% for cuota in cuotas_semana %}
                     <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
                         <div class="payment-card-header">
                             <div class="client-info">
@@ -240,6 +239,46 @@
                             <div class="expand-content">
                                 <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
                                 <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
+        <!-- Cuotas del mes (8-30 días) -->
+        {% if cuotas_mes %}
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseMes" aria-expanded="false">
+                    <i class="bi bi-calendar-month me-2 text-secondary"></i>
+                    <strong>Resto del mes</strong>
+                    <span class="badge bg-secondary ms-2">{{ cuotas_mes|length }}</span>
+                </button>
+            </h2>
+            <div id="collapseMes" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
+                <div class="accordion-body p-2">
+                    {% for cuota in cuotas_mes %}
+                    <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                        <div class="payment-card-header">
+                            <div class="client-info">
+                                <div class="client-avatar" style="background: #6c757d;">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                                <div class="client-details">
+                                    <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
+                                    <span class="loan-progress">Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                                </div>
+                            </div>
+                            <div class="amount-section">
+                                <span class="amount">{{ cuota.monto_restante|dinero }}</span>
+                                <span class="date-badge" style="background: #e9ecef; color: #495057;">{{ cuota.fecha_vencimiento|date:"d M" }}</span>
+                            </div>
+                        </div>
+                        <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
+                            <div class="info-chips">
+                                {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
+                                <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
                             </div>
                         </div>
                     </div>
