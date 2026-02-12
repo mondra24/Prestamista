@@ -184,7 +184,139 @@ body {
     }
 }
 
-/* ============== TARJETAS DE COBRO ============== */
+/* ============== TARJETAS DE COBRO SIMPLIFICADAS ============== */
+.cobro-card-simple {
+    background: var(--bg-card);
+    border-radius: 10px;
+    margin-bottom: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+
+.cobro-card-simple.estado-vencido {
+    border-left: 3px solid var(--color-moroso);
+    background: rgba(220,53,69,0.03);
+}
+
+.cobro-card-simple.estado-pendiente {
+    border-left: 3px solid var(--color-pendiente);
+}
+
+.cobro-card-simple.estado-proximo {
+    border-left: 3px solid #0dcaf0;
+    opacity: 0.9;
+}
+
+/* Fila principal - siempre visible */
+.card-row-main {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    gap: 10px;
+}
+
+.card-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--color-nuevo), #0b5ed7);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.card-avatar.bg-info {
+    background: linear-gradient(135deg, #0dcaf0, #087990);
+}
+
+.card-info {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.card-nombre {
+    display: block;
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card-cuota {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.card-monto {
+    font-weight: 700;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    padding-right: 5px;
+}
+
+/* Botones de acción rápida */
+.btn-cobrar-rapido {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    background: white;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.btn-cobrar-rapido:hover {
+    background: #f8f9fa;
+}
+
+.btn-cobrar-rapido.btn-success-custom {
+    background: var(--color-pagado);
+    border-color: var(--color-pagado);
+    color: white;
+}
+
+.btn-cobrar-rapido.btn-success-custom:hover {
+    background: #157347;
+}
+
+/* Detalles expandibles */
+.card-row-details {
+    display: none;
+    padding: 10px 10px 12px 52px;
+    background: #f8f9fa;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.cobro-card-simple.open .card-row-details {
+    display: block;
+}
+
+.card-row-details > div {
+    padding: 3px 0;
+}
+
+.card-row-details i {
+    width: 16px;
+    margin-right: 6px;
+    color: #adb5bd;
+}
+
+/* Estilos legacy para compatibilidad */
 .cobro-card {
     background: var(--bg-card);
     border-radius: 12px;
@@ -192,10 +324,6 @@ body {
     box-shadow: 0 1px 4px rgba(0,0,0,0.06);
     transition: all 0.2s ease;
     overflow: hidden;
-}
-
-.cobro-card:active {
-    transform: scale(0.99);
 }
 
 .cobro-card.estado-pagado {
@@ -215,103 +343,6 @@ body {
 .cobro-card.estado-proximo {
     border-left: 3px solid #0dcaf0;
     opacity: 0.85;
-}
-
-/* Tarjetas compactas */
-.cobro-card-compact {
-    padding: 0;
-}
-
-.cobro-card-compact .cobro-card-main {
-    display: flex;
-    align-items: center;
-    padding: 10px 12px;
-    gap: 10px;
-    cursor: pointer;
-}
-
-.cobro-card-compact .cliente-avatar.avatar-sm {
-    width: 36px;
-    height: 36px;
-    font-size: 0.8rem;
-    flex-shrink: 0;
-}
-
-.cobro-card-compact .cobro-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.cobro-card-compact .cliente-nombre {
-    font-size: 0.9rem;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.cobro-card-compact .cuota-info-mini {
-    font-size: 0.75rem;
-}
-
-.cobro-card-compact .badge-sm {
-    font-size: 0.65rem;
-    padding: 2px 5px;
-}
-
-.cobro-card-compact .card-chevron {
-    font-size: 0.7rem;
-    transition: transform 0.2s;
-}
-
-.cobro-card-compact.expanded .card-chevron {
-    transform: rotate(180deg);
-}
-
-/* Detalles colapsables */
-.cobro-card-details {
-    display: none;
-    padding: 8px 12px 10px 58px;
-    background: rgba(0,0,0,0.02);
-    border-top: 1px solid rgba(0,0,0,0.05);
-    font-size: 0.8rem;
-}
-
-.cobro-card-compact.expanded .cobro-card-details {
-    display: block;
-}
-
-.cobro-card-details .details-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 2px 0;
-    color: var(--text-secondary);
-}
-
-.cobro-card-details .details-row span,
-.cobro-card-details .details-row a {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.cobro-card-details i {
-    font-size: 0.75rem;
-    margin-right: 4px;
-}
-
-/* Botones de acción */
-.cobro-card-actions {
-    display: flex;
-    gap: 4px;
-    padding: 0 10px 0 0;
-    flex-shrink: 0;
-}
-
-.cobro-card-actions .btn-sm {
-    padding: 4px 8px;
-    font-size: 0.8rem;
 }
 
 .cobro-card .cliente-avatar {

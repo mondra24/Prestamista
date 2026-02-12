@@ -76,58 +76,33 @@
             <div id="collapseVencidas" class="accordion-collapse collapse show" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% for cuota in cuotas_vencidas %}
-                    <div class="cobro-card cobro-card-compact estado-vencido filtrable" 
-                         data-cuota-id="{{ cuota.pk }}"
-                         data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
-                        <div class="cobro-card-main" onclick="toggleCardDetails(this.parentElement)">
-                            <div class="cliente-avatar avatar-sm">
-                                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                    <div class="cobro-card-simple estado-vencido filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                        <div class="card-row-main">
+                            <div class="card-avatar">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                            <div class="card-info" onclick="this.parentElement.parentElement.classList.toggle('open')">
+                                <span class="card-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:3 }}</span>
+                                <span class="card-cuota">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }} <span class="text-danger">({{ cuota.dias_vencida }}d)</span></span>
                             </div>
-                            <div class="cobro-info flex-grow-1">
-                                <div class="d-flex align-items-center gap-1 flex-wrap">
-                                    <span class="fw-semibold cliente-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:2 }}</span>
-                                    <span class="badge bg-danger badge-sm">{{ cuota.dias_vencida }}d</span>
-                                    {% if cuota.prestamo.cliente.ruta %}
-                                    <span class="badge badge-sm" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">{{ cuota.prestamo.cliente.ruta.nombre|slice:":3" }}</span>
-                                    {% endif %}
-                                </div>
-                                <div class="cuota-info-mini text-muted">
-                                    <small>{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</small>
-                                    <i class="bi bi-chevron-down ms-1 card-chevron"></i>
-                                </div>
-                            </div>
-                            <div class="cobro-monto text-end">
-                                <div class="monto-valor fw-bold text-danger">{{ cuota.monto_restante|dinero }}</div>
-                            </div>
-                        </div>
-                        <div class="cobro-card-details">
-                            <div class="details-row">
-                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="text-decoration-none"><i class="bi bi-person"></i> Ver cliente</a>
-                                <span><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</span>
-                            </div>
-                            <div class="details-row">
-                                <span><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:6|default:'-' }}</span>
-                            </div>
-                            <div class="details-row">
-                                <span><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
-                                {% if cuota.interes_mora_pendiente > 0 %}
-                                <span class="text-warning"><i class="bi bi-percent"></i> Mora: {{ cuota.interes_mora_pendiente|dinero }}</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="cobro-card-actions">
-                            <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
-                                    data-cuota-id="{{ cuota.pk }}" 
+                            <div class="card-monto text-danger">{{ cuota.monto_restante|dinero }}</div>
+                            <button type="button" class="btn-cobrar-rapido btn-editar-cobro"
+                                    data-cuota-id="{{ cuota.pk }}"
                                     data-monto="{{ cuota.monto_restante|numero_raw }}"
                                     data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
                                     data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                                    data-dias-vencida="{{ cuota.dias_vencida }}"
-                                    title="Cobro personalizado">
+                                    data-dias-vencida="{{ cuota.dias_vencida }}">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                            <button type="button" class="btn-cobrar-rapido btn-cobrar btn-success-custom" data-cuota-id="{{ cuota.pk }}">
                                 <i class="bi bi-check-lg"></i>
                             </button>
+                        </div>
+                        <div class="card-row-details">
+                            <div><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</div>
+                            <div><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:5|default:'-' }}</div>
+                            <div><i class="bi bi-calendar"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</div>
+                            {% if cuota.interes_mora_pendiente > 0 %}<div class="text-warning"><i class="bi bi-percent"></i> Mora: {{ cuota.interes_mora_pendiente|dinero }}</div>{% endif %}
+                            {% if cuota.prestamo.cliente.ruta %}<div><i class="bi bi-pin-map"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</div>{% endif %}
+                            <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-person"></i> Ver cliente</a>
                         </div>
                     </div>
                     {% endfor %}
@@ -150,59 +125,32 @@
                 <div class="accordion-body p-2">
                     {% if cuotas_hoy %}
                         {% for cuota in cuotas_hoy %}
-                        <div class="cobro-card cobro-card-compact estado-pendiente filtrable" 
-                             data-cuota-id="{{ cuota.pk }}"
-                             data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
-                            <div class="cobro-card-main" onclick="toggleCardDetails(this.parentElement)">
-                                <div class="cliente-avatar avatar-sm">
-                                    {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                        <div class="cobro-card-simple estado-pendiente filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                            <div class="card-row-main">
+                                <div class="card-avatar">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                                <div class="card-info" onclick="this.parentElement.parentElement.classList.toggle('open')">
+                                    <span class="card-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:3 }}</span>
+                                    <span class="card-cuota">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}{% if cuota.estado == 'PC' %} <span class="text-warning">●</span>{% endif %}</span>
                                 </div>
-                                <div class="cobro-info flex-grow-1">
-                                    <div class="d-flex align-items-center gap-1 flex-wrap">
-                                        <span class="fw-semibold cliente-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:2 }}</span>
-                                        <span class="badge badge-sm {% if cuota.prestamo.cliente.categoria == 'EX' %}bg-success{% elif cuota.prestamo.cliente.categoria == 'RE' %}bg-warning text-dark{% elif cuota.prestamo.cliente.categoria == 'MO' %}bg-danger{% else %}bg-info{% endif %} btn-categoria" 
-                                              data-cliente-id="{{ cuota.prestamo.cliente.pk }}"
-                                              data-categoria="{{ cuota.prestamo.cliente.categoria }}">
-                                            {{ cuota.prestamo.cliente.get_categoria_display|slice:":3" }}
-                                        </span>
-                                        {% if cuota.prestamo.cliente.ruta %}
-                                        <span class="badge badge-sm" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">{{ cuota.prestamo.cliente.ruta.nombre|slice:":3" }}</span>
-                                        {% endif %}
-                                    </div>
-                                    <div class="cuota-info-mini text-muted">
-                                        <small>{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}{% if cuota.estado == 'PC' %} <span class="text-warning">●</span>{% endif %}</small>
-                                        <i class="bi bi-chevron-down ms-1 card-chevron"></i>
-                                    </div>
-                                </div>
-                                <div class="cobro-monto text-end">
-                                    <div class="monto-valor fw-bold">{{ cuota.monto_restante|dinero }}</div>
-                                </div>
-                            </div>
-                            <div class="cobro-card-details">
-                                <div class="details-row">
-                                    <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="text-decoration-none"><i class="bi bi-person"></i> Ver cliente</a>
-                                    <span><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</span>
-                                </div>
-                                <div class="details-row">
-                                    <span><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:6|default:'-' }}</span>
-                                </div>
-                                <div class="details-row">
-                                    <span><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
-                                </div>
-                            </div>
-                            <div class="cobro-card-actions">
-                                <button class="btn btn-sm btn-outline-secondary btn-editar-cobro" 
-                                        data-cuota-id="{{ cuota.pk }}" 
+                                <div class="card-monto">{{ cuota.monto_restante|dinero }}</div>
+                                <button type="button" class="btn-cobrar-rapido btn-editar-cobro"
+                                        data-cuota-id="{{ cuota.pk }}"
                                         data-monto="{{ cuota.monto_restante|numero_raw }}"
                                         data-mora="0"
                                         data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
-                                        data-dias-vencida="0"
-                                        title="Cobro personalizado">
+                                        data-dias-vencida="0">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-sm btn-success btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar completo">
+                                <button type="button" class="btn-cobrar-rapido btn-cobrar btn-success-custom" data-cuota-id="{{ cuota.pk }}">
                                     <i class="bi bi-check-lg"></i>
                                 </button>
+                            </div>
+                            <div class="card-row-details">
+                                <div><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</div>
+                                <div><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:5|default:'-' }}</div>
+                                <div><i class="bi bi-calendar"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</div>
+                                {% if cuota.prestamo.cliente.ruta %}<div><i class="bi bi-pin-map"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</div>{% endif %}
+                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-person"></i> Ver cliente</a>
                             </div>
                         </div>
                         {% endfor %}
@@ -231,41 +179,21 @@
             <div id="collapseProximas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% for cuota in cuotas_proximas %}
-                    <div class="cobro-card cobro-card-compact filtrable estado-proximo" 
-                         data-cuota-id="{{ cuota.pk }}" 
-                         data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
-                        <div class="cobro-card-main" onclick="toggleCardDetails(this.parentElement)">
-                            <div class="cliente-avatar avatar-sm" style="background: linear-gradient(135deg, #0dcaf0, #087990);">
-                                {{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}
+                    <div class="cobro-card-simple estado-proximo filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                        <div class="card-row-main">
+                            <div class="card-avatar bg-info">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                            <div class="card-info" onclick="this.parentElement.parentElement.classList.toggle('open')">
+                                <span class="card-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:3 }}</span>
+                                <span class="card-cuota">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }} <span class="text-info">({{ cuota.fecha_vencimiento|date:"d/m" }})</span></span>
                             </div>
-                            <div class="cobro-info flex-grow-1">
-                                <div class="d-flex align-items-center gap-1 flex-wrap">
-                                    <span class="fw-semibold cliente-nombre">{{ cuota.prestamo.cliente.nombre_completo|truncatewords:2 }}</span>
-                                    <span class="badge bg-info text-dark badge-sm">{{ cuota.fecha_vencimiento|date:"d/m" }}</span>
-                                    {% if cuota.prestamo.cliente.ruta %}
-                                    <span class="badge badge-sm" style="background-color: {{ cuota.prestamo.cliente.ruta.color }};">{{ cuota.prestamo.cliente.ruta.nombre|slice:":3" }}</span>
-                                    {% endif %}
-                                </div>
-                                <div class="cuota-info-mini text-muted">
-                                    <small>{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</small>
-                                    <i class="bi bi-chevron-down ms-1 card-chevron"></i>
-                                </div>
-                            </div>
-                            <div class="cobro-monto text-end">
-                                <div class="monto-valor fw-bold text-info">{{ cuota.monto_restante|dinero }}</div>
-                            </div>
+                            <div class="card-monto text-info">{{ cuota.monto_restante|dinero }}</div>
                         </div>
-                        <div class="cobro-card-details">
-                            <div class="details-row">
-                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="text-decoration-none"><i class="bi bi-person"></i> Ver cliente</a>
-                                <span><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</span>
-                            </div>
-                            <div class="details-row">
-                                <span><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:6|default:'-' }}</span>
-                            </div>
-                            <div class="details-row">
-                                <span><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
-                            </div>
+                        <div class="card-row-details">
+                            <div><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'-' }}</div>
+                            <div><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.direccion|truncatewords:5|default:'-' }}</div>
+                            <div><i class="bi bi-calendar"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</div>
+                            {% if cuota.prestamo.cliente.ruta %}<div><i class="bi bi-pin-map"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</div>{% endif %}
+                            <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn btn-sm btn-outline-info mt-2"><i class="bi bi-person"></i> Ver cliente</a>
                         </div>
                     </div>
                     {% endfor %}
@@ -453,19 +381,6 @@
 
 {% block extra_js %}
 <script>
-// ============ TARJETAS COLAPSABLES ============
-function toggleCardDetails(card) {
-    // No expandir si se hizo click en un botón
-    if (event.target.closest('.cobro-card-actions') || event.target.closest('a')) return;
-    
-    card.classList.toggle('expanded');
-    const chevron = card.querySelector('.card-chevron');
-    if (chevron) {
-        chevron.classList.toggle('bi-chevron-down');
-        chevron.classList.toggle('bi-chevron-up');
-    }
-}
-
 // ============ FILTRO POR ZONA ============
 document.getElementById('filtro-zona').addEventListener('change', function() {
     const zonaSeleccionada = this.value.toLowerCase();
@@ -624,7 +539,7 @@ async function confirmarPagoParcial() {
             showToast(result.message, 'success');
             
             // Ocultar la card de la cuota cobrada
-            const card = document.querySelector(`.cobro-card[data-cuota-id="${cuotaId}"]`);
+            const card = document.querySelector(`.cobro-card-simple button[data-cuota-id="${cuotaId}"]`)?.closest('.cobro-card-simple');
             if (card) {
                 card.style.transition = 'all 0.3s ease';
                 card.style.opacity = '0';
@@ -690,7 +605,7 @@ document.addEventListener('click', async function(e) {
             showToast(result.message, 'success');
             
             // Ocultar la card
-            const card = btn.closest('.cobro-card');
+            const card = btn.closest('.cobro-card-simple');
             if (card) {
                 card.style.transition = 'all 0.3s ease';
                 card.style.opacity = '0';
