@@ -58,6 +58,19 @@
                 </div>
             </div>
             
+            {% if prestamo.fecha_finalizacion %}
+            <div class="row g-3 text-center mt-1">
+                <div class="col-6">
+                    <small class="text-muted d-block">Fecha Inicio</small>
+                    <strong>{{ prestamo.fecha_inicio|date:"d/m/Y" }}</strong>
+                </div>
+                <div class="col-6">
+                    <small class="text-muted d-block">Fecha Finalización</small>
+                    <strong class="text-info">{{ prestamo.fecha_finalizacion|date:"d/m/Y" }}</strong>
+                </div>
+            </div>
+            {% endif %}
+            
             <hr>
             
             <!-- Progreso -->

@@ -727,45 +727,65 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         # Verificar si mostrar próximas cuotas
         mostrar_proximas = self.request.GET.get('proximas', 'true').lower() in ('true', '1', 'si', 'yes')
         
-        # Obtener cuotas PENDIENTES (no cobradas)
-        estados_cuota = ['PE', 'PC']
+        # Verificar si es modo cierre de caja (mostrar cobros realizados)
+        tipo_planilla = self.request.GET.get('tipo', '')
+        es_cierre = tipo_planilla == 'cierre'
         
-        # Base query: cuotas pendientes de préstamos activos
-        base_query = Cuota.objects.filter(
-            estado__in=estados_cuota,
-            prestamo__estado='AC'
-        ).select_related(
-            'prestamo', 
-            'prestamo__cliente', 
-            'prestamo__cliente__ruta',
-            'prestamo__cliente__tipo_negocio'
-        )
-        
-        if incluir_vencidas and mostrar_proximas:
-            # Mostrar: cuotas vencidas + cuotas del día seleccionado + próximas 7 días
-            from datetime import timedelta
-            fecha_limite = fecha + timedelta(days=7)
-            cuotas_pendientes = base_query.filter(
-                fecha_vencimiento__lte=fecha_limite
-            )
-        elif incluir_vencidas:
-            # Mostrar: cuotas vencidas + cuotas del día seleccionado
-            cuotas_pendientes = base_query.filter(
-                fecha_vencimiento__lte=fecha
-            )
-        elif mostrar_proximas:
-            # Mostrar: solo cuotas de la fecha seleccionada + próximos 7 días
-            from datetime import timedelta
-            fecha_limite = fecha + timedelta(days=7)
-            cuotas_pendientes = base_query.filter(
-                fecha_vencimiento__gte=fecha,
-                fecha_vencimiento__lte=fecha_limite
-            )
+        if es_cierre:
+            # MODO CIERRE: Mostrar cuotas COBRADAS en la fecha
+            cuotas_pendientes = Cuota.objects.filter(
+                fecha_pago_real=fecha,
+                estado='PA'
+            ).select_related(
+                'prestamo',
+                'prestamo__cliente',
+                'prestamo__cliente__ruta',
+                'prestamo__cliente__tipo_negocio'
+            ).order_by('prestamo__cliente__apellido')
+            
+            # Cambiar título para cierre
+            config.titulo_reporte = 'CIERRE DE CAJA'
+            config.subtitulo = f'Cobros realizados el {fecha.strftime("%d/%m/%Y")}'
         else:
-            # Solo cuotas del día exacto
-            cuotas_pendientes = base_query.filter(
-                fecha_vencimiento=fecha
+            # MODO NORMAL: Obtener cuotas PENDIENTES (no cobradas)
+            estados_cuota = ['PE', 'PC']
+        
+            # Base query: cuotas pendientes de préstamos activos
+            base_query = Cuota.objects.filter(
+                estado__in=estados_cuota,
+                prestamo__estado='AC'
+            ).select_related(
+                'prestamo', 
+                'prestamo__cliente', 
+                'prestamo__cliente__ruta',
+                'prestamo__cliente__tipo_negocio'
             )
+            
+            if incluir_vencidas and mostrar_proximas:
+                # Mostrar: cuotas vencidas + cuotas del día seleccionado + próximas 7 días
+                from datetime import timedelta
+                fecha_limite = fecha + timedelta(days=7)
+                cuotas_pendientes = base_query.filter(
+                    fecha_vencimiento__lte=fecha_limite
+                )
+            elif incluir_vencidas:
+                # Mostrar: cuotas vencidas + cuotas del día seleccionado
+                cuotas_pendientes = base_query.filter(
+                    fecha_vencimiento__lte=fecha
+                )
+            elif mostrar_proximas:
+                # Mostrar: solo cuotas de la fecha seleccionada + próximos 7 días
+                from datetime import timedelta
+                fecha_limite = fecha + timedelta(days=7)
+                cuotas_pendientes = base_query.filter(
+                    fecha_vencimiento__gte=fecha,
+                    fecha_vencimiento__lte=fecha_limite
+                )
+            else:
+                # Solo cuotas del día exacto
+                cuotas_pendientes = base_query.filter(
+                    fecha_vencimiento=fecha
+                )
         
         # Ordenar
         if hasattr(config, 'agrupar_por_ruta') and config.agrupar_por_ruta:
@@ -810,7 +830,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             cuotas_agrupadas['Todos'] = list(cuotas_pendientes)
         
         total_esperado = cuotas_pendientes.aggregate(
-            total=Sum('monto_cuota')
+            total=Sum('monto_pagado' if es_cierre else 'monto_cuota')
         )['total'] or Decimal('0.00')
         
         # Lista de rutas para filtro
@@ -833,6 +853,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             'configuraciones': configuraciones,
             'incluir_vencidas': incluir_vencidas,
             'mostrar_proximas': mostrar_proximas,
+            'es_cierre': es_cierre,
         })
         return context
 
@@ -1116,7 +1137,7 @@ def exportar_planilla_excel(request):
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Headers
-    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Venc.', 'Cobrado']
+    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Venc.', 'Fecha Fin', 'Cobrado']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=4, column=col, value=header)
         cell.font = header_font
@@ -1132,7 +1153,8 @@ def exportar_planilla_excel(request):
     ws.column_dimensions['E'].width = 10
     ws.column_dimensions['F'].width = 15
     ws.column_dimensions['G'].width = 12
-    ws.column_dimensions['H'].width = 15
+    ws.column_dimensions['H'].width = 14
+    ws.column_dimensions['I'].width = 15
     
     # Datos
     total = Decimal('0.00')
@@ -1149,15 +1171,16 @@ def exportar_planilla_excel(request):
         monto_cell.border = border
         
         ws.cell(row=row, column=7, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
-        ws.cell(row=row, column=8, value='').border = border
+        ws.cell(row=row, column=8, value=cuota.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if cuota.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=9, value='').border = border
         
         total += cuota.monto_cuota
     
     # Fila de total
     total_row = cuotas.count() + 5
-    ws.merge_cells(f'A{total_row}:E{total_row}')
+    ws.merge_cells(f'A{total_row}:F{total_row}')
     ws.cell(row=total_row, column=1, value='TOTAL ESPERADO:').font = Font(bold=True)
-    total_cell = ws.cell(row=total_row, column=6, value=float(total))
+    total_cell = ws.cell(row=total_row, column=7, value=float(total))
     total_cell.font = Font(bold=True)
     total_cell.number_format = '#,##0'
     
@@ -1273,7 +1296,7 @@ def exportar_prestamos_excel(request):
         bottom=Side(style='thin')
     )
     
-    headers = ['#', 'Cliente', 'Monto', 'Total', 'Pagado', 'Pendiente', 'Cuotas', 'Frecuencia', 'Estado', 'Fecha Inicio']
+    headers = ['#', 'Cliente', 'Monto', 'Total', 'Pagado', 'Pendiente', 'Cuotas', 'Frecuencia', 'Estado', 'Fecha Inicio', 'Fecha Finalización']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -1300,8 +1323,9 @@ def exportar_prestamos_excel(request):
         ws.cell(row=row, column=8, value=p.get_frecuencia_display()).border = border
         ws.cell(row=row, column=9, value=p.get_estado_display()).border = border
         ws.cell(row=row, column=10, value=p.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=11, value=p.fecha_finalizacion.strftime('%d/%m/%Y') if p.fecha_finalizacion else '-').border = border
     
-    for col in range(1, 11):
+    for col in range(1, 12):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
     ws.column_dimensions['B'].width = 25
     

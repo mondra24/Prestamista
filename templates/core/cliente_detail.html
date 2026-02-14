@@ -134,7 +134,14 @@
                         <small class="text-muted">Préstamo #{{ prestamo.pk }}</small>
                         <h4 class="mb-0">{{ prestamo.monto_total_a_pagar|dinero }}</h4>
                     </div>
-                    <span class="badge bg-primary">{{ prestamo.get_frecuencia_display }}</span>
+                    <div class="text-end">
+                        <span class="badge bg-primary">{{ prestamo.get_frecuencia_display }}</span>
+                        {% if prestamo.fecha_finalizacion %}
+                        <small class="d-block text-muted mt-1">
+                            <i class="bi bi-calendar-event me-1"></i>Fin: {{ prestamo.fecha_finalizacion|date:"d/m/Y" }}
+                        </small>
+                        {% endif %}
+                    </div>
                 </div>
                 
                 <!-- Progreso -->

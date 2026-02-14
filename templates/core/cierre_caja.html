@@ -12,7 +12,7 @@
         <h1 class="h4 mb-0">
             <i class="bi bi-clipboard-check me-2"></i>Cierre de Caja
         </h1>
-        <a href="{% url 'core:planilla_impresion' %}?fecha={{ fecha|date:'Y-m-d' }}" 
+        <a href="{% url 'core:planilla_impresion' %}?fecha={{ fecha|date:'Y-m-d' }}&tipo=cierre" 
            class="btn btn-outline-primary no-print" target="_blank">
             <i class="bi bi-printer me-1"></i> Imprimir
         </a>

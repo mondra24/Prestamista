@@ -61,6 +61,11 @@
                     <small class="d-block text-muted mt-1">
                         {{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }}
                     </small>
+                    {% if prestamo.fecha_finalizacion %}
+                    <small class="d-block text-muted">
+                        <i class="bi bi-calendar-event me-1"></i>{{ prestamo.fecha_finalizacion|date:"d/m/Y" }}
+                    </small>
+                    {% endif %}
                 </div>
                 <i class="bi bi-chevron-right text-muted"></i>
             </a>

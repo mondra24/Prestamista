@@ -136,28 +136,26 @@ async function handleCobro(event) {
             // Feedback de éxito
             showToast('¡Pago registrado!', 'success');
             
-            // Actualizar UI de la tarjeta (si existe)
-            if (card) {
-                card.classList.add('estado-pagado');
-                card.classList.remove('estado-pendiente', 'estado-vencido');
-                
-                // Animación
-                card.classList.add('pulse');
-                setTimeout(() => card.classList.remove('pulse'), 300);
-                
-                // Opcional: Ocultar tarjeta después de un momento
-                setTimeout(() => {
-                    card.style.opacity = '0.5';
-                }, 1000);
-            }
-            
-            // Cambiar botón
-            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
-            btn.classList.add('cobrado');
-            
             // Actualizar estadísticas con datos del servidor
             if (data.estadisticas) {
                 updateStatsFromServer(data.estadisticas);
+            }
+            
+            // Remover tarjeta con animación (si existe)
+            if (card) {
+                card.style.transition = 'all 0.3s ease-out';
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(100px)';
+                card.style.height = '0';
+                card.style.marginBottom = '0';
+                card.style.paddingTop = '0';
+                card.style.paddingBottom = '0';
+                card.style.border = 'none';
+                
+                // Remover del DOM después de la animación
+                setTimeout(() => {
+                    card.remove();
+                }, 300);
             }
             
         } else {

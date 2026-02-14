@@ -364,7 +364,7 @@
                             {% elif columna.nombre_columna == 'cuota_actual' %}
                             <td class="text-center">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</td>
                             {% elif columna.nombre_columna == 'monto_cuota' %}
-                            <td class="text-right"><strong>{{ cuota.monto_cuota|dinero }}</strong></td>
+                            <td class="text-right"><strong>{% if es_cierre %}{{ cuota.monto_pagado|dinero }}{% else %}{{ cuota.monto_cuota|dinero }}{% endif %}</strong></td>
                             {% elif columna.nombre_columna == 'monto_pendiente' %}
                             <td class="text-right">{{ cuota.prestamo.monto_pendiente|dinero }}</td>
                             {% elif columna.nombre_columna == 'fecha_vencimiento' %}
@@ -398,7 +398,7 @@
                             {% elif columna.nombre_columna == 'monto_total' %}
                             <td class="text-right">{{ cuota.prestamo.monto_total_a_pagar|dinero }}</td>
                             {% elif columna.nombre_columna == 'espacio_cobrado' %}
-                            <td style="border: 2px dashed #999; background: #fff;"></td>
+                            <td style="{% if es_cierre %}text-align: right; font-weight: bold;{% else %}border: 2px dashed #999; background: #fff;{% endif %}">{% if es_cierre %}{{ cuota.monto_pagado|dinero }}{% endif %}</td>
                             {% elif columna.nombre_columna == 'espacio_firma' %}
                             <td style="border: 2px dashed #999; background: #fff;"></td>
                             {% elif columna.nombre_columna == 'espacio_notas' %}
@@ -421,7 +421,7 @@
         {% if cuotas_pendientes and config.mostrar_totales or config.mostrar_totales is None %}
         <table>
             <tr class="total-row">
-                <td colspan="{{ columnas|length|add:'-1' }}" class="text-right">TOTAL ESPERADO DEL DÍA:</td>
+                <td colspan="{{ columnas|length|add:'-1' }}" class="text-right">{% if es_cierre %}TOTAL COBRADO:{% else %}TOTAL ESPERADO DEL DÍA:{% endif %}</td>
                 <td class="text-right">{{ total_esperado|dinero }}</td>
             </tr>
         </table>

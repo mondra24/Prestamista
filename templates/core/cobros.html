@@ -94,7 +94,8 @@
                             <div class="info-chips">
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
-                                <span class="chip"><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m" }}</span>
+                                <span class="chip"><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
                                 {% if cuota.interes_mora_pendiente > 0 %}<span class="chip mora"><i class="bi bi-percent"></i> +{{ cuota.interes_mora_pendiente|dinero }}</span>{% endif %}
                             </div>
                         </div>
@@ -161,7 +162,8 @@
                                 <div class="info-chips">
                                     {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                     <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
-                                    <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m" }}</span>
+                                    <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                    <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
                                 </div>
                             </div>
                             <div class="payment-card-expand">
@@ -233,6 +235,8 @@
                             <div class="info-chips">
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
+                                <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
                             </div>
                         </div>
                         <div class="payment-card-expand">
@@ -279,6 +283,14 @@
                             <div class="info-chips">
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
+                                <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
+                            </div>
+                        </div>
+                        <div class="payment-card-expand">
+                            <div class="expand-content">
+                                <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
+                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
                             </div>
                         </div>
                     </div>
