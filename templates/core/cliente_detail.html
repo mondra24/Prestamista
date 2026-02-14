@@ -170,7 +170,7 @@
                 <hr class="my-3">
                 
                 <div class="d-flex gap-2">
-                    <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="btn btn-outline-primary flex-grow-1">
+                    <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="btn btn-outline-primary flex-grow-1">
                         <i class="bi bi-eye me-1"></i> Ver Cuotas
                     </a>
                     <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
@@ -199,7 +199,7 @@
         </h3>
         
         {% for prestamo in prestamos %}
-        <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="cliente-item">
+        <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="cliente-item">
             <div class="flex-grow-1">
                 <div class="fw-semibold">Préstamo #{{ prestamo.pk }}</div>
                 <small class="text-muted">
