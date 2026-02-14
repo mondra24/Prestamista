@@ -17,14 +17,270 @@
     /* UI Colors */
     --bg-primary: #f8f9fa;
     --bg-card: #ffffff;
+    --bg-card-hover: #f5f5f5;
     --text-primary: #212529;
     --text-secondary: #6c757d;
     --border-color: #dee2e6;
+    
+    /* Dark mode extras */
+    --bg-input: #ffffff;
+    --bg-chip: #f5f5f5;
+    --bg-expand: #fafafa;
+    --bg-actions: #fafafa;
+    --border-actions: #eee;
+    --shadow-card: rgba(0,0,0,0.08);
+    --shadow-card-hover: rgba(0,0,0,0.12);
+    --client-name-color: #1a1a2e;
+    --amount-color: #1a1a2e;
+    --chip-color: #666;
+    --chip-icon-color: #999;
+    --expand-text: #666;
+    --expand-icon: #999;
+    --modal-bg: #ffffff;
+    --resumen-bg: #f8f9fa;
+    --sidebar-bg: linear-gradient(180deg, #1a1a2e, #16213e);
+    --header-gradient: linear-gradient(135deg, var(--color-pagado), #157347);
     
     /* Spacing */
     --bottom-nav-height: 70px;
     --header-height: 50px;
     --sidebar-width: 250px;
+}
+
+/* ============== DARK MODE ============== */
+[data-theme="dark"] {
+    --bg-primary: #121212;
+    --bg-card: #1e1e1e;
+    --bg-card-hover: #2a2a2a;
+    --text-primary: #e0e0e0;
+    --text-secondary: #9e9e9e;
+    --border-color: #333333;
+    --bg-input: #2a2a2a;
+    --bg-chip: #2a2a2a;
+    --bg-expand: #252525;
+    --bg-actions: #252525;
+    --border-actions: #333;
+    --shadow-card: rgba(0,0,0,0.3);
+    --shadow-card-hover: rgba(0,0,0,0.5);
+    --client-name-color: #e0e0e0;
+    --amount-color: #e0e0e0;
+    --chip-color: #b0b0b0;
+    --chip-icon-color: #888;
+    --expand-text: #b0b0b0;
+    --expand-icon: #888;
+    --modal-bg: #1e1e1e;
+    --resumen-bg: #252525;
+    --sidebar-bg: linear-gradient(180deg, #0d0d1a, #111827);
+    --header-gradient: linear-gradient(135deg, #14532d, #166534);
+
+    --color-pagado-light: #052e16;
+    --color-pendiente-light: #431407;
+    --color-moroso-light: #450a0a;
+    --color-nuevo-light: #172554;
+}
+
+/* Dark mode overrides */
+[data-theme="dark"] .card,
+[data-theme="dark"] .modal-content {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-control-lg,
+[data-theme="dark"] .form-select-lg {
+    background-color: var(--bg-input) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .form-control::placeholder {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+    border-color: var(--color-pagado) !important;
+    box-shadow: 0 0 0 3px rgba(25, 135, 84, 0.25) !important;
+}
+
+[data-theme="dark"] .table {
+    color: var(--text-primary);
+    --bs-table-bg: transparent;
+    --bs-table-striped-bg: rgba(255,255,255,0.03);
+    --bs-table-hover-bg: rgba(255,255,255,0.05);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table th,
+[data-theme="dark"] .table td {
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .alert-info {
+    background-color: #0c2d48 !important;
+    color: #7dd3fc !important;
+    border-color: #1e3a5f !important;
+}
+
+[data-theme="dark"] .alert-warning {
+    background-color: #422006 !important;
+    color: #fbbf24 !important;
+    border-color: #713f12 !important;
+}
+
+[data-theme="dark"] .alert-success {
+    background-color: #052e16 !important;
+    color: #4ade80 !important;
+    border-color: #14532d !important;
+}
+
+[data-theme="dark"] .alert-danger {
+    background-color: #450a0a !important;
+    color: #fca5a5 !important;
+    border-color: #7f1d1d !important;
+}
+
+[data-theme="dark"] .text-muted {
+    color: var(--text-secondary) !important;
+}
+
+[data-theme="dark"] .text-dark {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .bg-light {
+    background-color: var(--bg-card) !important;
+}
+
+[data-theme="dark"] .bg-white {
+    background-color: var(--bg-card) !important;
+}
+
+[data-theme="dark"] .bg-success.bg-opacity-10,
+[data-theme="dark"] .bg-warning.bg-opacity-10,
+[data-theme="dark"] .bg-primary.bg-opacity-10 {
+    background-color: rgba(255,255,255,0.05) !important;
+}
+
+[data-theme="dark"] .btn-outline-secondary {
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+    background-color: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .btn-outline-primary {
+    color: #60a5fa;
+    border-color: #3b82f6;
+}
+
+[data-theme="dark"] .accordion-button {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .accordion-button:not(.collapsed) {
+    background-color: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .accordion-item {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .accordion-body {
+    background-color: var(--bg-primary);
+}
+
+[data-theme="dark"] .list-group-item {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .dropdown-menu {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .dropdown-item {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .dropdown-item:hover {
+    background-color: var(--bg-card-hover);
+}
+
+[data-theme="dark"] hr {
+    border-color: var(--border-color);
+    opacity: 0.3;
+}
+
+[data-theme="dark"] .badge.bg-light {
+    background-color: #333 !important;
+    color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] .sidebar {
+    background: var(--sidebar-bg);
+}
+
+[data-theme="dark"] .mobile-header {
+    background: var(--header-gradient);
+}
+
+/* Dark mode toggle button */
+.theme-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.theme-toggle i {
+    font-size: 1.1rem;
+    transition: transform 0.3s ease;
+}
+
+.theme-toggle:hover i {
+    transform: rotate(30deg);
+}
+
+/* Mobile header toggle */
+.mobile-header .theme-toggle {
+    color: rgba(255,255,255,0.8);
+    width: 32px;
+    height: 32px;
+}
+
+.mobile-header .theme-toggle:hover {
+    color: white;
+    background: rgba(255,255,255,0.15);
+}
+
+/* Sidebar toggle */
+.sidebar .theme-toggle {
+    color: rgba(255,255,255,0.6);
+    width: 28px;
+    height: 28px;
+}
+
+.sidebar .theme-toggle:hover {
+    color: white;
+    background: rgba(255,255,255,0.1);
 }
 
 /* Reset y base */
@@ -116,7 +372,7 @@ body {
     top: 0;
     bottom: 0;
     width: var(--sidebar-width);
-    background: linear-gradient(180deg, #1a1a2e, #16213e);
+    background: var(--sidebar-bg);
     flex-direction: column;
     z-index: 1000;
 }
@@ -186,30 +442,30 @@ body {
 
 /* ============== PAYMENT CARDS - DISEÑO MODERNO ============== */
 .payment-card {
-    background: white;
+    background: var(--bg-card);
     border-radius: 16px;
     margin-bottom: 12px;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    box-shadow: 0 2px 12px var(--shadow-card);
     overflow: hidden;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .payment-card:hover {
-    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    box-shadow: 0 4px 20px var(--shadow-card-hover);
 }
 
 .payment-card.vencida {
-    background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+    background: linear-gradient(135deg, var(--color-moroso-light) 0%, var(--bg-card) 100%);
     border-left: 4px solid #e53935;
 }
 
 .payment-card.pendiente {
-    background: linear-gradient(135deg, #fff8e1 0%, #ffffff 100%);
+    background: linear-gradient(135deg, var(--color-pendiente-light) 0%, var(--bg-card) 100%);
     border-left: 4px solid #ff9800;
 }
 
 .payment-card.proxima {
-    background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%);
+    background: linear-gradient(135deg, var(--color-nuevo-light) 0%, var(--bg-card) 100%);
     border-left: 4px solid #2196f3;
 }
 
@@ -260,7 +516,7 @@ body {
 .client-name {
     font-size: 1rem;
     font-weight: 600;
-    color: #1a1a2e;
+    color: var(--client-name-color);
     margin: 0 0 2px;
     white-space: nowrap;
     overflow: hidden;
@@ -292,7 +548,7 @@ body {
     display: block;
     font-size: 1.25rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--amount-color);
 }
 
 .amount-section.vencida .amount {
@@ -341,16 +597,16 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #f5f5f5;
+    background: var(--bg-chip);
     padding: 4px 10px;
     border-radius: 20px;
     font-size: 0.75rem;
-    color: #666;
+    color: var(--chip-color);
 }
 
 .chip i {
     font-size: 0.7rem;
-    color: #999;
+    color: var(--chip-icon-color);
 }
 
 .chip.mora {
@@ -371,18 +627,18 @@ body {
 
 .expand-content {
     padding: 12px 16px;
-    background: #fafafa;
-    border-top: 1px solid #eee;
+    background: var(--bg-expand);
+    border-top: 1px solid var(--border-color);
 }
 
 .expand-content p {
     margin: 0 0 8px;
     font-size: 0.85rem;
-    color: #666;
+    color: var(--expand-text);
 }
 
 .expand-content i {
-    color: #999;
+    color: var(--expand-icon);
     margin-right: 6px;
 }
 
@@ -406,8 +662,8 @@ body {
     display: flex;
     gap: 8px;
     padding: 12px 16px;
-    background: #fafafa;
-    border-top: 1px solid #eee;
+    background: var(--bg-actions);
+    border-top: 1px solid var(--border-actions);
 }
 
 .action-btn {
@@ -426,14 +682,14 @@ body {
 }
 
 .action-btn.secondary {
-    background: white;
-    color: #666;
-    border: 1px solid #ddd;
+    background: var(--bg-card);
+    color: var(--chip-color);
+    border: 1px solid var(--border-color);
 }
 
 .action-btn.secondary:hover {
-    background: #f5f5f5;
-    border-color: #ccc;
+    background: var(--bg-card-hover);
+    border-color: var(--border-color);
 }
 
 .action-btn.primary {
@@ -455,9 +711,9 @@ body {
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    border: 1px solid #e0e0e0;
-    background: white;
-    color: #757575;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -466,8 +722,8 @@ body {
 }
 
 .action-btn-mini:hover {
-    background: #f5f5f5;
-    border-color: #bdbdbd;
+    background: var(--bg-card-hover);
+    border-color: var(--border-color);
     transform: scale(1.05);
 }
 
@@ -510,7 +766,7 @@ body {
 }
 
 .confirm-modal {
-    background: white;
+    background: var(--modal-bg);
     border-radius: 16px;
     padding: 24px;
     max-width: 320px;
@@ -551,7 +807,7 @@ body {
 
 .confirm-modal-client {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-secondary);
     margin-bottom: 20px;
 }
 
@@ -570,9 +826,9 @@ body {
 }
 
 .confirm-modal-actions .btn-cancelar {
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    color: #666;
+    background: var(--bg-chip);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
 }
 
 .confirm-modal-actions .btn-confirmar {
@@ -587,7 +843,7 @@ body {
 
 /* Resumen de pago en modal */
 .pago-resumen {
-    background: #f8f9fa;
+    background: var(--resumen-bg);
     border-radius: 12px;
     padding: 16px;
     margin-top: 16px;
@@ -934,7 +1190,7 @@ body {
     border-radius: 12px;
     padding: 12px 16px;
     margin-bottom: 8px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    box-shadow: 0 1px 4px var(--shadow-card);
 }
 
 .cuota-item.pagada {
@@ -1000,8 +1256,8 @@ body {
 }
 
 .cuota-estado.pendiente {
-    background: #e9ecef;
-    color: #6c757d;
+    background: var(--bg-chip);
+    color: var(--text-secondary);
 }
 
 .cuota-monto {
@@ -1100,8 +1356,8 @@ body {
     align-items: center;
     gap: 12px;
     text-decoration: none;
-    color: inherit;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    color: var(--text-primary);
+    box-shadow: 0 1px 4px var(--shadow-card);
 }
 
 .cliente-item .categoria-badge {
@@ -1201,7 +1457,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(255,255,255,0.8);
+    background: rgba(0,0,0,0.4);
     display: flex;
     align-items: center;
     justify-content: center;

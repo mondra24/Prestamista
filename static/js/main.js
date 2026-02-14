@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initCalculadoraPrestamo();
     initBusqueda();
     initFormateoMontos();
+    initThemeToggle();
 });
 
 /**
@@ -749,5 +750,52 @@ function validarLimiteCredito(monto) {
         alertaCredito.classList.add('alert-warning');
     } else {
         alertaCredito.classList.add('d-none');
+    }
+}
+
+/**
+ * Dark Mode Toggle
+ */
+function initThemeToggle() {
+    const toggleMobile = document.getElementById('theme-toggle-mobile');
+    const toggleDesktop = document.getElementById('theme-toggle-desktop');
+    
+    function updateIcons(theme) {
+        const icon = theme === 'dark' ? 'bi-sun-fill' : 'bi-moon-fill';
+        const oldIcon = theme === 'dark' ? 'bi-moon-fill' : 'bi-sun-fill';
+        
+        document.querySelectorAll('.theme-toggle i').forEach(function(el) {
+            el.classList.remove(oldIcon);
+            el.classList.add(icon);
+        });
+        
+        // Update theme-color meta
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+            meta.setAttribute('content', theme === 'dark' ? '#121212' : '#198754');
+        }
+    }
+    
+    function setTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme);
+        updateIcons(theme);
+    }
+    
+    function toggleTheme() {
+        var current = document.documentElement.getAttribute('data-theme') || 'light';
+        setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    
+    // Set icons for current theme on load
+    var currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+    updateIcons(currentTheme);
+    
+    // Bind click events
+    if (toggleMobile) {
+        toggleMobile.addEventListener('click', toggleTheme);
+    }
+    if (toggleDesktop) {
+        toggleDesktop.addEventListener('click', toggleTheme);
     }
 }
