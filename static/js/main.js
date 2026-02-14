@@ -113,6 +113,18 @@ async function handleCobro(event) {
     const cuotaId = btn.dataset.cuotaId;
     const card = btn.closest('.cobro-card') || btn.closest('.payment-card');
     
+    // Confirmación antes de cobrar
+    const clienteNombre = btn.dataset.cliente || '';
+    const montoRaw = btn.dataset.monto || '';
+    const montoFormateado = montoRaw ? formatCurrency(parseFloat(montoRaw)) : '';
+    const mensajeConfirm = clienteNombre 
+        ? `¿Confirmar cobro de ${montoFormateado} a ${clienteNombre}?`
+        : '¿Confirmar el cobro de esta cuota?';
+    
+    if (!confirm(mensajeConfirm)) {
+        return;
+    }
+    
     // Evitar doble click
     if (btn.disabled) return;
     btn.disabled = true;

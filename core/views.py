@@ -1244,18 +1244,18 @@ def exportar_cierre_excel(request):
     )
     
     # Título
-    ws.merge_cells('A1:H1')
+    ws.merge_cells('A1:J1')
     ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
     
     total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
-    ws.merge_cells('A2:H2')
+    ws.merge_cells('A2:J2')
     ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Headers
-    headers = ['#', 'Cliente', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Estado', 'Fecha Fin Préstamo']
+    headers = ['#', 'Cliente', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=4, column=col, value=header)
         cell.font = header_font
@@ -1272,6 +1272,8 @@ def exportar_cierre_excel(request):
     ws.column_dimensions['F'].width = 15
     ws.column_dimensions['G'].width = 12
     ws.column_dimensions['H'].width = 16
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 16
     
     # Datos
     total = Decimal('0.00')
@@ -1292,7 +1294,9 @@ def exportar_cierre_excel(request):
         cobrado_cell.font = Font(bold=True, color='198754')
         
         ws.cell(row=row, column=7, value=pago.get_estado_display()).border = border
-        ws.cell(row=row, column=8, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=8, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=9, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
+        ws.cell(row=row, column=10, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
         
         total += pago.monto_pagado
     
