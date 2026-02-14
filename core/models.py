@@ -790,6 +790,8 @@ class Prestamo(models.Model):
             cuotas_pactadas=nuevas_cuotas,
             frecuencia=nueva_frecuencia,
             fecha_inicio=timezone.now().date(),
+            es_renovacion=True,
+            prestamo_anterior=prestamo_anterior,
             notas=f"Renovación del préstamo #{prestamo_anterior.pk}. Saldo anterior: ${saldo_pendiente}"
         )
         

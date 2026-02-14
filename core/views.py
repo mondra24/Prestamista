@@ -38,10 +38,10 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         if not self.request.user.is_superuser:
             cliente_filter['prestamo__cliente__usuario'] = self.request.user
         
-        # Estadísticas del día
+        # Estadísticas del día (incluye pagos completos y parciales)
         cobros_realizados_hoy = Cuota.objects.filter(
             fecha_pago_real=hoy,
-            estado='PA',
+            estado__in=['PA', 'PC'],
             **cliente_filter
         ).aggregate(
             total=Sum('monto_pagado'),
@@ -166,7 +166,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         cuotas_mes = [c for c in cuotas_proximas if c.fecha_vencimiento > hoy + timedelta(days=7)]
         
         # Estadísticas del día
-        cobros_filter = {'fecha_pago_real': hoy, 'estado': 'PA'}
+        cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
         if not self.request.user.is_superuser:
             cobros_filter['prestamo__cliente__usuario'] = self.request.user
         
@@ -513,16 +513,16 @@ def cobrar_cuota(request, pk):
             elif metodo_pago == 'MX':
                 mensaje += ' (Mixto)'
             
-            # Calcular total cobrado hoy
+            # Calcular total cobrado hoy (incluye pagos parciales)
             hoy = timezone.now().date()
             total_cobrado_hoy = Cuota.objects.filter(
                 fecha_pago_real=hoy,
-                estado='PA'
+                estado__in=['PA', 'PC']
             ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
             
             cantidad_cobros_hoy = Cuota.objects.filter(
                 fecha_pago_real=hoy,
-                estado='PA'
+                estado__in=['PA', 'PC']
             ).count()
             
             return JsonResponse({
@@ -630,10 +630,10 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         else:
             fecha = timezone.now().date()
         
-        # Pagos del día
+        # Pagos del día (incluye pagos completos y parciales)
         pagos_del_dia = Cuota.objects.filter(
             fecha_pago_real=fecha,
-            estado='PA'
+            estado__in=['PA', 'PC']
         ).select_related('prestamo', 'prestamo__cliente').order_by(
             'prestamo__cliente__apellido'
         )
@@ -732,10 +732,10 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         es_cierre = tipo_planilla == 'cierre'
         
         if es_cierre:
-            # MODO CIERRE: Mostrar cuotas COBRADAS en la fecha
+            # MODO CIERRE: Mostrar cuotas COBRADAS en la fecha (completas y parciales)
             cuotas_pendientes = Cuota.objects.filter(
                 fecha_pago_real=fecha,
-                estado='PA'
+                estado__in=['PA', 'PC']
             ).select_related(
                 'prestamo',
                 'prestamo__cliente',
@@ -1199,6 +1199,125 @@ def exportar_planilla_excel(request):
     )
     response['Content-Disposition'] = f'attachment; filename=planilla_cobros_{fecha.strftime("%Y%m%d")}.xlsx'
     
+    wb.save(response)
+    return response
+
+
+@login_required
+def exportar_cierre_excel(request):
+    """Exportar cierre de caja a Excel con cobros realizados"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:cierre_caja')
+    
+    # Obtener fecha
+    fecha_str = request.GET.get('fecha')
+    if fecha_str:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    else:
+        fecha = timezone.now().date()
+    
+    # Obtener cobros del día (completos y parciales)
+    pagos = Cuota.objects.filter(
+        fecha_pago_real=fecha,
+        estado__in=['PA', 'PC']
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+        'prestamo__cliente__apellido'
+    )
+    
+    # Crear workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Cierre {fecha.strftime('%d-%m-%Y')}"
+    
+    # Estilos
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='198754', end_color='198754', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    
+    # Título
+    ws.merge_cells('A1:H1')
+    ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+    ws.merge_cells('A2:H2')
+    ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+    
+    # Headers
+    headers = ['#', 'Cliente', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Estado', 'Fecha Fin Préstamo']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # Anchos
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 10
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 15
+    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['H'].width = 16
+    
+    # Datos
+    total = Decimal('0.00')
+    for i, pago in enumerate(pagos, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=pago.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=3, value=pago.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=4, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
+        
+        monto_cell = ws.cell(row=row, column=5, value=float(pago.monto_cuota))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+        
+        cobrado_cell = ws.cell(row=row, column=6, value=float(pago.monto_pagado))
+        cobrado_cell.number_format = '#,##0'
+        cobrado_cell.border = border
+        cobrado_cell.font = Font(bold=True, color='198754')
+        
+        ws.cell(row=row, column=7, value=pago.get_estado_display()).border = border
+        ws.cell(row=row, column=8, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        
+        total += pago.monto_pagado
+    
+    # Fila total
+    total_row = pagos.count() + 5
+    ws.merge_cells(f'A{total_row}:E{total_row}')
+    total_label = ws.cell(row=total_row, column=1, value='TOTAL COBRADO:')
+    total_label.font = Font(bold=True, size=12)
+    total_cell = ws.cell(row=total_row, column=6, value=float(total))
+    total_cell.font = Font(bold=True, size=12, color='198754')
+    total_cell.number_format = '#,##0'
+    
+    # Registrar auditoría
+    RegistroAuditoria.registrar(
+        usuario=request.user,
+        tipo_accion='OT',
+        tipo_modelo='SI',
+        descripcion=f'Exportación de cierre de caja a Excel - Fecha: {fecha}',
+        ip_address=get_client_ip(request)
+    )
+    
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename=cierre_caja_{fecha.strftime("%Y%m%d")}.xlsx'
     wb.save(response)
     return response
 

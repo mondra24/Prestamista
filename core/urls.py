@@ -46,6 +46,7 @@ urlpatterns = [
     
     # Exportación Excel
     path('exportar/planilla/', views.exportar_planilla_excel, name='exportar_planilla_excel'),
+    path('exportar/cierre/', views.exportar_cierre_excel, name='exportar_cierre_excel'),
     path('exportar/clientes/', views.exportar_clientes_excel, name='exportar_clientes_excel'),
     path('exportar/prestamos/', views.exportar_prestamos_excel, name='exportar_prestamos_excel'),
     

@@ -12,10 +12,16 @@
         <h1 class="h4 mb-0">
             <i class="bi bi-clipboard-check me-2"></i>Cierre de Caja
         </h1>
-        <a href="{% url 'core:planilla_impresion' %}?fecha={{ fecha|date:'Y-m-d' }}&tipo=cierre" 
-           class="btn btn-outline-primary no-print" target="_blank">
-            <i class="bi bi-printer me-1"></i> Imprimir
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{% url 'core:exportar_cierre_excel' %}?fecha={{ fecha|date:'Y-m-d' }}" 
+               class="btn btn-outline-success no-print">
+                <i class="bi bi-file-earmark-excel me-1"></i> Excel
+            </a>
+            <a href="{% url 'core:planilla_impresion' %}?fecha={{ fecha|date:'Y-m-d' }}&tipo=cierre" 
+               class="btn btn-outline-primary no-print" target="_blank">
+                <i class="bi bi-printer me-1"></i> Imprimir
+            </a>
+        </div>
     </div>
     
     <!-- Selector de fecha -->
@@ -88,6 +94,11 @@
                         {% if pago.prestamo.estado == 'FI' and pago.numero_cuota == pago.prestamo.cuotas_pactadas %}
                         <small class="badge bg-success">
                             <i class="bi bi-check-circle me-1"></i>PRÉSTAMO PAGADO
+                        </small>
+                        {% endif %}
+                        {% if pago.estado == 'PC' %}
+                        <small class="badge bg-warning text-dark">
+                            <i class="bi bi-pie-chart-fill me-1"></i>Parcial
                         </small>
                         {% endif %}
                     </div>
