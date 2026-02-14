@@ -9,7 +9,7 @@
     
     <!-- Header -->
     <div class="d-flex align-items-center mb-3">
-        <a href="{% url 'core:prestamo_list' %}" class="btn btn-outline-secondary me-3">
+        <a href="javascript:history.back()" class="btn btn-outline-secondary me-3">
             <i class="bi bi-arrow-left"></i>
         </a>
         <h1 class="h5 mb-0 flex-grow-1">Préstamo #{{ prestamo.pk }}</h1>
@@ -148,7 +148,7 @@
                         <i class="bi bi-check-lg"></i>
                     </div>
                 {% elif prestamo.estado == 'AC' %}
-                    <button class="btn-cobrar-cuota" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
+                    <button class="btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
                         <i class="bi bi-check-lg"></i>
                     </button>
                 {% endif %}
