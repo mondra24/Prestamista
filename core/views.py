@@ -338,7 +338,10 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
         initial = super().get_initial()
         cliente_id = self.request.GET.get('cliente')
         if cliente_id:
-            initial['cliente'] = cliente_id
+            try:
+                initial['cliente'] = int(cliente_id)
+            except (ValueError, TypeError):
+                pass
         initial['fecha_inicio'] = timezone.now().date()
         return initial
     
@@ -348,18 +351,24 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
         if not self.request.user.is_superuser:
             form.fields['cliente'].queryset = Cliente.objects.filter(
                 estado='AC', usuario=self.request.user
-            )
+            ).order_by('apellido', 'nombre')
         else:
-            form.fields['cliente'].queryset = Cliente.objects.filter(estado='AC')
+            form.fields['cliente'].queryset = Cliente.objects.filter(
+                estado='AC'
+            ).order_by('apellido', 'nombre')
         return form
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Pasar datos de clientes para mostrar límite de crédito
         if not self.request.user.is_superuser:
-            context['clientes'] = Cliente.objects.filter(estado='AC', usuario=self.request.user)
+            context['clientes'] = Cliente.objects.filter(
+                estado='AC', usuario=self.request.user
+            ).order_by('apellido', 'nombre')
         else:
-            context['clientes'] = Cliente.objects.filter(estado='AC')
+            context['clientes'] = Cliente.objects.filter(
+                estado='AC'
+            ).order_by('apellido', 'nombre')
         return context
     
     def form_valid(self, form):
