@@ -14,7 +14,7 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 
 
