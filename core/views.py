@@ -1244,18 +1244,20 @@ def exportar_cierre_excel(request):
     )
     
     # Título
-    ws.merge_cells('A1:J1')
+    ws.merge_cells('A1:N1')
     ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
     
     total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
-    ws.merge_cells('A2:J2')
-    ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    total_efectivo = pagos.aggregate(total=Sum('monto_efectivo'))['total'] or Decimal('0.00')
+    total_transferencia = pagos.aggregate(total=Sum('monto_transferencia'))['total'] or Decimal('0.00')
+    ws.merge_cells('A2:N2')
+    ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} (Efectivo: ${total_efectivo:,.0f} | Transferencia: ${total_transferencia:,.0f}) | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Headers
-    headers = ['#', 'Cliente', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo']
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=4, column=col, value=header)
         cell.font = header_font
@@ -1266,14 +1268,18 @@ def exportar_cierre_excel(request):
     # Anchos
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['C'].width = 15
-    ws.column_dimensions['D'].width = 10
-    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['C'].width = 30
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 10
     ws.column_dimensions['F'].width = 15
-    ws.column_dimensions['G'].width = 12
+    ws.column_dimensions['G'].width = 15
     ws.column_dimensions['H'].width = 16
-    ws.column_dimensions['I'].width = 12
-    ws.column_dimensions['J'].width = 16
+    ws.column_dimensions['I'].width = 15
+    ws.column_dimensions['J'].width = 15
+    ws.column_dimensions['K'].width = 12
+    ws.column_dimensions['L'].width = 16
+    ws.column_dimensions['M'].width = 12
+    ws.column_dimensions['N'].width = 16
     
     # Datos
     total = Decimal('0.00')
@@ -1281,33 +1287,52 @@ def exportar_cierre_excel(request):
         row = i + 4
         ws.cell(row=row, column=1, value=i).border = border
         ws.cell(row=row, column=2, value=pago.prestamo.cliente.nombre_completo).border = border
-        ws.cell(row=row, column=3, value=pago.prestamo.cliente.telefono).border = border
-        ws.cell(row=row, column=4, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
+        ws.cell(row=row, column=3, value=pago.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=4, value=pago.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
         
-        monto_cell = ws.cell(row=row, column=5, value=float(pago.monto_cuota))
+        monto_cell = ws.cell(row=row, column=6, value=float(pago.monto_cuota))
         monto_cell.number_format = '#,##0'
         monto_cell.border = border
         
-        cobrado_cell = ws.cell(row=row, column=6, value=float(pago.monto_pagado))
+        cobrado_cell = ws.cell(row=row, column=7, value=float(pago.monto_pagado))
         cobrado_cell.number_format = '#,##0'
         cobrado_cell.border = border
         cobrado_cell.font = Font(bold=True, color='198754')
         
-        ws.cell(row=row, column=7, value=pago.get_estado_display()).border = border
-        ws.cell(row=row, column=8, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
-        ws.cell(row=row, column=9, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
-        ws.cell(row=row, column=10, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=8, value=pago.get_metodo_pago_display()).border = border
+        
+        ef_cell = ws.cell(row=row, column=9, value=float(pago.monto_efectivo or 0))
+        ef_cell.number_format = '#,##0'
+        ef_cell.border = border
+        
+        tr_cell = ws.cell(row=row, column=10, value=float(pago.monto_transferencia or 0))
+        tr_cell.number_format = '#,##0'
+        tr_cell.border = border
+        
+        ws.cell(row=row, column=11, value=pago.get_estado_display()).border = border
+        ws.cell(row=row, column=12, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=13, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
+        ws.cell(row=row, column=14, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
         
         total += pago.monto_pagado
     
     # Fila total
     total_row = pagos.count() + 5
-    ws.merge_cells(f'A{total_row}:E{total_row}')
+    ws.merge_cells(f'A{total_row}:F{total_row}')
     total_label = ws.cell(row=total_row, column=1, value='TOTAL COBRADO:')
     total_label.font = Font(bold=True, size=12)
-    total_cell = ws.cell(row=total_row, column=6, value=float(total))
+    total_cell = ws.cell(row=total_row, column=7, value=float(total))
     total_cell.font = Font(bold=True, size=12, color='198754')
     total_cell.number_format = '#,##0'
+    
+    # Totales efectivo y transferencia
+    ef_total_cell = ws.cell(row=total_row, column=9, value=float(total_efectivo))
+    ef_total_cell.font = Font(bold=True, size=11)
+    ef_total_cell.number_format = '#,##0'
+    tr_total_cell = ws.cell(row=total_row, column=10, value=float(total_transferencia))
+    tr_total_cell.font = Font(bold=True, size=11)
+    tr_total_cell.number_format = '#,##0'
     
     # Registrar auditoría
     RegistroAuditoria.registrar(
@@ -1419,7 +1444,7 @@ def exportar_prestamos_excel(request):
         bottom=Side(style='thin')
     )
     
-    headers = ['#', 'Cliente', 'Monto', 'Total', 'Pagado', 'Pendiente', 'Cuotas', 'Frecuencia', 'Estado', 'Fecha Inicio', 'Fecha Finalización']
+    headers = ['#', 'Cliente', 'Dirección', 'Monto', 'Total', 'Pagado', 'Pendiente', 'Cuotas', 'Frecuencia', 'Estado', 'Fecha Inicio', 'Fecha Finalización']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = header_font
@@ -1430,27 +1455,29 @@ def exportar_prestamos_excel(request):
         row = i + 1
         ws.cell(row=row, column=1, value=i).border = border
         ws.cell(row=row, column=2, value=p.cliente.nombre_completo).border = border
-        monto_cell = ws.cell(row=row, column=3, value=float(p.monto_solicitado))
+        ws.cell(row=row, column=3, value=p.cliente.direccion or '-').border = border
+        monto_cell = ws.cell(row=row, column=4, value=float(p.monto_solicitado))
         monto_cell.number_format = '#,##0'
         monto_cell.border = border
-        total_cell = ws.cell(row=row, column=4, value=float(p.monto_total_a_pagar))
+        total_cell = ws.cell(row=row, column=5, value=float(p.monto_total_a_pagar))
         total_cell.number_format = '#,##0'
         total_cell.border = border
-        pagado_cell = ws.cell(row=row, column=5, value=float(p.monto_pagado))
+        pagado_cell = ws.cell(row=row, column=6, value=float(p.monto_pagado))
         pagado_cell.number_format = '#,##0'
         pagado_cell.border = border
-        pend_cell = ws.cell(row=row, column=6, value=float(p.monto_pendiente))
+        pend_cell = ws.cell(row=row, column=7, value=float(p.monto_pendiente))
         pend_cell.number_format = '#,##0'
         pend_cell.border = border
-        ws.cell(row=row, column=7, value=f'{p.cuotas_pagadas}/{p.cuotas_pactadas}').border = border
-        ws.cell(row=row, column=8, value=p.get_frecuencia_display()).border = border
-        ws.cell(row=row, column=9, value=p.get_estado_display()).border = border
-        ws.cell(row=row, column=10, value=p.fecha_inicio.strftime('%d/%m/%Y')).border = border
-        ws.cell(row=row, column=11, value=p.fecha_finalizacion.strftime('%d/%m/%Y') if p.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=8, value=f'{p.cuotas_pagadas}/{p.cuotas_pactadas}').border = border
+        ws.cell(row=row, column=9, value=p.get_frecuencia_display()).border = border
+        ws.cell(row=row, column=10, value=p.get_estado_display()).border = border
+        ws.cell(row=row, column=11, value=p.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=12, value=p.fecha_finalizacion.strftime('%d/%m/%Y') if p.fecha_finalizacion else '-').border = border
     
-    for col in range(1, 12):
+    for col in range(1, 13):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
     ws.column_dimensions['B'].width = 25
+    ws.column_dimensions['C'].width = 30
     
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
