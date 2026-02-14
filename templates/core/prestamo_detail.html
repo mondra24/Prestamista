@@ -161,7 +161,7 @@
                         <i class="bi bi-check-lg"></i>
                     </div>
                 {% elif prestamo.estado == 'AC' %}
-                    <button class="btn-cobrar" data-cuota-id="{{ cuota.pk }}" title="Cobrar">
+                    <button class="btn-cobrar" data-cuota-id="{{ cuota.pk }}" data-cliente="{{ prestamo.cliente.nombre_completo }}" data-monto="{{ cuota.monto_restante|numero_raw }}" title="Cobrar">
                         <i class="bi bi-check-lg"></i>
                     </button>
                 {% endif %}

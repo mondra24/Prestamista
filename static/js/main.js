@@ -112,6 +112,7 @@ async function handleCobro(event) {
     const btn = event.currentTarget;
     const cuotaId = btn.dataset.cuotaId;
     const card = btn.closest('.cobro-card') || btn.closest('.payment-card');
+    const cuotaItem = btn.closest('.cuota-item');
     
     // Confirmación antes de cobrar
     const clienteNombre = btn.dataset.cliente || '';
@@ -168,6 +169,37 @@ async function handleCobro(event) {
                 setTimeout(() => {
                     card.remove();
                 }, 300);
+            } else if (cuotaItem) {
+                // Estamos en prestamo_detail: actualizar la cuota visualmente
+                cuotaItem.classList.remove('pendiente', 'vencida');
+                cuotaItem.classList.add('pagada');
+                
+                // Actualizar estado
+                const estadoEl = cuotaItem.querySelector('.cuota-estado');
+                if (estadoEl) {
+                    estadoEl.className = 'cuota-estado pagada';
+                    estadoEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Pagado';
+                }
+                
+                // Reemplazar botón por check
+                const accionEl = cuotaItem.querySelector('.cuota-accion');
+                if (accionEl) {
+                    accionEl.innerHTML = '<div class="check-pagado"><i class="bi bi-check-lg"></i></div>';
+                }
+                
+                // Agregar fecha de pago
+                const montoEl = cuotaItem.querySelector('.cuota-monto');
+                if (montoEl && !montoEl.querySelector('.fecha-pago')) {
+                    const hoy = new Date();
+                    const fechaPago = document.createElement('div');
+                    fechaPago.className = 'fecha-pago';
+                    fechaPago.innerHTML = `<i class="bi bi-check2"></i> ${hoy.getDate().toString().padStart(2,'0')}/${(hoy.getMonth()+1).toString().padStart(2,'0')}`;
+                    montoEl.appendChild(fechaPago);
+                }
+                
+                // Remover monto restante si existía
+                const restoEl = cuotaItem.querySelector('.monto-restante');
+                if (restoEl) restoEl.remove();
             }
             
         } else {
