@@ -524,14 +524,19 @@ def cobrar_cuota(request, pk):
             
             # Calcular total cobrado hoy (incluye pagos parciales)
             hoy = timezone.now().date()
+            stats_filter = {
+                'fecha_pago_real': hoy,
+                'estado__in': ['PA', 'PC'],
+            }
+            if not request.user.is_superuser:
+                stats_filter['prestamo__cliente__usuario'] = request.user
+            
             total_cobrado_hoy = Cuota.objects.filter(
-                fecha_pago_real=hoy,
-                estado__in=['PA', 'PC']
+                **stats_filter
             ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
             
             cantidad_cobros_hoy = Cuota.objects.filter(
-                fecha_pago_real=hoy,
-                estado__in=['PA', 'PC']
+                **stats_filter
             ).count()
             
             return JsonResponse({
