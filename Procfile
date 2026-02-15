@@ -1,1 +1,1 @@
-web: python -c "import os; db=os.environ.get('DATABASE_URL',''); print(f'[DEPLOY] PostgreSQL: {bool(db and \"postgres\" in db)}')" && python manage.py migrate && python manage.py create_superuser_if_not_exists && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi
+web: python manage.py migrate && python manage.py create_superuser_if_not_exists && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi
