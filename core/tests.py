@@ -45,7 +45,8 @@ class CurrencyFiltersTest(TestCase):
     
     def test_formato_ars_none(self):
         """Manejo de valor None"""
-        self.assertEqual(formato_ars(None), '$0')
+        self.assertEqual(formato_ars(None), '0')
+        self.assertEqual(dinero(None), '$0')
     
     def test_dinero_simbolo(self):
         """Filtro dinero agrega símbolo $"""
@@ -205,13 +206,14 @@ class CuotaModelTest(TestCase):
     
     def test_cuota_vencida(self):
         """Test detección de cuota vencida"""
-        self.cuota.fecha_vencimiento = date.today() - timedelta(days=5)
+        self.cuota.fecha_vencimiento = timezone.now().date() - timedelta(days=5)
         self.cuota.save()
         self.assertTrue(self.cuota.esta_vencida)
     
     def test_dias_vencida(self):
         """Test cálculo de días vencida"""
-        self.cuota.fecha_vencimiento = date.today() - timedelta(days=3)
+        hoy = timezone.now().date()
+        self.cuota.fecha_vencimiento = hoy - timedelta(days=3)
         self.cuota.save()
         self.assertEqual(self.cuota.dias_vencida, 3)
 
@@ -266,7 +268,8 @@ class ViewsAccessTest(TestCase):
             nombre='Test',
             apellido='Cliente',
             telefono='1111111111',
-            direccion='Dirección Test'
+            direccion='Dirección Test',
+            usuario=self.user
         )
         self.prestamo = Prestamo.objects.create(
             cliente=self.cliente,
@@ -699,13 +702,15 @@ class BusquedaClienteTest(TestCase):
             nombre='Pedro',
             apellido='Martínez',
             telefono='1010101010',
-            direccion='Dir Pedro'
+            direccion='Dir Pedro',
+            usuario=self.user
         )
         Cliente.objects.create(
             nombre='Ana',
             apellido='González',
             telefono='2020202020',
-            direccion='Dir Ana'
+            direccion='Dir Ana',
+            usuario=self.user
         )
     
     def test_buscar_por_nombre(self):

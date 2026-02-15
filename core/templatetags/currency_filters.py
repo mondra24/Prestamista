@@ -19,7 +19,7 @@ def formato_ars(value, decimales=0):
     Uso en template: {{ monto|formato_ars }} o {{ monto|formato_ars:2 }}
     """
     if value is None:
-        return '$0'
+        return '0'
     
     try:
         # Convertir a Decimal para precisión
@@ -129,6 +129,10 @@ def numero_raw(value):
         if isinstance(value, str):
             # Convertir de formato argentino a número
             value = value.replace('.', '').replace(',', '.')
-        return str(float(value))
+        num = float(value)
+        # Devolver sin decimales si es entero
+        if num == int(num):
+            return str(int(num))
+        return str(num)
     except (ValueError, TypeError):
         return '0'
