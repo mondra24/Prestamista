@@ -98,8 +98,12 @@ function formatCurrency(amount, decimals = 0) {
 
 /**
  * Inicializar sistema de cobros AJAX
+ * Solo agrega handlers si la página NO tiene su propio sistema de cobros (cobros.html)
  */
 function initCobros() {
+    // Si la página de cobros tiene su propio modal y handler, no duplicar
+    if (document.getElementById('confirm-cobro-modal')) return;
+    
     document.querySelectorAll('.btn-cobrar').forEach(btn => {
         btn.addEventListener('click', handleCobro);
     });
