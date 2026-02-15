@@ -172,8 +172,4 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'core:dashboard'
 LOGOUT_REDIRECT_URL = 'login'
 
-# Log de arranque para diagnóstico
-import sys
-if 'gunicorn' not in sys.argv[0] if sys.argv else True:
-    db_engine = DATABASES['default'].get('ENGINE', '')
-    print(f"[CONFIG] DB Engine: {db_engine}")
+
