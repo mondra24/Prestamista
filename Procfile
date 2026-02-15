@@ -1,1 +1,1 @@
-web: python manage.py migrate && python manage.py create_superuser_if_not_exists && python manage.py assign_clients_to_users && python manage.py update_credit_limits && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi
+web: python -c "import os; db=os.environ.get('DATABASE_URL',''); print(f'[DEPLOY] PostgreSQL: {bool(db and \"postgres\" in db)}')" && python manage.py migrate && python manage.py create_superuser_if_not_exists && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi

@@ -371,7 +371,7 @@ class Cliente(models.Model):
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')
     usuario = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name='clientes',
         verbose_name='Usuario/Cobrador',
         help_text='Usuario que gestiona este cliente',
