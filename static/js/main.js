@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initBusqueda();
     initFormateoMontos();
     initThemeToggle();
+    initSelectAutocomplete();
 });
 
 /**
@@ -861,4 +862,191 @@ function initThemeToggle() {
     if (toggleDesktop) {
         toggleDesktop.addEventListener('click', toggleTheme);
     }
+}
+
+/**
+ * Inicializar autocompletado en selects de clientes
+ * Convierte el <select> de cliente en un campo de búsqueda predictiva
+ */
+function initSelectAutocomplete() {
+    const selectCliente = document.getElementById('id_cliente');
+    if (!selectCliente) return;
+    
+    // Crear wrapper
+    const wrapper = document.createElement('div');
+    wrapper.className = 'autocomplete-wrapper';
+    wrapper.style.position = 'relative';
+    
+    // Crear input de búsqueda
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = selectCliente.className;
+    searchInput.placeholder = 'Buscar cliente por nombre o teléfono...';
+    searchInput.autocomplete = 'off';
+    searchInput.id = 'cliente-search-input';
+    
+    // Crear dropdown de resultados
+    const dropdown = document.createElement('div');
+    dropdown.className = 'autocomplete-dropdown';
+    dropdown.id = 'cliente-search-dropdown';
+    
+    // Insertar antes del select
+    selectCliente.parentNode.insertBefore(wrapper, selectCliente);
+    wrapper.appendChild(searchInput);
+    wrapper.appendChild(dropdown);
+    
+    // Ocultar select original
+    selectCliente.style.display = 'none';
+    
+    // Si ya hay un valor seleccionado, mostrar el nombre
+    if (selectCliente.value) {
+        const selectedOption = selectCliente.options[selectCliente.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+            searchInput.value = selectedOption.textContent.trim();
+        }
+    }
+    
+    let debounceTimer;
+    let selectedIndex = -1;
+    let currentResults = [];
+    
+    // Construir opciones locales desde el select
+    function getLocalOptions(query) {
+        const lowerQuery = query.toLowerCase();
+        const results = [];
+        for (let i = 0; i < selectCliente.options.length; i++) {
+            const opt = selectCliente.options[i];
+            if (!opt.value) continue;
+            const text = opt.textContent.toLowerCase();
+            if (text.includes(lowerQuery)) {
+                // Extraer datos de clientesData si existe
+                let categoria = '', ruta = '', telefono = '';
+                if (typeof clientesData !== 'undefined' && clientesData[opt.value]) {
+                    const cd = clientesData[opt.value];
+                    categoria = cd.categoriaCod || '';
+                    telefono = '';
+                }
+                results.push({
+                    id: opt.value,
+                    nombre: opt.textContent.trim(),
+                    categoria: categoria,
+                    telefono: telefono,
+                    ruta: ''
+                });
+            }
+            if (results.length >= 10) break;
+        }
+        return results;
+    }
+    
+    function renderDropdown(results) {
+        currentResults = results;
+        selectedIndex = -1;
+        
+        if (results.length === 0) {
+            dropdown.innerHTML = '<div class="autocomplete-item no-results"><i class="bi bi-search me-2"></i>Sin resultados</div>';
+            dropdown.classList.add('show');
+            return;
+        }
+        
+        dropdown.innerHTML = results.map((r, idx) => {
+            const catClass = r.categoria === 'EX' ? 'bg-success' : 
+                           r.categoria === 'MO' ? 'bg-danger' : 
+                           r.categoria === 'RE' ? 'bg-warning text-dark' : 'bg-info';
+            const catLabel = r.categoria === 'EX' ? 'Exc' : 
+                           r.categoria === 'MO' ? 'Mor' : 
+                           r.categoria === 'RE' ? 'Reg' : 'Nvo';
+            
+            let info = '';
+            if (r.telefono) info += `<i class="bi bi-telephone me-1"></i>${r.telefono}`;
+            if (r.ruta) info += `${r.telefono ? ' · ' : ''}<i class="bi bi-geo-alt me-1"></i>${r.ruta}`;
+            
+            return `<div class="autocomplete-item" data-index="${idx}" data-id="${r.id}">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="fw-semibold">${r.nombre}</span>
+                    ${r.categoria ? `<span class="badge ${catClass}" style="font-size:.65rem">${catLabel}</span>` : ''}
+                </div>
+                ${info ? `<small class="text-muted">${info}</small>` : ''}
+            </div>`;
+        }).join('');
+        
+        dropdown.classList.add('show');
+    }
+    
+    function selectItem(item) {
+        searchInput.value = item.nombre;
+        selectCliente.value = item.id;
+        selectCliente.dispatchEvent(new Event('change'));
+        dropdown.classList.remove('show');
+    }
+    
+    // Input event - búsqueda local
+    searchInput.addEventListener('input', function() {
+        const query = this.value.trim();
+        
+        if (query.length < 1) {
+            dropdown.classList.remove('show');
+            selectCliente.value = '';
+            selectCliente.dispatchEvent(new Event('change'));
+            return;
+        }
+        
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            const results = getLocalOptions(query);
+            renderDropdown(results);
+        }, 100);
+    });
+    
+    // Keyboard navigation
+    searchInput.addEventListener('keydown', function(e) {
+        if (!dropdown.classList.contains('show')) return;
+        
+        const items = dropdown.querySelectorAll('.autocomplete-item:not(.no-results)');
+        
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+            items.forEach((item, i) => item.classList.toggle('active', i === selectedIndex));
+            if (items[selectedIndex]) items[selectedIndex].scrollIntoView({block: 'nearest'});
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            items.forEach((item, i) => item.classList.toggle('active', i === selectedIndex));
+            if (items[selectedIndex]) items[selectedIndex].scrollIntoView({block: 'nearest'});
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (selectedIndex >= 0 && currentResults[selectedIndex]) {
+                selectItem(currentResults[selectedIndex]);
+            }
+        } else if (e.key === 'Escape') {
+            dropdown.classList.remove('show');
+        }
+    });
+    
+    // Click en items del dropdown
+    dropdown.addEventListener('click', function(e) {
+        const item = e.target.closest('.autocomplete-item');
+        if (item && !item.classList.contains('no-results')) {
+            const idx = parseInt(item.dataset.index);
+            if (currentResults[idx]) {
+                selectItem(currentResults[idx]);
+            }
+        }
+    });
+    
+    // Focus - mostrar opciones
+    searchInput.addEventListener('focus', function() {
+        if (this.value.trim().length >= 1) {
+            const results = getLocalOptions(this.value.trim());
+            renderDropdown(results);
+        }
+    });
+    
+    // Cerrar al hacer click fuera
+    document.addEventListener('click', function(e) {
+        if (!wrapper.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
 }

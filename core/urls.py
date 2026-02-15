@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/cobrar/<int:pk>/', views.cobrar_cuota, name='cobrar_cuota'),
     path('api/cuotas-hoy/', views.obtener_cuotas_hoy, name='cuotas_hoy'),
     path('api/cliente/<int:pk>/categoria/', views.cambiar_categoria_cliente, name='cambiar_categoria'),
+    path('api/buscar-clientes/', views.buscar_clientes, name='buscar_clientes'),
     
     # Reportes
     path('cierre-caja/', views.CierreCajaView.as_view(), name='cierre_caja'),

@@ -675,21 +675,28 @@ class Prestamo(models.Model):
     def calcular_fecha_finalizacion(self):
         """Calcula la fecha de finalización del préstamo"""
         fecha = self.fecha_inicio
-        dias_agregados = 0
         
-        while dias_agregados < self.cuotas_pactadas:
-            if self.frecuencia == self.Frecuencia.DIARIO:
+        # Para diarios, la primera cuota es el mismo día de inicio
+        if self.frecuencia == self.Frecuencia.DIARIO:
+            # Asegurar que fecha_inicio no sea domingo
+            if fecha.weekday() == 6:
                 fecha += timedelta(days=1)
-                # Saltar domingos para préstamos diarios
-                if fecha.weekday() == 6:  # Domingo
+            dias_agregados = 1  # La primera cuota es hoy
+            while dias_agregados < self.cuotas_pactadas:
+                fecha += timedelta(days=1)
+                if fecha.weekday() == 6:  # Saltar domingos
                     continue
-            elif self.frecuencia == self.Frecuencia.SEMANAL:
-                fecha += timedelta(weeks=1)
-            elif self.frecuencia == self.Frecuencia.QUINCENAL:
-                fecha += timedelta(days=15)
-            elif self.frecuencia == self.Frecuencia.MENSUAL:
-                fecha += timedelta(days=30)
-            dias_agregados += 1
+                dias_agregados += 1
+        else:
+            dias_agregados = 0
+            while dias_agregados < self.cuotas_pactadas:
+                if self.frecuencia == self.Frecuencia.SEMANAL:
+                    fecha += timedelta(weeks=1)
+                elif self.frecuencia == self.Frecuencia.QUINCENAL:
+                    fecha += timedelta(days=15)
+                elif self.frecuencia == self.Frecuencia.MENSUAL:
+                    fecha += timedelta(days=30)
+                dias_agregados += 1
         
         return fecha
     
@@ -699,18 +706,24 @@ class Prestamo(models.Model):
         fecha_vencimiento = self.fecha_inicio
         
         for numero in range(1, self.cuotas_pactadas + 1):
-            # Calcular fecha de vencimiento según frecuencia
-            if self.frecuencia == self.Frecuencia.DIARIO:
-                fecha_vencimiento += timedelta(days=1)
-                # Saltar domingos
+            if numero == 1 and self.frecuencia == self.Frecuencia.DIARIO:
+                # Primera cuota diaria: mismo día de inicio
+                # Asegurar que no caiga domingo
                 while fecha_vencimiento.weekday() == 6:
                     fecha_vencimiento += timedelta(days=1)
-            elif self.frecuencia == self.Frecuencia.SEMANAL:
-                fecha_vencimiento += timedelta(weeks=1)
-            elif self.frecuencia == self.Frecuencia.QUINCENAL:
-                fecha_vencimiento += timedelta(days=15)
-            elif self.frecuencia == self.Frecuencia.MENSUAL:
-                fecha_vencimiento += timedelta(days=30)
+            else:
+                # Calcular fecha de vencimiento según frecuencia
+                if self.frecuencia == self.Frecuencia.DIARIO:
+                    fecha_vencimiento += timedelta(days=1)
+                    # Saltar domingos
+                    while fecha_vencimiento.weekday() == 6:
+                        fecha_vencimiento += timedelta(days=1)
+                elif self.frecuencia == self.Frecuencia.SEMANAL:
+                    fecha_vencimiento += timedelta(weeks=1)
+                elif self.frecuencia == self.Frecuencia.QUINCENAL:
+                    fecha_vencimiento += timedelta(days=15)
+                elif self.frecuencia == self.Frecuencia.MENSUAL:
+                    fecha_vencimiento += timedelta(days=30)
             
             Cuota.objects.create(
                 prestamo=self,

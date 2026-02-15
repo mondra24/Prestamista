@@ -633,6 +633,37 @@ def cambiar_categoria_cliente(request, pk):
     return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
 
 
+@login_required
+def buscar_clientes(request):
+    """Búsqueda de clientes via AJAX para autocompletado"""
+    q = request.GET.get('q', '').strip()
+    if len(q) < 1:
+        return JsonResponse({'results': []})
+    
+    queryset = Cliente.objects.filter(estado='AC')
+    if not request.user.is_superuser:
+        queryset = queryset.filter(usuario=request.user)
+    
+    queryset = queryset.filter(
+        Q(nombre__icontains=q) |
+        Q(apellido__icontains=q) |
+        Q(telefono__icontains=q)
+    ).select_related('ruta')[:15]
+    
+    results = []
+    for c in queryset:
+        results.append({
+            'id': c.pk,
+            'nombre': c.nombre_completo,
+            'telefono': c.telefono or '',
+            'ruta': c.ruta.nombre if c.ruta else '',
+            'categoria': c.categoria,
+            'categoria_display': c.get_categoria_display(),
+        })
+    
+    return JsonResponse({'results': results})
+
+
 # ============== VISTAS DE REPORTES ==============
 
 class CierreCajaView(LoginRequiredMixin, TemplateView):

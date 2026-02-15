@@ -1638,3 +1638,66 @@ body {
     border: none;
     border-radius: 12px;
 }
+
+/* ============== AUTOCOMPLETE SELECT ============== */
+.autocomplete-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.autocomplete-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-card, #fff);
+    border: 1px solid var(--border-color, #dee2e6);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 8px 24px var(--shadow-card, rgba(0,0,0,0.12));
+    z-index: 1050;
+    max-height: 280px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.autocomplete-dropdown.show {
+    display: block;
+}
+
+.autocomplete-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color, #f0f0f0);
+    transition: background 0.15s;
+}
+
+.autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+    background: var(--color-pagado-light, #d1f5e0);
+}
+
+.autocomplete-item.no-results {
+    cursor: default;
+    color: var(--text-secondary, #6c757d);
+    text-align: center;
+    font-style: italic;
+}
+
+.autocomplete-item.no-results:hover {
+    background: transparent;
+}
+
+#cliente-search-input {
+    border-radius: 12px;
+}
+
+#cliente-search-input:focus {
+    border-color: var(--color-pagado);
+    box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.15);
+}
