@@ -182,6 +182,17 @@ class ClienteAdmin(admin.ModelAdmin):
             return f"${maximo:,.0f}"
         return "Sin límite"
     get_maximo_prestable.short_description = 'Máx. Prestable'
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if not request.user.is_superuser:
+            qs = qs.filter(usuario=request.user)
+        return qs
+    
+    def save_model(self, request, obj, form, change):
+        if not change and not request.user.is_superuser:
+            obj.usuario = request.user
+        super().save_model(request, obj, form, change)
 
 
 class CuotaInline(admin.TabularInline):
@@ -199,6 +210,12 @@ class PrestamoAdmin(admin.ModelAdmin):
     raw_id_fields = ['cliente']
     readonly_fields = ['monto_total_a_pagar', 'fecha_finalizacion', 'fecha_creacion']
     inlines = [CuotaInline]
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if not request.user.is_superuser:
+            qs = qs.filter(cliente__usuario=request.user)
+        return qs
 
 
 @admin.register(Cuota)
@@ -207,6 +224,12 @@ class CuotaAdmin(admin.ModelAdmin):
     list_filter = ['estado', 'fecha_vencimiento']
     search_fields = ['prestamo__cliente__nombre', 'prestamo__cliente__apellido']
     raw_id_fields = ['prestamo']
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if not request.user.is_superuser:
+            qs = qs.filter(prestamo__cliente__usuario=request.user)
+        return qs
 
 
 # ==================== AUDITORÍA Y NOTIFICACIONES ====================

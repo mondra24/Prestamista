@@ -406,6 +406,9 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
     template_name = 'core/prestamo_renovar.html'
     
     def get_prestamo(self):
+        # Verificar propiedad del préstamo
+        if not self.request.user.is_superuser:
+            return get_object_or_404(Prestamo, pk=self.kwargs['pk'], cliente__usuario=self.request.user)
         return get_object_or_404(Prestamo, pk=self.kwargs['pk'])
     
     def get_context_data(self, **kwargs):
@@ -465,7 +468,11 @@ def cobrar_cuota(request, pk):
     """Registrar pago de cuota via AJAX"""
     if request.method == 'POST':
         try:
-            cuota = get_object_or_404(Cuota, pk=pk)
+            # Verificar propiedad de la cuota
+            if not request.user.is_superuser:
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cliente__usuario=request.user)
+            else:
+                cuota = get_object_or_404(Cuota, pk=pk)
             
             # Obtener datos del body
             try:
@@ -580,11 +587,16 @@ def obtener_cuotas_hoy(request):
     """Obtener cuotas del día via AJAX (para actualización en tiempo real)"""
     hoy = fecha_local_hoy()
     
-    cuotas = Cuota.objects.filter(
+    cuotas_qs = Cuota.objects.filter(
         fecha_vencimiento=hoy,
         estado__in=['PE', 'PC'],
         prestamo__estado='AC'
-    ).select_related('prestamo', 'prestamo__cliente').values(
+    )
+    # Filtrar por usuario (admin ve todo)
+    if not request.user.is_superuser:
+        cuotas_qs = cuotas_qs.filter(prestamo__cliente__usuario=request.user)
+    
+    cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente').values(
         'id', 'numero_cuota', 'monto_cuota', 'estado',
         'prestamo__id', 'prestamo__cuotas_pactadas',
         'prestamo__cliente__nombre', 'prestamo__cliente__apellido'
@@ -600,7 +612,11 @@ def cambiar_categoria_cliente(request, pk):
     """Cambiar categoría del cliente via AJAX"""
     if request.method == 'POST':
         try:
-            cliente = get_object_or_404(Cliente, pk=pk)
+            # Verificar propiedad del cliente
+            if not request.user.is_superuser:
+                cliente = get_object_or_404(Cliente, pk=pk, usuario=request.user)
+            else:
+                cliente = get_object_or_404(Cliente, pk=pk)
             
             data = json.loads(request.body)
             nueva_categoria = data.get('categoria')
@@ -685,7 +701,11 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         pagos_del_dia = Cuota.objects.filter(
             fecha_pago_real=fecha,
             estado__in=['PA', 'PC']
-        ).select_related('prestamo', 'prestamo__cliente').order_by(
+        )
+        # Filtrar por usuario (admin ve todo)
+        if not self.request.user.is_superuser:
+            pagos_del_dia = pagos_del_dia.filter(prestamo__cliente__usuario=self.request.user)
+        pagos_del_dia = pagos_del_dia.select_related('prestamo', 'prestamo__cliente').order_by(
             'prestamo__cliente__apellido'
         )
         
@@ -787,7 +807,10 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             cuotas_pendientes = Cuota.objects.filter(
                 fecha_pago_real=fecha,
                 estado__in=['PA', 'PC']
-            ).select_related(
+            )
+            if not self.request.user.is_superuser:
+                cuotas_pendientes = cuotas_pendientes.filter(prestamo__cliente__usuario=self.request.user)
+            cuotas_pendientes = cuotas_pendientes.select_related(
                 'prestamo',
                 'prestamo__cliente',
                 'prestamo__cliente__ruta',
@@ -805,7 +828,10 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             base_query = Cuota.objects.filter(
                 estado__in=estados_cuota,
                 prestamo__estado='AC'
-            ).select_related(
+            )
+            if not self.request.user.is_superuser:
+                base_query = base_query.filter(prestamo__cliente__usuario=self.request.user)
+            base_query = base_query.select_related(
                 'prestamo', 
                 'prestamo__cliente', 
                 'prestamo__cliente__ruta',
@@ -916,25 +942,32 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Estadísticas generales
-        context['total_clientes'] = Cliente.objects.filter(estado='AC').count()
-        context['prestamos_activos'] = Prestamo.objects.filter(estado='AC').count()
+        # Estadísticas generales - filtradas por usuario
+        if not self.request.user.is_superuser:
+            clientes_qs = Cliente.objects.filter(estado='AC', usuario=self.request.user)
+            prestamos_qs = Prestamo.objects.filter(estado='AC', cliente__usuario=self.request.user)
+            cuotas_qs = Cuota.objects.filter(prestamo__estado='AC', prestamo__cliente__usuario=self.request.user)
+        else:
+            clientes_qs = Cliente.objects.filter(estado='AC')
+            prestamos_qs = Prestamo.objects.filter(estado='AC')
+            cuotas_qs = Cuota.objects.filter(prestamo__estado='AC')
+        
+        context['total_clientes'] = clientes_qs.count()
+        context['prestamos_activos'] = prestamos_qs.count()
         
         # Capital en la calle (monto pendiente de todos los préstamos activos)
-        prestamos_activos = Prestamo.objects.filter(estado='AC')
-        capital_calle = sum(p.monto_pendiente for p in prestamos_activos)
+        capital_calle = sum(p.monto_pendiente for p in prestamos_qs)
         context['capital_en_calle'] = capital_calle
         
         # Cuotas vencidas
         hoy = fecha_local_hoy()
-        context['cuotas_vencidas'] = Cuota.objects.filter(
+        context['cuotas_vencidas'] = cuotas_qs.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
-            prestamo__estado='AC'
         ).count()
         
         # Distribución por categoría de clientes
-        context['clientes_por_categoria'] = Cliente.objects.values('categoria').annotate(
+        context['clientes_por_categoria'] = clientes_qs.values('categoria').annotate(
             cantidad=Count('id')
         )
         
@@ -1148,7 +1181,10 @@ def exportar_planilla_excel(request):
     cuotas = Cuota.objects.filter(
         prestamo__estado='AC',
         estado__in=['PE', 'PC']
-    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta')
+    )
+    if not request.user.is_superuser:
+        cuotas = cuotas.filter(prestamo__cliente__usuario=request.user)
+    cuotas = cuotas.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta')
     
     if incluir_vencidas:
         cuotas = cuotas.filter(fecha_vencimiento__lte=fecha)
@@ -1276,7 +1312,10 @@ def exportar_cierre_excel(request):
     pagos = Cuota.objects.filter(
         fecha_pago_real=fecha,
         estado__in=['PA', 'PC']
-    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+    )
+    if not request.user.is_superuser:
+        pagos = pagos.filter(prestamo__cliente__usuario=request.user)
+    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
         'prestamo__cliente__apellido'
     )
     
@@ -1412,7 +1451,10 @@ def exportar_clientes_excel(request):
         messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
         return redirect('core:cliente_list')
     
-    clientes = Cliente.objects.filter(estado='AC').select_related('ruta', 'tipo_negocio')
+    clientes = Cliente.objects.filter(estado='AC')
+    if not request.user.is_superuser:
+        clientes = clientes.filter(usuario=request.user)
+    clientes = clientes.select_related('ruta', 'tipo_negocio')
     
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1479,6 +1521,8 @@ def exportar_prestamos_excel(request):
     
     estado = request.GET.get('estado', '')
     prestamos = Prestamo.objects.select_related('cliente')
+    if not request.user.is_superuser:
+        prestamos = prestamos.filter(cliente__usuario=request.user)
     if estado:
         prestamos = prestamos.filter(estado=estado)
     
