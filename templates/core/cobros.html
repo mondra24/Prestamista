@@ -312,16 +312,26 @@
 <!-- Modal de confirmación de cobro rápido -->
 <div class="confirm-modal-overlay" id="confirm-cobro-modal">
     <div class="confirm-modal">
-        <div class="confirm-modal-icon">
-            <i class="bi bi-cash-coin"></i>
+        <div class="confirm-modal-header-strip">
+            <div class="confirm-modal-icon">
+                <i class="bi bi-cash-coin"></i>
+            </div>
+            <h5>Confirmar Cobro</h5>
         </div>
-        <h5>Confirmar Cobro</h5>
-        <div class="confirm-modal-amount" id="confirm-monto">$0</div>
-        <div class="confirm-modal-client" id="confirm-cliente">Cliente</div>
+        <div class="confirm-modal-body">
+            <div class="confirm-modal-amount" id="confirm-monto">$0</div>
+            <div class="confirm-modal-client" id="confirm-cliente">
+                <i class="bi bi-person-fill"></i> Cliente
+            </div>
+        </div>
         <input type="hidden" id="confirm-cuota-id">
         <div class="confirm-modal-actions">
-            <button type="button" class="btn-cancelar" onclick="cerrarConfirmacion()">Cancelar</button>
-            <button type="button" class="btn-confirmar" onclick="ejecutarCobro()">Cobrar</button>
+            <button type="button" class="btn-cancelar" onclick="cerrarConfirmacion()">
+                <i class="bi bi-x-lg"></i> Cancelar
+            </button>
+            <button type="button" class="btn-confirmar" onclick="ejecutarCobro()">
+                <i class="bi bi-check2-circle"></i> Cobrar
+            </button>
         </div>
     </div>
 </div>
@@ -712,10 +722,30 @@ function formatearMoneda(num) {
 
 // ============ CONFIRMACIÓN DE COBRO RÁPIDO ============
 function mostrarConfirmacion(cuotaId, monto, cliente) {
+    const modal = document.getElementById('confirm-cobro-modal');
+    const modalInner = modal.querySelector('.confirm-modal');
+    
+    // Resetear estado
+    modalInner.classList.remove('success');
+    const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
+    headerStrip.innerHTML = `
+        <div class="confirm-modal-icon"><i class="bi bi-cash-coin"></i></div>
+        <h5>Confirmar Cobro</h5>
+    `;
+    modal.querySelector('.confirm-modal-body').style.display = '';
+    modal.querySelector('.confirm-modal-actions').style.display = '';
+    
     document.getElementById('confirm-cuota-id').value = cuotaId;
     document.getElementById('confirm-monto').textContent = formatearMoneda(monto);
-    document.getElementById('confirm-cliente').textContent = cliente;
-    document.getElementById('confirm-cobro-modal').classList.add('show');
+    document.getElementById('confirm-cliente').innerHTML = 
+        `<i class="bi bi-person-fill"></i> ${cliente}`;
+    
+    // Resetear botón
+    const btnConfirmar = modal.querySelector('.btn-confirmar');
+    btnConfirmar.disabled = false;
+    btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
+    
+    modal.classList.add('show');
 }
 
 function cerrarConfirmacion() {
@@ -724,9 +754,10 @@ function cerrarConfirmacion() {
 
 async function ejecutarCobro() {
     const cuotaId = document.getElementById('confirm-cuota-id').value;
-    const btnConfirmar = document.querySelector('.confirm-modal .btn-confirmar');
+    const modal = document.getElementById('confirm-cobro-modal');
+    const btnConfirmar = modal.querySelector('.btn-confirmar');
     btnConfirmar.disabled = true;
-    btnConfirmar.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+    btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
     
     try {
         const response = await fetch(`/api/cobrar/${cuotaId}/`, {
@@ -741,15 +772,27 @@ async function ejecutarCobro() {
         const result = await response.json();
         
         if (result.success) {
-            showToast(result.message, 'success');
+            // Mostrar animación de éxito dentro del modal
+            const modalInner = modal.querySelector('.confirm-modal');
+            modalInner.classList.add('success');
+            const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
+            headerStrip.innerHTML = `
+                <div class="confirm-success-check"><i class="bi bi-check-lg"></i></div>
+                <div class="confirm-success-text">¡Cobro Registrado!</div>
+            `;
+            modalInner.querySelector('.confirm-modal-body').style.display = 'none';
+            modalInner.querySelector('.confirm-modal-actions').style.display = 'none';
             
-            // Ocultar la card
+            // Ocultar la card con animación
             const card = document.querySelector(`.payment-card button[data-cuota-id="${cuotaId}"]`)?.closest('.payment-card');
             if (card) {
-                card.style.transition = 'all 0.3s ease';
+                card.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
                 card.style.opacity = '0';
                 card.style.transform = 'translateX(100%)';
-                setTimeout(() => card.remove(), 300);
+                card.style.maxHeight = '0';
+                card.style.marginBottom = '0';
+                card.style.padding = '0';
+                setTimeout(() => card.remove(), 400);
             }
             
             // Actualizar estadísticas
@@ -757,16 +800,20 @@ async function ejecutarCobro() {
                 document.getElementById('total-cobrado-hoy').textContent = 
                     formatearMoneda(result.estadisticas.total_cobrado_hoy);
             }
+            
+            // Cerrar modal con delay para mostrar éxito
+            setTimeout(() => cerrarConfirmacion(), 1200);
+            
         } else {
             showToast(result.message || 'Error', 'danger');
+            btnConfirmar.disabled = false;
+            btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
         }
     } catch (error) {
         showToast('Error de conexión', 'danger');
+        btnConfirmar.disabled = false;
+        btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
     }
-    
-    btnConfirmar.disabled = false;
-    btnConfirmar.textContent = 'Cobrar';
-    cerrarConfirmacion();
 }
 
 async function confirmarPagoParcial() {
@@ -823,15 +870,33 @@ async function confirmarPagoParcial() {
         const result = await response.json();
         
         if (result.success) {
-            showToast(result.message, 'success');
+            // Cerrar modal de pago parcial
+            const modalParcial = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
+            if (modalParcial) modalParcial.hide();
+            
+            // Mostrar confirmación de éxito con el modal bonito
+            const confirmModal = document.getElementById('confirm-cobro-modal');
+            const modalInner = confirmModal.querySelector('.confirm-modal');
+            modalInner.classList.add('success');
+            const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
+            headerStrip.innerHTML = `
+                <div class="confirm-success-check"><i class="bi bi-check-lg"></i></div>
+                <div class="confirm-success-text">¡Cobro Registrado!</div>
+            `;
+            modalInner.querySelector('.confirm-modal-body').style.display = 'none';
+            modalInner.querySelector('.confirm-modal-actions').style.display = 'none';
+            confirmModal.classList.add('show');
             
             // Ocultar la card de la cuota cobrada
             const card = document.querySelector(`.payment-card button[data-cuota-id="${cuotaId}"]`)?.closest('.payment-card');
             if (card) {
-                card.style.transition = 'all 0.3s ease';
+                card.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
                 card.style.opacity = '0';
                 card.style.transform = 'translateX(100%)';
-                setTimeout(() => card.remove(), 300);
+                card.style.maxHeight = '0';
+                card.style.marginBottom = '0';
+                card.style.padding = '0';
+                setTimeout(() => card.remove(), 400);
             }
             
             // Actualizar estadísticas
@@ -840,9 +905,8 @@ async function confirmarPagoParcial() {
                     formatearMoneda(result.estadisticas.total_cobrado_hoy);
             }
             
-            // Cerrar modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
-            if (modal) modal.hide();
+            // Cerrar confirmación de éxito
+            setTimeout(() => cerrarConfirmacion(), 1200);
         } else {
             showToast(result.message || 'Error al registrar el cobro', 'danger');
         }

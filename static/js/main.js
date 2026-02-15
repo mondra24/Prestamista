@@ -106,6 +106,70 @@ function initCobros() {
 }
 
 /**
+ * Mostrar modal de confirmación bonito (global)
+ * Retorna una Promise que resuelve true si confirma, false si cancela
+ */
+function showConfirmModal(monto, cliente) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('global-confirm-modal');
+        if (!modal) { resolve(confirm(`¿Confirmar cobro de ${formatCurrency(monto)} a ${cliente}?`)); return; }
+        
+        const modalInner = modal.querySelector('.confirm-modal');
+        const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
+        
+        // Reset estado
+        modalInner.classList.remove('success');
+        headerStrip.innerHTML = `
+            <div class="confirm-modal-icon"><i class="bi bi-cash-coin"></i></div>
+            <h5>Confirmar Cobro</h5>
+        `;
+        modal.querySelector('.confirm-modal-body').style.display = '';
+        modal.querySelector('.confirm-modal-actions').style.display = '';
+        
+        document.getElementById('global-confirm-monto').textContent = formatCurrency(monto);
+        document.getElementById('global-confirm-cliente').innerHTML = 
+            `<i class="bi bi-person-fill"></i> ${cliente}`;
+        
+        const btnOk = document.getElementById('global-confirm-ok');
+        const btnCancel = document.getElementById('global-confirm-cancel');
+        btnOk.disabled = false;
+        btnOk.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
+        
+        // Limpiar listeners previos
+        const newBtnOk = btnOk.cloneNode(true);
+        const newBtnCancel = btnCancel.cloneNode(true);
+        btnOk.parentNode.replaceChild(newBtnOk, btnOk);
+        btnCancel.parentNode.replaceChild(newBtnCancel, btnCancel);
+        
+        newBtnOk.addEventListener('click', () => { modal.classList.remove('show'); resolve(true); });
+        newBtnCancel.addEventListener('click', () => { modal.classList.remove('show'); resolve(false); });
+        
+        modal.classList.add('show');
+    });
+}
+
+/**
+ * Mostrar animación de éxito en el modal global
+ */
+function showSuccessModal() {
+    const modal = document.getElementById('global-confirm-modal');
+    if (!modal) return;
+    
+    const modalInner = modal.querySelector('.confirm-modal');
+    modalInner.classList.add('success');
+    const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
+    headerStrip.innerHTML = `
+        <div class="confirm-success-check"><i class="bi bi-check-lg"></i></div>
+        <div class="confirm-success-text">¡Cobro Registrado!</div>
+    `;
+    modalInner.querySelector('.confirm-modal-body').style.display = 'none';
+    modalInner.querySelector('.confirm-modal-actions').style.display = 'none';
+    modal.classList.add('show');
+    
+    setTimeout(() => modal.classList.remove('show'), 1200);
+}
+
+/**
  * Manejar cobro de cuota
  */
 async function handleCobro(event) {
@@ -115,17 +179,13 @@ async function handleCobro(event) {
     const card = btn.closest('.cobro-card') || btn.closest('.payment-card');
     const cuotaItem = btn.closest('.cuota-item');
     
-    // Confirmación antes de cobrar
+    // Confirmación antes de cobrar con modal bonito
     const clienteNombre = btn.dataset.cliente || '';
     const montoRaw = btn.dataset.monto || '';
-    const montoFormateado = montoRaw ? formatCurrency(parseFloat(montoRaw)) : '';
-    const mensajeConfirm = clienteNombre 
-        ? `¿Confirmar cobro de ${montoFormateado} a ${clienteNombre}?`
-        : '¿Confirmar el cobro de esta cuota?';
+    const montoNum = montoRaw ? parseFloat(montoRaw) : 0;
     
-    if (!confirm(mensajeConfirm)) {
-        return;
-    }
+    const confirmed = await showConfirmModal(montoNum, clienteNombre || 'Cliente');
+    if (!confirmed) return;
     
     // Evitar doble click
     if (btn.disabled) return;
@@ -147,8 +207,8 @@ async function handleCobro(event) {
         const data = await response.json();
         
         if (data.success) {
-            // Feedback de éxito
-            showToast('¡Pago registrado!', 'success');
+            // Mostrar animación de éxito
+            showSuccessModal();
             
             // Actualizar estadísticas con datos del servidor
             if (data.estadisticas) {
@@ -157,19 +217,14 @@ async function handleCobro(event) {
             
             // Remover tarjeta con animación (si existe)
             if (card) {
-                card.style.transition = 'all 0.3s ease-out';
+                card.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
                 card.style.opacity = '0';
                 card.style.transform = 'translateX(100px)';
-                card.style.height = '0';
+                card.style.maxHeight = '0';
                 card.style.marginBottom = '0';
-                card.style.paddingTop = '0';
-                card.style.paddingBottom = '0';
-                card.style.border = 'none';
+                card.style.padding = '0';
                 
-                // Remover del DOM después de la animación
-                setTimeout(() => {
-                    card.remove();
-                }, 300);
+                setTimeout(() => card.remove(), 400);
             } else if (cuotaItem) {
                 // Estamos en prestamo_detail: actualizar la cuota visualmente
                 cuotaItem.classList.remove('pendiente', 'vencida');
@@ -241,8 +296,8 @@ async function registrarPagoParcial(cuotaId, monto, accionRestante = 'ignorar', 
         const data = await response.json();
         
         if (data.success) {
-            showToast(data.message || `Pago de ${formatCurrency(monto)} registrado`, 'success');
-            location.reload(); // Recargar para actualizar montos
+            showSuccessModal();
+            setTimeout(() => location.reload(), 1300);
         } else {
             throw new Error(data.message);
         }
@@ -578,11 +633,15 @@ function showToast(message, type = 'info') {
 }
 
 /**
- * Confirmación antes de acciones importantes
+ * Confirmación antes de acciones importantes (usa modal si disponible)
  */
-function confirmar(mensaje, callback) {
-    if (confirm(mensaje)) {
-        callback();
+async function confirmar(mensaje, callback) {
+    const modal = document.getElementById('global-confirm-modal');
+    if (modal) {
+        const confirmed = await showConfirmModal(0, mensaje);
+        if (confirmed) callback();
+    } else {
+        if (confirm(mensaje)) callback();
     }
 }
 

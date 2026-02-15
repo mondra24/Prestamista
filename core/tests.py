@@ -206,13 +206,13 @@ class CuotaModelTest(TestCase):
     
     def test_cuota_vencida(self):
         """Test detección de cuota vencida"""
-        self.cuota.fecha_vencimiento = timezone.now().date() - timedelta(days=5)
+        self.cuota.fecha_vencimiento = timezone.localtime(timezone.now()).date() - timedelta(days=5)
         self.cuota.save()
         self.assertTrue(self.cuota.esta_vencida)
     
     def test_dias_vencida(self):
         """Test cálculo de días vencida"""
-        hoy = timezone.now().date()
+        hoy = timezone.localtime(timezone.now()).date()
         self.cuota.fecha_vencimiento = hoy - timedelta(days=3)
         self.cuota.save()
         self.assertEqual(self.cuota.dias_vencida, 3)

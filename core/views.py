@@ -18,6 +18,11 @@ from .models import Cliente, Prestamo, Cuota, ConfiguracionMora
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 
 
+def fecha_local_hoy():
+    """Retorna la fecha local (Argentina) en vez de UTC"""
+    return timezone.localtime(timezone.now()).date()
+
+
 def logout_view(request):
     """Vista para cerrar sesión"""
     logout(request)
@@ -31,7 +36,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        hoy = timezone.now().date()
+        hoy = fecha_local_hoy()
         
         # Filtro base por usuario (admin ve todo)
         cliente_filter = {}
@@ -111,7 +116,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         from datetime import timedelta
         from .models import RutaCobro, ConfiguracionMora
-        hoy = timezone.now().date()
+        hoy = fecha_local_hoy()
         
         # Base queryset - filtrar por usuario si no es admin
         base_filter = {}
@@ -342,7 +347,7 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
                 initial['cliente'] = int(cliente_id)
             except (ValueError, TypeError):
                 pass
-        initial['fecha_inicio'] = timezone.now().date()
+        initial['fecha_inicio'] = fecha_local_hoy()
         return initial
     
     def get_form(self, form_class=None):
@@ -524,7 +529,7 @@ def cobrar_cuota(request, pk):
                 mensaje += ' (Mixto)'
             
             # Calcular total cobrado hoy (incluye pagos parciales)
-            hoy = timezone.now().date()
+            hoy = fecha_local_hoy()
             stats_filter = {
                 'fecha_pago_real': hoy,
                 'estado__in': ['PA', 'PC'],
@@ -573,7 +578,7 @@ def cobrar_cuota(request, pk):
 @login_required
 def obtener_cuotas_hoy(request):
     """Obtener cuotas del día via AJAX (para actualización en tiempo real)"""
-    hoy = timezone.now().date()
+    hoy = fecha_local_hoy()
     
     cuotas = Cuota.objects.filter(
         fecha_vencimiento=hoy,
@@ -643,7 +648,7 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
             from datetime import datetime
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
         else:
-            fecha = timezone.now().date()
+            fecha = fecha_local_hoy()
         
         # Pagos del día (incluye pagos completos y parciales)
         pagos_del_dia = Cuota.objects.filter(
@@ -726,7 +731,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
             from datetime import datetime
             fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
         else:
-            fecha = timezone.now().date()
+            fecha = fecha_local_hoy()
         
         ruta_id = self.request.GET.get('ruta')
         if not ruta_id and config and hasattr(config, 'filtrar_por_ruta') and config.filtrar_por_ruta:
@@ -890,7 +895,7 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
         context['capital_en_calle'] = capital_calle
         
         # Cuotas vencidas
-        hoy = timezone.now().date()
+        hoy = fecha_local_hoy()
         context['cuotas_vencidas'] = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
@@ -1102,7 +1107,7 @@ def exportar_planilla_excel(request):
     if fecha_str:
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
     else:
-        fecha = timezone.now().date()
+        fecha = fecha_local_hoy()
     
     # Obtener ruta de filtro
     ruta_id = request.GET.get('ruta')
@@ -1234,7 +1239,7 @@ def exportar_cierre_excel(request):
     if fecha_str:
         fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
     else:
-        fecha = timezone.now().date()
+        fecha = fecha_local_hoy()
     
     # Obtener cobros del día (completos y parciales)
     pagos = Cuota.objects.filter(

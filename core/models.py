@@ -11,6 +11,11 @@ from datetime import timedelta
 from decimal import Decimal
 
 
+def fecha_local_hoy():
+    """Retorna la fecha local (Argentina) en vez de UTC"""
+    return timezone.localtime(timezone.now()).date()
+
+
 class PerfilUsuario(models.Model):
     """Perfil extendido para usuarios con roles"""
     
@@ -497,7 +502,7 @@ class Cliente(models.Model):
                 return False
             # Verificar días mínimos
             if config.dias_minimos_para_renovar > 0:
-                dias_pagando = (timezone.now().date() - prestamo.fecha_inicio).days
+                dias_pagando = (fecha_local_hoy() - prestamo.fecha_inicio).days
                 if dias_pagando < config.dias_minimos_para_renovar:
                     return False
         
@@ -513,7 +518,7 @@ class Cliente(models.Model):
             return 0
         
         if config.dias_minimos_para_renovar > 0:
-            dias_pagando = (timezone.now().date() - prestamo.fecha_inicio).days
+            dias_pagando = (fecha_local_hoy() - prestamo.fecha_inicio).days
             dias_faltantes = config.dias_minimos_para_renovar - dias_pagando
             return max(0, dias_faltantes)
         return 0
@@ -749,7 +754,7 @@ class Prestamo(models.Model):
         """Liquida el préstamo marcando todas las cuotas como pagadas"""
         self.cuotas.filter(estado='PE').update(
             estado='PA',
-            fecha_pago_real=timezone.now().date()
+            fecha_pago_real=fecha_local_hoy()
         )
         self.estado = self.Estado.FINALIZADO
         self.save()
@@ -772,7 +777,7 @@ class Prestamo(models.Model):
         cuotas_pendientes = prestamo_anterior.cuotas.filter(estado__in=['PE', 'PC'])
         for cuota in cuotas_pendientes:
             cuota.estado = 'PA'
-            cuota.fecha_pago_real = timezone.now().date()
+            cuota.fecha_pago_real = fecha_local_hoy()
             cuota.monto_pagado = cuota.monto_cuota
             cuota.save()
         
@@ -789,7 +794,7 @@ class Prestamo(models.Model):
             tasa_interes_porcentaje=nueva_tasa,
             cuotas_pactadas=nuevas_cuotas,
             frecuencia=nueva_frecuencia,
-            fecha_inicio=timezone.now().date(),
+            fecha_inicio=fecha_local_hoy(),
             es_renovacion=True,
             prestamo_anterior=prestamo_anterior,
             notas=f"Renovación del préstamo #{prestamo_anterior.pk}. Saldo anterior: ${saldo_pendiente}"
@@ -900,14 +905,14 @@ class Cuota(models.Model):
         """Verifica si la cuota está vencida"""
         if self.estado == self.Estado.PAGADO:
             return False
-        return self.fecha_vencimiento < timezone.now().date()
+        return self.fecha_vencimiento < fecha_local_hoy()
     
     @property
     def dias_vencida(self):
         """Días de vencimiento de la cuota"""
         if not self.esta_vencida:
             return 0
-        return (timezone.now().date() - self.fecha_vencimiento).days
+        return (fecha_local_hoy() - self.fecha_vencimiento).days
     
     @property
     def interes_mora_pendiente(self):
@@ -950,7 +955,7 @@ class Cuota(models.Model):
         monto_restante_anterior = self.monto_restante
         
         self.monto_pagado += monto
-        self.fecha_pago_real = timezone.now().date()
+        self.fecha_pago_real = fecha_local_hoy()
         
         # Registrar método de pago
         self.metodo_pago = metodo_pago
@@ -1233,7 +1238,7 @@ class Notificacion(models.Model):
     @classmethod
     def notificar_cuotas_vencidas(cls):
         """Crea notificaciones para cuotas vencidas"""
-        hoy = timezone.now().date()
+        hoy = fecha_local_hoy()
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
@@ -1262,7 +1267,7 @@ class Notificacion(models.Model):
     @classmethod
     def notificar_cuotas_por_vencer(cls, dias_anticipacion=1):
         """Crea notificaciones para cuotas que vencen pronto"""
-        hoy = timezone.now().date()
+        hoy = fecha_local_hoy()
         fecha_limite = hoy + timedelta(days=dias_anticipacion)
         
         cuotas = Cuota.objects.filter(

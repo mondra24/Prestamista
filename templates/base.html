@@ -181,6 +181,35 @@
     
     {% block extra_js %}{% endblock %}
     
+    <!-- Modal de confirmación global (reutilizable desde main.js) -->
+    {% if user.is_authenticated %}
+    <div class="confirm-modal-overlay" id="global-confirm-modal">
+        <div class="confirm-modal">
+            <div class="confirm-modal-header-strip">
+                <div class="confirm-modal-icon">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+                <h5>Confirmar Cobro</h5>
+            </div>
+            <div class="confirm-modal-body">
+                <div class="confirm-modal-amount" id="global-confirm-monto">$0</div>
+                <div class="confirm-modal-client" id="global-confirm-cliente">
+                    <i class="bi bi-person-fill"></i> Cliente
+                </div>
+            </div>
+            <input type="hidden" id="global-confirm-cuota-id">
+            <div class="confirm-modal-actions">
+                <button type="button" class="btn-cancelar" id="global-confirm-cancel">
+                    <i class="bi bi-x-lg"></i> Cancelar
+                </button>
+                <button type="button" class="btn-confirmar" id="global-confirm-ok">
+                    <i class="bi bi-check2-circle"></i> Cobrar
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <script>
         // Mostrar fecha actual
         const fechaEl = document.getElementById('fecha-hoy');

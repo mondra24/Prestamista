@@ -584,7 +584,12 @@ async function confirmarPagoParcial() {
         const result = await response.json();
         
         if (result.success) {
-            showToast(result.message, 'success');
+            // Cerrar modal de pago parcial
+            const modalParcial = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
+            if (modalParcial) modalParcial.hide();
+            
+            // Mostrar animación de éxito  
+            showSuccessModal();
             
             // Actualizar la cuota en la UI
             const cuotaItem = document.querySelector(`.btn-cobrar[data-cuota-id="${cuotaId}"]`)?.closest('.cuota-item');
@@ -635,9 +640,6 @@ async function confirmarPagoParcial() {
                     if (btnEditar) btnEditar.dataset.monto = nuevoRestante;
                 }
             }
-            
-            const modal = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
-            if (modal) modal.hide();
         } else {
             showToast(result.message || 'Error al registrar el cobro', 'danger');
         }
