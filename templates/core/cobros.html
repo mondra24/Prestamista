@@ -375,7 +375,7 @@
                     <label class="form-label fw-semibold small">Monto a cobrar:</label>
                     <input type="text" class="form-control form-control-lg text-center" id="pago-monto" 
                            inputmode="numeric" placeholder="0"
-                           oninput="formatearInputMonto(this); calcularResumenPago(); calcularInteresDesdeporcentaje()">
+                           oninput="formatearInputMonto(this); calcularResumenPago(); calcularInteresDesdeporcentaje(); validarMontosMixtos()">
                 </div>
                 
                 <!-- Calculador de Interés -->
@@ -415,7 +415,7 @@
                     <label class="form-label fw-semibold small">Interés por mora a cobrar:</label>
                     <input type="text" class="form-control text-center" id="pago-interes-mora" 
                            inputmode="numeric" placeholder="0"
-                           oninput="formatearInputMonto(this); calcularResumenPago()">
+                           oninput="formatearInputMonto(this); calcularResumenPago(); validarMontosMixtos()">
                 </div>
                 
                 <!-- RESUMEN DESTACADO -->
@@ -562,6 +562,13 @@ function toggleMetodoPago() {
     if (metodo === 'MX') {
         mixtoContainer.style.display = 'block';
         referenciaContainer.style.display = 'block';
+        // Pre-llenar efectivo con el total a recibir (cuota + mora)
+        const montoCuota = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
+        const interesMora = parseFloat(document.getElementById('pago-interes-mora').value.replace(/\./g, '').replace(',', '.')) || 0;
+        const totalRecibir = montoCuota + interesMora;
+        document.getElementById('pago-monto-efectivo').value = formatearNumero(totalRecibir);
+        document.getElementById('pago-monto-transferencia').value = '0';
+        validarMontosMixtos();
     } else if (metodo === 'TR') {
         mixtoContainer.style.display = 'none';
         referenciaContainer.style.display = 'block';
@@ -674,6 +681,7 @@ function aplicarInteresCalculado() {
     const interes = Math.round((baseCalculo * porcentaje / 100) * dias);
     document.getElementById('pago-interes-mora').value = formatearNumero(interes);
     calcularResumenPago();
+    validarMontosMixtos();
 }
 
 function calcularResumenPago() {
