@@ -1023,7 +1023,11 @@ class Cuota(models.Model):
         restante = monto_restante_anterior - monto
         
         # Manejar el monto restante según la acción elegida
-        if restante > 0 and accion_restante == 'proxima':
+        # Incluir interés por mora en lo que se transfiere
+        mora_pendiente = Decimal(str(interes_mora or 0))
+        monto_a_transferir = restante + mora_pendiente
+        
+        if monto_a_transferir > 0 and accion_restante == 'proxima':
             # Sumar a la próxima cuota pendiente o parcial
             proxima = self.prestamo.cuotas.filter(
                 estado__in=['PE', 'PC'],
@@ -1031,13 +1035,14 @@ class Cuota(models.Model):
             ).order_by('numero_cuota').first()
             
             if proxima:
-                proxima.monto_cuota += restante
+                proxima.monto_cuota += monto_a_transferir
                 proxima.save()
                 # Marcar esta cuota como pagada ya que se transfirió el restante
-                self.estado = self.Estado.PAGADO
-                self.save()
+                if restante > 0:
+                    self.estado = self.Estado.PAGADO
+                    self.save()
         
-        elif restante > 0 and accion_restante == 'especial' and fecha_especial:
+        elif monto_a_transferir > 0 and accion_restante == 'especial' and fecha_especial:
             # Crear cuota especial
             ultimo_numero = self.prestamo.cuotas.aggregate(
                 max_num=models.Max('numero_cuota')
@@ -1046,7 +1051,7 @@ class Cuota(models.Model):
             Cuota.objects.create(
                 prestamo=self.prestamo,
                 numero_cuota=ultimo_numero + 1,
-                monto_cuota=restante,
+                monto_cuota=monto_a_transferir,
                 fecha_vencimiento=fecha_especial,
                 estado=self.Estado.PENDIENTE
             )
