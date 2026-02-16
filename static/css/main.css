@@ -999,12 +999,24 @@ body {
     font-size: 1.1rem;
 }
 
-.pago-resumen-row.restante {
+.pago-pendiente-bloque {
     background: #fff3cd;
-    margin: 8px -16px -16px -16px;
+    margin: 10px -16px -16px -16px;
     padding: 12px 16px;
     border-radius: 0 0 12px 12px;
+}
+
+.pago-pendiente-bloque .pago-resumen-row {
+    padding: 4px 0;
+    font-size: 0.85rem;
+}
+
+.pago-pendiente-bloque .pago-resumen-row.pendiente-total {
+    border-top: 1px dashed #e0a800;
+    margin-top: 4px;
+    padding-top: 8px;
     font-size: 1rem;
+    font-weight: 700;
 }
 
 .pago-resumen-row .label {
