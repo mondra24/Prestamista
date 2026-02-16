@@ -130,7 +130,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
         ).order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
@@ -144,7 +144,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
         ).order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
@@ -159,7 +159,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
         ).order_by(
             'fecha_vencimiento',
             'prestamo__cliente__ruta__orden',
@@ -230,7 +230,7 @@ class ClienteListView(LoginRequiredMixin, ListView):
     context_object_name = 'clientes'
     
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().select_related('usuario')
         
         # Filtrar por usuario (admin ve todos, otros solo los suyos)
         if not self.request.user.is_superuser:
@@ -329,7 +329,7 @@ class PrestamoListView(LoginRequiredMixin, ListView):
         if estado:
             queryset = queryset.filter(estado=estado)
         
-        return queryset.select_related('cliente')
+        return queryset.select_related('cliente', 'cliente__usuario')
 
 
 class PrestamoCreateView(LoginRequiredMixin, CreateView):
@@ -597,10 +597,12 @@ def obtener_cuotas_hoy(request):
     if not request.user.is_superuser:
         cuotas_qs = cuotas_qs.filter(prestamo__cliente__usuario=request.user)
     
-    cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente').values(
+    cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__usuario').values(
         'id', 'numero_cuota', 'monto_cuota', 'estado',
         'prestamo__id', 'prestamo__cuotas_pactadas',
-        'prestamo__cliente__nombre', 'prestamo__cliente__apellido'
+        'prestamo__cliente__nombre', 'prestamo__cliente__apellido',
+        'prestamo__cliente__usuario__username', 'prestamo__cliente__usuario__first_name',
+        'prestamo__cliente__usuario__last_name'
     )
     
     return JsonResponse({

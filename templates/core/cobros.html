@@ -92,6 +92,7 @@
                         </div>
                         <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                             <div class="info-chips">
+                                {% if user.is_superuser and cuota.prestamo.cliente.usuario %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cliente.usuario.get_full_name|default:cuota.prestamo.cliente.usuario.username }}</span>{% endif %}
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
                                 <span class="chip"><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
@@ -160,6 +161,7 @@
                             </div>
                             <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                                 <div class="info-chips">
+                                    {% if user.is_superuser and cuota.prestamo.cliente.usuario %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cliente.usuario.get_full_name|default:cuota.prestamo.cliente.usuario.username }}</span>{% endif %}
                                     {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                     <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
                                     <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
@@ -233,6 +235,7 @@
                         </div>
                         <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                             <div class="info-chips">
+                                {% if user.is_superuser and cuota.prestamo.cliente.usuario %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cliente.usuario.get_full_name|default:cuota.prestamo.cliente.usuario.username }}</span>{% endif %}
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
                                 <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
@@ -281,6 +284,7 @@
                         </div>
                         <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                             <div class="info-chips">
+                                {% if user.is_superuser and cuota.prestamo.cliente.usuario %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cliente.usuario.get_full_name|default:cuota.prestamo.cliente.usuario.username }}</span>{% endif %}
                                 {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
                                 <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
                                 <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
