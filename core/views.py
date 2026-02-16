@@ -41,7 +41,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         # Filtro base por usuario (admin ve todo)
         cliente_filter = {}
         if not self.request.user.is_superuser:
-            cliente_filter['prestamo__cliente__usuario'] = self.request.user
+            cliente_filter['prestamo__cobrador'] = self.request.user
         
         # Estadísticas del día (incluye pagos completos y parciales)
         cobros_realizados_hoy = Cuota.objects.filter(
@@ -79,12 +79,12 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         
         # Estadísticas generales (filtradas por usuario)
         if not self.request.user.is_superuser:
-            prestamos_activos = Prestamo.objects.filter(estado='AC', cliente__usuario=self.request.user).count()
+            prestamos_activos = Prestamo.objects.filter(estado='AC', cobrador=self.request.user).count()
             clientes_activos = Cliente.objects.filter(estado='AC', usuario=self.request.user).count()
             total_cartera = Cuota.objects.filter(
                 estado__in=['PE', 'PC'],
                 prestamo__estado='AC',
-                prestamo__cliente__usuario=self.request.user
+                prestamo__cobrador=self.request.user
             ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         else:
             prestamos_activos = Prestamo.objects.filter(estado='AC').count()
@@ -121,7 +121,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         # Base queryset - filtrar por usuario si no es admin
         base_filter = {}
         if not self.request.user.is_superuser:
-            base_filter['prestamo__cliente__usuario'] = self.request.user
+            base_filter['prestamo__cobrador'] = self.request.user
         
         # Cuotas del día (pendientes) - ordenadas por ruta
         cuotas_hoy = Cuota.objects.filter(
@@ -130,7 +130,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
         ).order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
@@ -144,7 +144,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
         ).order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
@@ -159,7 +159,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             prestamo__estado='AC',
             **base_filter
         ).select_related(
-            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario'
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
         ).order_by(
             'fecha_vencimiento',
             'prestamo__cliente__ruta__orden',
@@ -173,7 +173,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
         if not self.request.user.is_superuser:
-            cobros_filter['prestamo__cliente__usuario'] = self.request.user
+            cobros_filter['prestamo__cobrador'] = self.request.user
         
         cobros_realizados_hoy = Cuota.objects.filter(
             **cobros_filter
@@ -322,14 +322,14 @@ class PrestamoListView(LoginRequiredMixin, ListView):
         
         # Filtrar por clientes del usuario (admin ve todos)
         if not self.request.user.is_superuser:
-            queryset = queryset.filter(cliente__usuario=self.request.user)
+            queryset = queryset.filter(cobrador=self.request.user)
         
         estado = self.request.GET.get('estado', '')
         
         if estado:
             queryset = queryset.filter(estado=estado)
         
-        return queryset.select_related('cliente', 'cliente__usuario')
+        return queryset.select_related('cliente', 'cliente__usuario', 'cobrador')
 
 
 class PrestamoCreateView(LoginRequiredMixin, CreateView):
@@ -377,6 +377,8 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
         return context
     
     def form_valid(self, form):
+        # Asignar el cobrador actual al préstamo
+        form.instance.cobrador = self.request.user
         messages.success(self.request, 'Préstamo creado exitosamente. Las cuotas han sido generadas.')
         return super().form_valid(form)
 
@@ -389,9 +391,9 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
-        # Admin puede ver todos, otros solo los de sus clientes
+        # Admin puede ver todos, otros solo los de sus préstamos
         if not self.request.user.is_superuser:
-            queryset = queryset.filter(cliente__usuario=self.request.user)
+            queryset = queryset.filter(cobrador=self.request.user)
         return queryset
     
     def get_context_data(self, **kwargs):
@@ -408,7 +410,7 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
     def get_prestamo(self):
         # Verificar propiedad del préstamo
         if not self.request.user.is_superuser:
-            return get_object_or_404(Prestamo, pk=self.kwargs['pk'], cliente__usuario=self.request.user)
+            return get_object_or_404(Prestamo, pk=self.kwargs['pk'], cobrador=self.request.user)
         return get_object_or_404(Prestamo, pk=self.kwargs['pk'])
     
     def get_context_data(self, **kwargs):
@@ -449,7 +451,8 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
                 nuevo_monto=form.cleaned_data['nuevo_monto'],
                 nueva_tasa=form.cleaned_data['nueva_tasa'],
                 nuevas_cuotas=form.cleaned_data['nuevas_cuotas'],
-                nueva_frecuencia=form.cleaned_data['nueva_frecuencia']
+                nueva_frecuencia=form.cleaned_data['nueva_frecuencia'],
+                cobrador=request.user
             )
             
             messages.success(
@@ -470,7 +473,7 @@ def cobrar_cuota(request, pk):
         try:
             # Verificar propiedad de la cuota
             if not request.user.is_superuser:
-                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cliente__usuario=request.user)
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
             else:
                 cuota = get_object_or_404(Cuota, pk=pk)
             
@@ -543,7 +546,7 @@ def cobrar_cuota(request, pk):
                 'estado__in': ['PA', 'PC'],
             }
             if not request.user.is_superuser:
-                stats_filter['prestamo__cliente__usuario'] = request.user
+                stats_filter['prestamo__cobrador'] = request.user
             
             total_cobrado_hoy = Cuota.objects.filter(
                 **stats_filter
@@ -595,14 +598,14 @@ def obtener_cuotas_hoy(request):
     )
     # Filtrar por usuario (admin ve todo)
     if not request.user.is_superuser:
-        cuotas_qs = cuotas_qs.filter(prestamo__cliente__usuario=request.user)
+        cuotas_qs = cuotas_qs.filter(prestamo__cobrador=request.user)
     
-    cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__usuario').values(
+    cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__usuario', 'prestamo__cobrador').values(
         'id', 'numero_cuota', 'monto_cuota', 'estado',
         'prestamo__id', 'prestamo__cuotas_pactadas',
         'prestamo__cliente__nombre', 'prestamo__cliente__apellido',
-        'prestamo__cliente__usuario__username', 'prestamo__cliente__usuario__first_name',
-        'prestamo__cliente__usuario__last_name'
+        'prestamo__cobrador__username', 'prestamo__cobrador__first_name',
+        'prestamo__cobrador__last_name'
     )
     
     return JsonResponse({
@@ -707,7 +710,7 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         )
         # Filtrar por usuario (admin ve todo)
         if not self.request.user.is_superuser:
-            pagos_del_dia = pagos_del_dia.filter(prestamo__cliente__usuario=self.request.user)
+            pagos_del_dia = pagos_del_dia.filter(prestamo__cobrador=self.request.user)
         pagos_del_dia = pagos_del_dia.select_related('prestamo', 'prestamo__cliente', 'cobrado_por').order_by(
             'prestamo__cliente__apellido'
         )
@@ -812,7 +815,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
                 estado__in=['PA', 'PC']
             )
             if not self.request.user.is_superuser:
-                cuotas_pendientes = cuotas_pendientes.filter(prestamo__cliente__usuario=self.request.user)
+                cuotas_pendientes = cuotas_pendientes.filter(prestamo__cobrador=self.request.user)
             cuotas_pendientes = cuotas_pendientes.select_related(
                 'prestamo',
                 'prestamo__cliente',
@@ -833,7 +836,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
                 prestamo__estado='AC'
             )
             if not self.request.user.is_superuser:
-                base_query = base_query.filter(prestamo__cliente__usuario=self.request.user)
+                base_query = base_query.filter(prestamo__cobrador=self.request.user)
             base_query = base_query.select_related(
                 'prestamo', 
                 'prestamo__cliente', 
@@ -948,8 +951,8 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
         # Estadísticas generales - filtradas por usuario
         if not self.request.user.is_superuser:
             clientes_qs = Cliente.objects.filter(estado='AC', usuario=self.request.user)
-            prestamos_qs = Prestamo.objects.filter(estado='AC', cliente__usuario=self.request.user)
-            cuotas_qs = Cuota.objects.filter(prestamo__estado='AC', prestamo__cliente__usuario=self.request.user)
+            prestamos_qs = Prestamo.objects.filter(estado='AC', cobrador=self.request.user)
+            cuotas_qs = Cuota.objects.filter(prestamo__estado='AC', prestamo__cobrador=self.request.user)
         else:
             clientes_qs = Cliente.objects.filter(estado='AC')
             prestamos_qs = Prestamo.objects.filter(estado='AC')
@@ -1186,7 +1189,7 @@ def exportar_planilla_excel(request):
         estado__in=['PE', 'PC']
     )
     if not request.user.is_superuser:
-        cuotas = cuotas.filter(prestamo__cliente__usuario=request.user)
+        cuotas = cuotas.filter(prestamo__cobrador=request.user)
     cuotas = cuotas.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta')
     
     if incluir_vencidas:
@@ -1317,7 +1320,7 @@ def exportar_cierre_excel(request):
         estado__in=['PA', 'PC']
     )
     if not request.user.is_superuser:
-        pagos = pagos.filter(prestamo__cliente__usuario=request.user)
+        pagos = pagos.filter(prestamo__cobrador=request.user)
     pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
         'prestamo__cliente__apellido'
     )

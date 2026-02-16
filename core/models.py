@@ -646,6 +646,15 @@ class Prestamo(models.Model):
         related_name='renovaciones',
         verbose_name='Préstamo Anterior'
     )
+    cobrador = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='prestamos_creados',
+        verbose_name='Cobrador',
+        help_text='Usuario/cobrador que creó y gestiona este préstamo'
+    )
     fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')
     
@@ -778,7 +787,7 @@ class Prestamo(models.Model):
         return self.monto_pendiente
     
     @classmethod
-    def renovar_prestamo(cls, prestamo_anterior, nuevo_monto, nueva_tasa, nuevas_cuotas, nueva_frecuencia):
+    def renovar_prestamo(cls, prestamo_anterior, nuevo_monto, nueva_tasa, nuevas_cuotas, nueva_frecuencia, cobrador=None):
         """
         Renueva un préstamo existente.
         El saldo pendiente se suma al nuevo capital.
@@ -810,6 +819,7 @@ class Prestamo(models.Model):
             fecha_inicio=fecha_local_hoy(),
             es_renovacion=True,
             prestamo_anterior=prestamo_anterior,
+            cobrador=cobrador or prestamo_anterior.cobrador,
             notas=f"Renovación del préstamo #{prestamo_anterior.pk}. Saldo anterior: ${saldo_pendiente}"
         )
         

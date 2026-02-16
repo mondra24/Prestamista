@@ -48,10 +48,10 @@
                     <small class="text-muted">
                         Préstamo #{{ prestamo.pk }} · {{ prestamo.monto_total_a_pagar|dinero }}
                     </small>
-                    {% if user.is_superuser and prestamo.cliente.usuario %}
+                    {% if user.is_superuser and prestamo.cobrador %}
                     <div>
                         <small class="text-info">
-                            <i class="bi bi-person-badge me-1"></i>{{ prestamo.cliente.usuario.get_full_name|default:prestamo.cliente.usuario.username }}
+                            <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
                         </small>
                     </div>
                     {% endif %}
