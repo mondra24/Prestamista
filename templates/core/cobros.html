@@ -572,12 +572,14 @@ function toggleMetodoPago() {
 }
 
 function validarMontosMixtos() {
-    const montoTotal = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoCuota = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
+    const interesMora = parseFloat(document.getElementById('pago-interes-mora').value.replace(/\./g, '').replace(',', '.')) || 0;
+    const totalRecibir = montoCuota + interesMora;
     const montoEfectivo = parseFloat(document.getElementById('pago-monto-efectivo').value.replace(/\./g, '').replace(',', '.')) || 0;
     const montoTransferencia = parseFloat(document.getElementById('pago-monto-transferencia').value.replace(/\./g, '').replace(',', '.')) || 0;
     
     const suma = montoEfectivo + montoTransferencia;
-    if (suma !== montoTotal && suma > 0) {
+    if (Math.abs(suma - totalRecibir) > 1 && suma > 0) {
         document.getElementById('pago-monto-efectivo').classList.add('is-invalid');
         document.getElementById('pago-monto-transferencia').classList.add('is-invalid');
     } else {
@@ -848,9 +850,10 @@ async function confirmarPagoParcial() {
         return;
     }
     
-    // Validar montos mixtos
-    if (metodoPago === 'MX' && (montoEfectivo + montoTransferencia) !== monto) {
-        showToast('La suma de efectivo y transferencia debe ser igual al monto total', 'danger');
+    // Validar montos mixtos: la suma debe igualar monto + interés (total a recibir)
+    const totalRecibir = monto + interesMora;
+    if (metodoPago === 'MX' && Math.abs((montoEfectivo + montoTransferencia) - totalRecibir) > 1) {
+        showToast('La suma de efectivo y transferencia debe ser igual al total a recibir (cuota + interés)', 'danger');
         return;
     }
     
