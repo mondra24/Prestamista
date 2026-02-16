@@ -424,21 +424,21 @@
                         <span class="label">Monto cuota:</span>
                         <span class="valor" id="resumen-monto-cuota">$0</span>
                     </div>
-                    <div class="pago-resumen-row">
-                        <span class="label">Vas a cobrar:</span>
-                        <span class="valor" id="resumen-monto-cobrar">$0</span>
-                    </div>
-                    <div class="pago-resumen-row" id="resumen-mora-row" style="display: none;">
-                        <span class="label">+ Interés mora:</span>
-                        <span class="valor" id="resumen-mora">$0</span>
-                    </div>
                     <div class="pago-resumen-row total">
-                        <span class="label">TOTAL A RECIBIR:</span>
+                        <span class="label">VAS A COBRAR:</span>
                         <span class="valor text-success" id="resumen-total">$0</span>
                     </div>
                     <div class="pago-resumen-row restante" id="resumen-restante-row" style="display: none;">
                         <span class="label"><i class="bi bi-exclamation-circle me-1"></i>QUEDA PENDIENTE:</span>
                         <span class="valor text-danger fw-bold" id="resumen-restante">$0</span>
+                    </div>
+                    <div class="pago-resumen-row" id="resumen-mora-row" style="display: none;">
+                        <span class="label"><i class="bi bi-percent me-1"></i>+ Mora sumada al pendiente:</span>
+                        <span class="valor text-warning fw-bold" id="resumen-mora">$0</span>
+                    </div>
+                    <div class="pago-resumen-row" id="resumen-pendiente-total-row" style="display: none;">
+                        <span class="label"><i class="bi bi-exclamation-triangle me-1"></i>TOTAL PENDIENTE:</span>
+                        <span class="valor text-danger fw-bold" id="resumen-pendiente-total">$0</span>
                     </div>
                 </div>
                 
@@ -690,32 +690,43 @@ function calcularResumenPago() {
     // Mostrar monto de cuota
     document.getElementById('resumen-monto-cuota').textContent = formatearMoneda(montoMax);
     
-    // Actualizar resumen
-    document.getElementById('resumen-monto-cobrar').textContent = formatearMoneda(monto);
+    // Total a cobrar (solo lo que paga el cliente, sin mora)
+    document.getElementById('resumen-total').textContent = formatearMoneda(monto);
     
-    const moraRow = document.getElementById('resumen-mora-row');
-    if (interesMora > 0) {
-        moraRow.style.display = 'flex';
-        document.getElementById('resumen-mora').textContent = formatearMoneda(interesMora);
-    } else {
-        moraRow.style.display = 'none';
-    }
-    
-    const total = monto + interesMora;
-    document.getElementById('resumen-total').textContent = formatearMoneda(total);
-    
-    // Monto restante
+    // Monto restante de la cuota
     const restante = montoMax - monto;
     const restanteRow = document.getElementById('resumen-restante-row');
     const accionContainer = document.getElementById('accion-restante-container');
+    const moraRow = document.getElementById('resumen-mora-row');
+    const pendienteTotalRow = document.getElementById('resumen-pendiente-total-row');
     
-    if (restante > 0) {
-        restanteRow.style.display = 'flex';
-        document.getElementById('resumen-restante').textContent = formatearMoneda(restante);
-        accionContainer.style.display = 'block';
+    if (restante > 0 || interesMora > 0) {
+        // Mostrar restante de cuota
+        if (restante > 0) {
+            restanteRow.style.display = 'flex';
+            document.getElementById('resumen-restante').textContent = formatearMoneda(restante);
+        } else {
+            restanteRow.style.display = 'none';
+        }
+        accionContainer.style.display = (restante > 0 || interesMora > 0) ? 'block' : 'none';
+        
+        // Mostrar mora sumada al pendiente
+        if (interesMora > 0) {
+            moraRow.style.display = 'flex';
+            document.getElementById('resumen-mora').textContent = formatearMoneda(interesMora);
+            // Mostrar total pendiente (restante + mora)
+            const totalPendiente = restante + interesMora;
+            pendienteTotalRow.style.display = 'flex';
+            document.getElementById('resumen-pendiente-total').textContent = formatearMoneda(totalPendiente);
+        } else {
+            moraRow.style.display = 'none';
+            pendienteTotalRow.style.display = 'none';
+        }
     } else {
         restanteRow.style.display = 'none';
         accionContainer.style.display = 'none';
+        moraRow.style.display = 'none';
+        pendienteTotalRow.style.display = 'none';
     }
 }
 
