@@ -364,7 +364,7 @@
                             {% elif columna.nombre_columna == 'cuota_actual' %}
                             <td class="text-center">{{ cuota.numero_cuota }}/{{ cuota.prestamo.cuotas_pactadas }}</td>
                             {% elif columna.nombre_columna == 'monto_cuota' %}
-                            <td class="text-right"><strong>{% if es_cierre %}{{ cuota.monto_pagado|dinero }}{% else %}{{ cuota.monto_cuota|dinero }}{% endif %}</strong></td>
+                            <td class="text-right"><strong>{% if es_cierre %}{{ cuota.monto_pagado|dinero }}{% elif cuota.estado == 'PC' %}{{ cuota.monto_restante|dinero }}{% else %}{{ cuota.monto_cuota|dinero }}{% endif %}</strong></td>
                             {% elif columna.nombre_columna == 'monto_pendiente' %}
                             <td class="text-right">{{ cuota.prestamo.monto_pendiente|dinero }}</td>
                             {% elif columna.nombre_columna == 'fecha_vencimiento' %}

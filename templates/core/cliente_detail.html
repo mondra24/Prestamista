@@ -174,7 +174,13 @@
                     <div class="col-4">
                         <small class="text-muted d-block">Cuota</small>
                         {% if prestamo.proxima_cuota %}
-                        <strong>{{ prestamo.proxima_cuota.monto_cuota|dinero }}</strong>
+                        <strong>
+                        {% if prestamo.proxima_cuota.estado == 'PC' %}
+                            {{ prestamo.proxima_cuota.monto_restante|dinero }}
+                        {% else %}
+                            {{ prestamo.proxima_cuota.monto_cuota|dinero }}
+                        {% endif %}
+                        </strong>
                         {% else %}
                         <strong>-</strong>
                         {% endif %}

@@ -129,7 +129,6 @@
                 <span class="numero">{{ cuota.numero_cuota }}</span>
                 <span class="total">de {{ prestamo.cuotas_pactadas }}</span>
             </div>
-            
             <div class="cuota-info">
                 <div class="cuota-fecha">
                     <i class="bi bi-calendar3 me-1"></i>{{ cuota.fecha_vencimiento|date:"d M Y" }}
@@ -144,9 +143,14 @@
                     <span class="cuota-estado pendiente"><i class="bi bi-clock me-1"></i>Pendiente</span>
                 {% endif %}
             </div>
-            
             <div class="cuota-monto">
-                <div class="monto-principal">{{ cuota.monto_cuota|dinero }}</div>
+                <div class="monto-principal">
+                    {% if cuota.estado == 'PC' %}
+                        {{ cuota.monto_restante|dinero }}
+                    {% else %}
+                        {{ cuota.monto_cuota|dinero }}
+                    {% endif %}
+                </div>
                 {% if cuota.estado == 'PC' %}
                 <div class="monto-restante">Resta: {{ cuota.monto_restante|dinero }}</div>
                 {% endif %}
