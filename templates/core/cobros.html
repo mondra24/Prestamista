@@ -415,7 +415,7 @@
                     <label class="form-label fw-semibold small">Interés por mora a cobrar:</label>
                     <input type="text" class="form-control text-center" id="pago-interes-mora" 
                            inputmode="numeric" placeholder="0"
-                           oninput="formatearInputMonto(this); calcularResumenPago(); validarMontosMixtos()">
+                           oninput="formatearInputMonto(this); calcularResumenPago()">
                 </div>
                 
                 <!-- RESUMEN DESTACADO -->
@@ -562,11 +562,9 @@ function toggleMetodoPago() {
     if (metodo === 'MX') {
         mixtoContainer.style.display = 'block';
         referenciaContainer.style.display = 'block';
-        // Pre-llenar efectivo con el total a recibir (cuota + mora)
+        // Pre-llenar efectivo con el monto de la cuota (la mora se registra aparte)
         const montoCuota = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
-        const interesMora = parseFloat(document.getElementById('pago-interes-mora').value.replace(/\./g, '').replace(',', '.')) || 0;
-        const totalRecibir = montoCuota + interesMora;
-        document.getElementById('pago-monto-efectivo').value = formatearNumero(totalRecibir);
+        document.getElementById('pago-monto-efectivo').value = formatearNumero(montoCuota);
         document.getElementById('pago-monto-transferencia').value = '0';
         validarMontosMixtos();
     } else if (metodo === 'TR') {
@@ -580,13 +578,11 @@ function toggleMetodoPago() {
 
 function validarMontosMixtos() {
     const montoCuota = parseFloat(document.getElementById('pago-monto').value.replace(/\./g, '').replace(',', '.')) || 0;
-    const interesMora = parseFloat(document.getElementById('pago-interes-mora').value.replace(/\./g, '').replace(',', '.')) || 0;
-    const totalRecibir = montoCuota + interesMora;
     const montoEfectivo = parseFloat(document.getElementById('pago-monto-efectivo').value.replace(/\./g, '').replace(',', '.')) || 0;
     const montoTransferencia = parseFloat(document.getElementById('pago-monto-transferencia').value.replace(/\./g, '').replace(',', '.')) || 0;
     
     const suma = montoEfectivo + montoTransferencia;
-    if (Math.abs(suma - totalRecibir) > 1 && suma > 0) {
+    if (Math.abs(suma - montoCuota) > 1 && suma > 0) {
         document.getElementById('pago-monto-efectivo').classList.add('is-invalid');
         document.getElementById('pago-monto-transferencia').classList.add('is-invalid');
     } else {
@@ -681,7 +677,6 @@ function aplicarInteresCalculado() {
     const interes = Math.round((baseCalculo * porcentaje / 100) * dias);
     document.getElementById('pago-interes-mora').value = formatearNumero(interes);
     calcularResumenPago();
-    validarMontosMixtos();
 }
 
 function calcularResumenPago() {
@@ -858,10 +853,9 @@ async function confirmarPagoParcial() {
         return;
     }
     
-    // Validar montos mixtos: la suma debe igualar monto + interés (total a recibir)
-    const totalRecibir = monto + interesMora;
-    if (metodoPago === 'MX' && Math.abs((montoEfectivo + montoTransferencia) - totalRecibir) > 1) {
-        showToast('La suma de efectivo y transferencia debe ser igual al total a recibir (cuota + interés)', 'danger');
+    // Validar montos mixtos: la suma debe igualar el monto de cuota (la mora se registra aparte)
+    if (metodoPago === 'MX' && Math.abs((montoEfectivo + montoTransferencia) - monto) > 1) {
+        showToast('La suma de efectivo y transferencia debe ser igual al monto de la cuota', 'danger');
         return;
     }
     
