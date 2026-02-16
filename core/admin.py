@@ -198,7 +198,7 @@ class ClienteAdmin(admin.ModelAdmin):
 class CuotaInline(admin.TabularInline):
     model = Cuota
     extra = 0
-    readonly_fields = ['numero_cuota', 'monto_cuota', 'fecha_vencimiento', 'estado', 'monto_pagado', 'fecha_pago_real']
+    readonly_fields = ['numero_cuota', 'monto_cuota', 'fecha_vencimiento', 'estado', 'monto_pagado', 'fecha_pago_real', 'cobrado_por']
     can_delete = False
 
 
@@ -220,8 +220,8 @@ class PrestamoAdmin(admin.ModelAdmin):
 
 @admin.register(Cuota)
 class CuotaAdmin(admin.ModelAdmin):
-    list_display = ['prestamo', 'numero_cuota', 'monto_cuota', 'fecha_vencimiento', 'estado', 'fecha_pago_real']
-    list_filter = ['estado', 'fecha_vencimiento']
+    list_display = ['prestamo', 'numero_cuota', 'monto_cuota', 'fecha_vencimiento', 'estado', 'fecha_pago_real', 'cobrado_por']
+    list_filter = ['estado', 'fecha_vencimiento', 'cobrado_por']
     search_fields = ['prestamo__cliente__nombre', 'prestamo__cliente__apellido']
     raw_id_fields = ['prestamo']
     

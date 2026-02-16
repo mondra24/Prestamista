@@ -898,6 +898,15 @@ class Cuota(models.Model):
         default=Decimal('0.00'),
         verbose_name='Interés por Mora Cobrado'
     )
+    # Quién cobró esta cuota
+    cobrado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cuotas_cobradas',
+        verbose_name='Cobrado por'
+    )
     
     class Meta:
         verbose_name = 'Cuota'
@@ -946,7 +955,7 @@ class Cuota(models.Model):
     
     def registrar_pago(self, monto=None, accion_restante='ignorar', fecha_especial=None,
                        metodo_pago='EF', monto_efectivo=None, monto_transferencia=None,
-                       referencia_transferencia=None, interes_mora=None):
+                       referencia_transferencia=None, interes_mora=None, cobrador=None):
         """
         Registra un pago en la cuota.
         Si no se especifica monto, se paga el total.
@@ -987,6 +996,10 @@ class Cuota(models.Model):
         # Registrar interés por mora si se proporcionó
         if interes_mora is not None and Decimal(str(interes_mora)) > 0:
             self.interes_mora_cobrado = Decimal(str(interes_mora))
+        
+        # Registrar quién cobró
+        if cobrador is not None:
+            self.cobrado_por = cobrador
         
         if self.monto_pagado >= self.monto_cuota:
             self.estado = self.Estado.PAGADO

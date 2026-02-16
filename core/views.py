@@ -518,7 +518,8 @@ def cobrar_cuota(request, pk):
                 monto_efectivo=monto_efectivo,
                 monto_transferencia=monto_transferencia,
                 referencia_transferencia=referencia_transferencia,
-                interes_mora=interes_mora
+                interes_mora=interes_mora,
+                cobrador=request.user
             )
             
             # Mensaje según la acción
@@ -705,7 +706,7 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         # Filtrar por usuario (admin ve todo)
         if not self.request.user.is_superuser:
             pagos_del_dia = pagos_del_dia.filter(prestamo__cliente__usuario=self.request.user)
-        pagos_del_dia = pagos_del_dia.select_related('prestamo', 'prestamo__cliente').order_by(
+        pagos_del_dia = pagos_del_dia.select_related('prestamo', 'prestamo__cliente', 'cobrado_por').order_by(
             'prestamo__cliente__apellido'
         )
         
@@ -1315,7 +1316,7 @@ def exportar_cierre_excel(request):
     )
     if not request.user.is_superuser:
         pagos = pagos.filter(prestamo__cliente__usuario=request.user)
-    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
         'prestamo__cliente__apellido'
     )
     
@@ -1334,7 +1335,7 @@ def exportar_cierre_excel(request):
     )
     
     # Título
-    ws.merge_cells('A1:N1')
+    ws.merge_cells('A1:O1')
     ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -1342,12 +1343,12 @@ def exportar_cierre_excel(request):
     total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
     total_efectivo = pagos.aggregate(total=Sum('monto_efectivo'))['total'] or Decimal('0.00')
     total_transferencia = pagos.aggregate(total=Sum('monto_transferencia'))['total'] or Decimal('0.00')
-    ws.merge_cells('A2:N2')
+    ws.merge_cells('A2:O2')
     ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} (Efectivo: ${total_efectivo:,.0f} | Transferencia: ${total_transferencia:,.0f}) | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Headers
-    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo']
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo', 'Cobrador']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=4, column=col, value=header)
         cell.font = header_font
@@ -1370,6 +1371,7 @@ def exportar_cierre_excel(request):
     ws.column_dimensions['L'].width = 16
     ws.column_dimensions['M'].width = 12
     ws.column_dimensions['N'].width = 16
+    ws.column_dimensions['O'].width = 20
     
     # Datos
     total = Decimal('0.00')
@@ -1404,6 +1406,7 @@ def exportar_cierre_excel(request):
         ws.cell(row=row, column=12, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
         ws.cell(row=row, column=13, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
         ws.cell(row=row, column=14, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=15, value=pago.cobrado_por.get_full_name() or pago.cobrado_por.username if pago.cobrado_por else '-').border = border
         
         total += pago.monto_pagado
     
