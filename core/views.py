@@ -329,7 +329,10 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['prestamos'] = self.object.prestamos.all()
+        context['prestamos'] = self.object.prestamos.select_related('cobrador').all()
+        context['prestamos_activos'] = self.object.prestamos.filter(
+            estado='AC'
+        ).select_related('cobrador')
         return context
 
 
@@ -513,8 +516,11 @@ def cobrar_cuota(request, pk):
     """Registrar pago de cuota via AJAX"""
     if request.method == 'POST':
         try:
-            # Solo el cobrador asignado puede cobrar (incluso admin)
-            cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
+            # Admin puede cobrar cualquier cuota, cobrador solo las suyas
+            if es_usuario_admin(request.user):
+                cuota = get_object_or_404(Cuota, pk=pk)
+            else:
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
             
             # Obtener datos del body
             try:

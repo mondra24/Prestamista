@@ -127,7 +127,7 @@
                                 <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
                             </div>
                         </div>
-                        {% if cuota.prestamo.cobrador == user %}
+                        {% if cuota.prestamo.cobrador == user or user.is_superuser or user.perfil.es_admin %}
                         <div class="payment-card-actions">
                             <button type="button" class="action-btn-mini btn-editar-cobro"
                                     data-cuota-id="{{ cuota.pk }}"
@@ -218,7 +218,7 @@
                                     <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
                                 </div>
                             </div>
-                            {% if cuota.prestamo.cobrador == user %}
+                            {% if cuota.prestamo.cobrador == user or user.is_superuser or user.perfil.es_admin %}
                             <div class="payment-card-actions">
                                 <button type="button" class="action-btn-mini btn-editar-cobro"
                                         data-cuota-id="{{ cuota.pk }}"

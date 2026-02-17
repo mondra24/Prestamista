@@ -125,20 +125,25 @@
         </div>
     </div>
     
-    <!-- Préstamo activo -->
-    {% if cliente.prestamo_activo %}
+    <!-- Préstamos activos -->
+    {% if prestamos_activos %}
     <section class="mb-4">
         <h3 class="section-title">
             <i class="bi bi-wallet2"></i>
-            Préstamo Activo
+            {% if prestamos_activos|length > 1 %}Préstamos Activos ({{ prestamos_activos|length }}){% else %}Préstamo Activo{% endif %}
         </h3>
         
-        {% with prestamo=cliente.prestamo_activo %}
-        <div class="card border-0 shadow-sm">
+        {% for prestamo in prestamos_activos %}
+        <div class="card border-0 shadow-sm {% if not forloop.last %}mb-3{% endif %}">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start mb-3">
                     <div>
                         <small class="text-muted">Préstamo #{{ prestamo.pk }}</small>
+                        {% if prestamo.cobrador %}
+                        <small class="badge bg-info bg-opacity-25 text-info ms-1">
+                            <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
+                        </small>
+                        {% endif %}
                         <h4 class="mb-0">{{ prestamo.monto_total_a_pagar|dinero }}</h4>
                     </div>
                     <div class="text-end">
@@ -199,7 +204,7 @@
                 </div>
             </div>
         </div>
-        {% endwith %}
+        {% endfor %}
     </section>
     {% else %}
     <div class="text-center py-4">
@@ -225,13 +230,13 @@
                 <small class="text-muted">
                     {{ prestamo.fecha_inicio|date:"d/m/Y" }} - {{ prestamo.monto_solicitado|dinero }}
                 </small>
-                {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
+                {% if prestamo.cobrador %}
                 <div>
                     <small class="text-info">
-                        <i class="bi bi-person-badge me-1"></i>{{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
+                        <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
                     </small>
                 </div>
-                {% endif %}{% endif %}
+                {% endif %}
             </div>
             <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %}">
                 {{ prestamo.get_estado_display }}
