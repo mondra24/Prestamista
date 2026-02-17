@@ -225,6 +225,23 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'rutas': rutas,
             'config_mora': config_mora,
         })
+        
+        # Anotar historial de modificaciones en todas las cuotas
+        from itertools import chain
+        todas_cuotas = list(chain(cuotas_vencidas, cuotas_hoy, cuotas_semana, cuotas_mes))
+        cuota_ids = [c.id for c in todas_cuotas]
+        if cuota_ids:
+            historiales = HistorialModificacionPago.objects.filter(
+                cuota_id__in=cuota_ids
+            ).select_related('cuota_relacionada', 'usuario').order_by('-fecha_modificacion')
+            historial_map = {}
+            for h in historiales:
+                if h.cuota_id not in historial_map:
+                    historial_map[h.cuota_id] = []
+                historial_map[h.cuota_id].append(h)
+            for cuota in todas_cuotas:
+                cuota.historial_list = historial_map.get(cuota.id, [])
+        
         return context
 
 
@@ -748,6 +765,23 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
             'total_cobrado': total_cobrado,
             'cantidad_pagos': pagos_del_dia.count(),
         })
+        
+        # Anotar historial de modificaciones en cada pago
+        pagos_list = list(pagos_del_dia)
+        pago_ids = [p.id for p in pagos_list]
+        if pago_ids:
+            historiales = HistorialModificacionPago.objects.filter(
+                cuota_id__in=pago_ids
+            ).select_related('cuota_relacionada', 'usuario').order_by('-fecha_modificacion')
+            historial_map = {}
+            for h in historiales:
+                if h.cuota_id not in historial_map:
+                    historial_map[h.cuota_id] = []
+                historial_map[h.cuota_id].append(h)
+            for pago in pagos_list:
+                pago.historial_list = historial_map.get(pago.id, [])
+        context['pagos'] = pagos_list
+        
         return context
 
 
@@ -1249,24 +1283,24 @@ def exportar_planilla_excel(request):
     recibida_fill = PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid')  # Celeste claro
     
     # Título
-    ws.merge_cells('A1:L1')
+    ws.merge_cells('A1:M1')
     ws['A1'] = f'PLANILLA DE COBROS - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
     
     # Info
-    ws.merge_cells('A2:L2')
+    ws.merge_cells('A2:M2')
     ws['A2'] = f'Total cobros: {cuotas.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Leyenda
-    ws.merge_cells('A3:L3')
+    ws.merge_cells('A3:M3')
     ws['A3'] = '■ Celeste = Cuota modificada (recibió monto de otra cuota por pago parcial)'
     ws['A3'].font = Font(italic=True, size=9)
     ws['A3'].alignment = Alignment(horizontal='center')
     
     # Headers
-    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Monto Original', 'Venc.', 'Fecha Fin', 'Cobrado', 'Modificada', 'Observaciones']
+    headers = ['#', 'Préstamo', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Monto Original', 'Venc.', 'Fecha Fin', 'Cobrado', 'Modificada', 'Observaciones']
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=5, column=col, value=header)
         cell.font = header_font
@@ -1276,29 +1310,31 @@ def exportar_planilla_excel(request):
     
     # Anchos de columna
     ws.column_dimensions['A'].width = 5
-    ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 25
     ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 10
-    ws.column_dimensions['F'].width = 15
-    ws.column_dimensions['G'].width = 16
-    ws.column_dimensions['H'].width = 12
-    ws.column_dimensions['I'].width = 14
-    ws.column_dimensions['J'].width = 15
-    ws.column_dimensions['K'].width = 14
-    ws.column_dimensions['L'].width = 40
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 10
+    ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 16
+    ws.column_dimensions['I'].width = 12
+    ws.column_dimensions['J'].width = 14
+    ws.column_dimensions['K'].width = 15
+    ws.column_dimensions['L'].width = 14
+    ws.column_dimensions['M'].width = 40
     
     # Datos
     total = Decimal('0.00')
     for i, cuota in enumerate(cuotas, 1):
         row = i + 5
         ws.cell(row=row, column=1, value=i).border = border
-        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
-        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.telefono).border = border
-        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin Ruta').border = border
-        ws.cell(row=row, column=5, value=f'{cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas}').border = border
+        ws.cell(row=row, column=2, value=f'#{cuota.prestamo.pk}').border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin Ruta').border = border
+        ws.cell(row=row, column=6, value=f'{cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas}').border = border
         
-        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_cuota))
+        monto_cell = ws.cell(row=row, column=7, value=float(cuota.monto_cuota))
         monto_cell.number_format = '#,##0'
         monto_cell.border = border
         
@@ -1307,17 +1343,17 @@ def exportar_planilla_excel(request):
         fue_modificada = recibido is not None
         
         if recibido:
-            orig_cell = ws.cell(row=row, column=7, value=float(recibido.monto_cuota_anterior))
+            orig_cell = ws.cell(row=row, column=8, value=float(recibido.monto_cuota_anterior))
             orig_cell.number_format = '#,##0'
         else:
-            orig_cell = ws.cell(row=row, column=7, value='-')
+            orig_cell = ws.cell(row=row, column=8, value='-')
         orig_cell.border = border
         
-        ws.cell(row=row, column=8, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
-        ws.cell(row=row, column=9, value=cuota.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if cuota.prestamo.fecha_finalizacion else '-').border = border
-        ws.cell(row=row, column=10, value='').border = border
+        ws.cell(row=row, column=9, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
+        ws.cell(row=row, column=10, value=cuota.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if cuota.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=11, value='').border = border
         
-        mod_cell = ws.cell(row=row, column=11, value='SÍ' if fue_modificada else '-')
+        mod_cell = ws.cell(row=row, column=12, value='SÍ' if fue_modificada else '-')
         mod_cell.border = border
         mod_cell.alignment = Alignment(horizontal='center')
         if fue_modificada:
@@ -1330,22 +1366,22 @@ def exportar_planilla_excel(request):
             if recibido.interes_mora > 0:
                 obs_text += f' (mora: ${recibido.interes_mora:,.0f})'
         
-        obs_cell = ws.cell(row=row, column=12, value=obs_text if obs_text else '-')
+        obs_cell = ws.cell(row=row, column=13, value=obs_text if obs_text else '-')
         obs_cell.border = border
         obs_cell.alignment = Alignment(wrap_text=True)
         
         # Aplicar color de fondo si fue modificada
         if fue_modificada:
-            for col_idx in range(1, 13):
+            for col_idx in range(1, 14):
                 ws.cell(row=row, column=col_idx).fill = recibida_fill
         
         total += cuota.monto_cuota
     
     # Fila de total
     total_row = cuotas.count() + 6
-    ws.merge_cells(f'A{total_row}:F{total_row}')
+    ws.merge_cells(f'A{total_row}:G{total_row}')
     ws.cell(row=total_row, column=1, value='TOTAL ESPERADO:').font = Font(bold=True)
-    total_cell = ws.cell(row=total_row, column=7, value=float(total))
+    total_cell = ws.cell(row=total_row, column=8, value=float(total))
     total_cell.font = Font(bold=True)
     total_cell.number_format = '#,##0'
     
@@ -1435,7 +1471,7 @@ def exportar_cierre_excel(request):
     recibida_fill = PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid')  # Celeste claro
     
     # Título
-    ws.merge_cells('A1:R1')
+    ws.merge_cells('A1:S1')
     ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -1443,18 +1479,18 @@ def exportar_cierre_excel(request):
     total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
     total_efectivo = pagos.aggregate(total=Sum('monto_efectivo'))['total'] or Decimal('0.00')
     total_transferencia = pagos.aggregate(total=Sum('monto_transferencia'))['total'] or Decimal('0.00')
-    ws.merge_cells('A2:R2')
+    ws.merge_cells('A2:S2')
     ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} (Efectivo: ${total_efectivo:,.0f} | Transferencia: ${total_transferencia:,.0f}) | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
     # Leyenda de colores
-    ws.merge_cells('A3:R3')
+    ws.merge_cells('A3:S3')
     ws['A3'] = '■ Amarillo = Pago parcial (se transfirió monto a otra cuota)  |  ■ Celeste = Cuota que recibió monto de otra cuota'
     ws['A3'].font = Font(italic=True, size=9)
     ws['A3'].alignment = Alignment(horizontal='center')
     
     # Headers - ahora con columnas de modificaciones
-    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 
+    headers = ['#', 'Préstamo', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 
                'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', 
                '% Interés', 'Fecha Fin Préstamo', 'Cobrador',
                'Modificada', 'Monto Original', 'Observaciones']
@@ -1467,58 +1503,60 @@ def exportar_cierre_excel(request):
     
     # Anchos
     ws.column_dimensions['A'].width = 5
-    ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['C'].width = 30
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['E'].width = 10
-    ws.column_dimensions['F'].width = 15
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 25
+    ws.column_dimensions['D'].width = 30
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 10
     ws.column_dimensions['G'].width = 15
-    ws.column_dimensions['H'].width = 16
-    ws.column_dimensions['I'].width = 15
+    ws.column_dimensions['H'].width = 15
+    ws.column_dimensions['I'].width = 16
     ws.column_dimensions['J'].width = 15
-    ws.column_dimensions['K'].width = 12
-    ws.column_dimensions['L'].width = 16
-    ws.column_dimensions['M'].width = 12
-    ws.column_dimensions['N'].width = 16
-    ws.column_dimensions['O'].width = 20
-    ws.column_dimensions['P'].width = 14
-    ws.column_dimensions['Q'].width = 16
-    ws.column_dimensions['R'].width = 45
+    ws.column_dimensions['K'].width = 15
+    ws.column_dimensions['L'].width = 12
+    ws.column_dimensions['M'].width = 16
+    ws.column_dimensions['N'].width = 12
+    ws.column_dimensions['O'].width = 16
+    ws.column_dimensions['P'].width = 20
+    ws.column_dimensions['Q'].width = 14
+    ws.column_dimensions['R'].width = 16
+    ws.column_dimensions['S'].width = 45
     
     # Datos
     total = Decimal('0.00')
     for i, pago in enumerate(pagos, 1):
         row = i + 5
         ws.cell(row=row, column=1, value=i).border = border
-        ws.cell(row=row, column=2, value=pago.prestamo.cliente.nombre_completo).border = border
-        ws.cell(row=row, column=3, value=pago.prestamo.cliente.direccion or '-').border = border
-        ws.cell(row=row, column=4, value=pago.prestamo.cliente.telefono).border = border
-        ws.cell(row=row, column=5, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
+        ws.cell(row=row, column=2, value=f'#{pago.prestamo.pk}').border = border
+        ws.cell(row=row, column=3, value=pago.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=4, value=pago.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=5, value=pago.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=6, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
         
-        monto_cell = ws.cell(row=row, column=6, value=float(pago.monto_cuota))
+        monto_cell = ws.cell(row=row, column=7, value=float(pago.monto_cuota))
         monto_cell.number_format = '#,##0'
         monto_cell.border = border
         
-        cobrado_cell = ws.cell(row=row, column=7, value=float(pago.monto_pagado))
+        cobrado_cell = ws.cell(row=row, column=8, value=float(pago.monto_pagado))
         cobrado_cell.number_format = '#,##0'
         cobrado_cell.border = border
         cobrado_cell.font = Font(bold=True, color='198754')
         
-        ws.cell(row=row, column=8, value=pago.get_metodo_pago_display()).border = border
+        ws.cell(row=row, column=9, value=pago.get_metodo_pago_display()).border = border
         
-        ef_cell = ws.cell(row=row, column=9, value=float(pago.monto_efectivo or 0))
+        ef_cell = ws.cell(row=row, column=10, value=float(pago.monto_efectivo or 0))
         ef_cell.number_format = '#,##0'
         ef_cell.border = border
         
-        tr_cell = ws.cell(row=row, column=10, value=float(pago.monto_transferencia or 0))
+        tr_cell = ws.cell(row=row, column=11, value=float(pago.monto_transferencia or 0))
         tr_cell.number_format = '#,##0'
         tr_cell.border = border
         
-        ws.cell(row=row, column=11, value=pago.get_estado_display()).border = border
-        ws.cell(row=row, column=12, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
-        ws.cell(row=row, column=13, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
-        ws.cell(row=row, column=14, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
-        ws.cell(row=row, column=15, value=pago.cobrado_por.get_full_name() or pago.cobrado_por.username if pago.cobrado_por else '-').border = border
+        ws.cell(row=row, column=12, value=pago.get_estado_display()).border = border
+        ws.cell(row=row, column=13, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=14, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
+        ws.cell(row=row, column=15, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=16, value=pago.cobrado_por.get_full_name() or pago.cobrado_por.username if pago.cobrado_por else '-').border = border
         
         # --- Columnas de Modificaciones ---
         historial = historial_por_cuota.get(pago.id, [])
@@ -1531,7 +1569,6 @@ def exportar_cierre_excel(request):
         
         for h in historial:
             if h.tipo_modificacion == 'PP':
-                # Esta cuota tuvo pago parcial
                 fue_modificada = True
                 row_fill = modificada_fill
                 if h.monto_restante_transferido > 0:
@@ -1544,7 +1581,6 @@ def exportar_cierre_excel(request):
                         f'Pago parcial: cobrado ${h.monto_pagado:,.0f} de ${h.monto_cuota_anterior:,.0f}'
                     )
             elif h.tipo_modificacion == 'TR':
-                # Transfirió monto a otra cuota
                 destino = f' a cuota #{h.cuota_relacionada.numero_cuota}' if h.cuota_relacionada else ''
                 observaciones_parts.append(
                     f'Transferido ${h.monto_restante_transferido:,.0f}{destino}'
@@ -1558,7 +1594,6 @@ def exportar_cierre_excel(request):
                 )
         
         if recibido:
-            # Esta cuota recibió monto de otra
             fue_modificada = True
             if not row_fill:
                 row_fill = recibida_fill
@@ -1570,42 +1605,42 @@ def exportar_cierre_excel(request):
             if recibido.interes_mora > 0:
                 observaciones_parts.insert(1, f'(incluye mora: ${recibido.interes_mora:,.0f})')
         
-        mod_cell = ws.cell(row=row, column=16, value='SÍ' if fue_modificada else '-')
+        mod_cell = ws.cell(row=row, column=17, value='SÍ' if fue_modificada else '-')
         mod_cell.border = border
         mod_cell.alignment = Alignment(horizontal='center')
         if fue_modificada:
             mod_cell.font = Font(bold=True, color='856404')
         
-        orig_cell = ws.cell(row=row, column=17, value=monto_original if monto_original else '-')
+        orig_cell = ws.cell(row=row, column=18, value=monto_original if monto_original else '-')
         if isinstance(monto_original, float):
             orig_cell.number_format = '#,##0'
         orig_cell.border = border
         
-        obs_cell = ws.cell(row=row, column=18, value=' | '.join(observaciones_parts) if observaciones_parts else '-')
+        obs_cell = ws.cell(row=row, column=19, value=' | '.join(observaciones_parts) if observaciones_parts else '-')
         obs_cell.border = border
         obs_cell.alignment = Alignment(wrap_text=True)
         
         # Aplicar color de fondo a toda la fila si fue modificada
         if row_fill:
-            for col_idx in range(1, 19):
+            for col_idx in range(1, 20):
                 ws.cell(row=row, column=col_idx).fill = row_fill
         
         total += pago.monto_pagado
     
     # Fila total
     total_row = pagos.count() + 6
-    ws.merge_cells(f'A{total_row}:F{total_row}')
+    ws.merge_cells(f'A{total_row}:G{total_row}')
     total_label = ws.cell(row=total_row, column=1, value='TOTAL COBRADO:')
     total_label.font = Font(bold=True, size=12)
-    total_cell = ws.cell(row=total_row, column=7, value=float(total))
+    total_cell = ws.cell(row=total_row, column=8, value=float(total))
     total_cell.font = Font(bold=True, size=12, color='198754')
     total_cell.number_format = '#,##0'
     
     # Totales efectivo y transferencia
-    ef_total_cell = ws.cell(row=total_row, column=9, value=float(total_efectivo))
+    ef_total_cell = ws.cell(row=total_row, column=10, value=float(total_efectivo))
     ef_total_cell.font = Font(bold=True, size=11)
     ef_total_cell.number_format = '#,##0'
-    tr_total_cell = ws.cell(row=total_row, column=10, value=float(total_transferencia))
+    tr_total_cell = ws.cell(row=total_row, column=11, value=float(total_transferencia))
     tr_total_cell.font = Font(bold=True, size=11)
     tr_total_cell.number_format = '#,##0'
     

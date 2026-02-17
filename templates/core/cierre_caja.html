@@ -79,7 +79,7 @@
                     <div class="fw-semibold">{{ pago.prestamo.cliente.nombre_completo }}</div>
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <small class="text-muted">
-                            Cuota {{ pago.numero_cuota }}/{{ pago.prestamo.cuotas_pactadas }}
+                            Préstamo #{{ pago.prestamo.pk }} — Cuota {{ pago.numero_cuota }}/{{ pago.prestamo.cuotas_pactadas }}
                         </small>
                         {% if pago.fecha_pago_real %}
                         <small class="badge bg-secondary bg-opacity-25 text-secondary">
@@ -106,11 +106,36 @@
                             <i class="bi bi-person-check me-1"></i>{{ pago.cobrado_por.get_full_name|default:pago.cobrado_por.username }}
                         </small>
                         {% endif %}
+                        {% if pago.historial_list %}
+                        <small class="badge bg-warning bg-opacity-25 text-warning" style="cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#historial-cierre-{{ pago.pk }}">
+                            <i class="bi bi-clock-history me-1"></i>Modificada
+                        </small>
+                        {% endif %}
                     </div>
                     {% if pago.interes_mora and pago.interes_mora > 0 %}
                     <small class="text-warning">
                         <i class="bi bi-exclamation-triangle me-1"></i>Mora: {{ pago.interes_mora|dinero }}
                     </small>
+                    {% endif %}
+                    {% if pago.historial_list %}
+                    <div class="collapse mt-1" id="historial-cierre-{{ pago.pk }}">
+                        <div class="card card-body border-warning p-2" style="font-size:0.78rem; background: var(--bg-card);">
+                            <h6 class="mb-2 text-warning" style="font-size:0.8rem;"><i class="bi bi-clock-history me-1"></i>Historial de Modificaciones</h6>
+                            {% for h in pago.historial_list %}
+                            <div class="d-flex justify-content-between align-items-start border-bottom py-1">
+                                <div>
+                                    <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                    <span>{{ h.resumen }}</span>
+                                    {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
+                                </div>
+                                <div class="text-muted text-end" style="white-space:nowrap;font-size:0.72rem;">
+                                    {{ h.fecha_modificacion|date:"d/m/Y H:i" }}
+                                    {% if h.usuario %}<br><small>{{ h.usuario.get_full_name|default:h.usuario.username }}</small>{% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
                     {% endif %}
                 </div>
                 <div class="text-end">
