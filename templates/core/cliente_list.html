@@ -62,13 +62,13 @@
                     <small class="text-muted">
                         <i class="bi bi-telephone me-1"></i>{{ cliente.telefono }}
                     </small>
-                    {% if user.is_superuser and cliente.usuario %}
+                    {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
                     <div>
                         <small class="text-info">
                             <i class="bi bi-person-badge me-1"></i>{{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
                         </small>
                     </div>
-                    {% endif %}
+                    {% endif %}{% endif %}
                 </div>
                 {% if cliente.tiene_prestamo_activo %}
                 <span class="badge bg-success">Activo</span>

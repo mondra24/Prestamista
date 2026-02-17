@@ -23,6 +23,13 @@ def fecha_local_hoy():
     return timezone.localtime(timezone.now()).date()
 
 
+def es_usuario_admin(user):
+    """Verifica si el usuario es superusuario o tiene rol Administrador"""
+    if user.is_superuser:
+        return True
+    return hasattr(user, 'perfil') and user.perfil.es_admin
+
+
 def logout_view(request):
     """Vista para cerrar sesión"""
     logout(request)
@@ -40,8 +47,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         
         # Filtro base por usuario (admin ve todo)
         cliente_filter = {}
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             cliente_filter['prestamo__cobrador'] = self.request.user
         
         # Estadísticas del día (incluye pagos completos y parciales)
@@ -79,7 +85,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         
         # Estadísticas generales (filtradas por usuario)
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             prestamos_activos = Prestamo.objects.filter(estado='AC', cobrador=self.request.user).count()
             clientes_activos = Cliente.objects.filter(estado='AC', usuario=self.request.user).count()
             total_cartera = Cuota.objects.filter(
@@ -121,8 +127,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Base queryset - filtrar por usuario si no es admin
         base_filter = {}
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             base_filter['prestamo__cobrador'] = self.request.user
         
         # Cuotas del día (pendientes) - ordenadas por ruta
@@ -174,7 +179,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             cobros_filter['prestamo__cobrador'] = self.request.user
         
         cobros_realizados_hoy = Cuota.objects.filter(
@@ -235,8 +240,7 @@ class ClienteListView(LoginRequiredMixin, ListView):
         queryset = super().get_queryset().select_related('usuario')
         
         # Filtrar por usuario (admin ve todos, otros solo los suyos)
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(usuario=self.request.user)
         
         busqueda = self.request.GET.get('q', '')
@@ -284,8 +288,7 @@ class ClienteUpdateView(LoginRequiredMixin, UpdateView):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Admin puede editar todos, otros solo los suyos
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(usuario=self.request.user)
         return queryset
     
@@ -303,8 +306,7 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Admin puede ver todos, otros solo los suyos
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(usuario=self.request.user)
         return queryset
     
@@ -326,8 +328,7 @@ class PrestamoListView(LoginRequiredMixin, ListView):
         queryset = super().get_queryset()
         
         # Filtrar por clientes del usuario (admin ve todos)
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(cobrador=self.request.user)
         
         estado = self.request.GET.get('estado', '')
@@ -359,8 +360,7 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         # Filtrar clientes por usuario (admin ve todos)
-        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
-        if not (self.request.user.is_superuser or es_admin):
+        if not es_usuario_admin(self.request.user):
             form.fields['cliente'].queryset = Cliente.objects.filter(
                 estado='AC', usuario=self.request.user
             ).order_by('apellido', 'nombre')
@@ -373,7 +373,7 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         # Pasar datos de clientes para mostrar límite de crédito
-        if not self.request.user.is_superuser:
+        if not es_usuario_admin(self.request.user):
             context['clientes'] = Cliente.objects.filter(
                 estado='AC', usuario=self.request.user
             ).order_by('apellido', 'nombre')
@@ -399,7 +399,7 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Admin puede ver todos, otros solo los de sus préstamos
-        if not self.request.user.is_superuser:
+        if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(cobrador=self.request.user)
         return queryset
     
@@ -416,7 +416,7 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
     
     def get_prestamo(self):
         # Verificar propiedad del préstamo
-        if not self.request.user.is_superuser:
+        if not es_usuario_admin(self.request.user):
             return get_object_or_404(Prestamo, pk=self.kwargs['pk'], cobrador=self.request.user)
         return get_object_or_404(Prestamo, pk=self.kwargs['pk'])
     
@@ -549,7 +549,7 @@ def cobrar_cuota(request, pk):
                 'fecha_pago_real': hoy,
                 'estado__in': ['PA', 'PC'],
             }
-            if not request.user.is_superuser:
+            if not es_usuario_admin(request.user):
                 stats_filter['prestamo__cobrador'] = request.user
             
             total_cobrado_hoy = Cuota.objects.filter(
@@ -601,7 +601,7 @@ def obtener_cuotas_hoy(request):
         prestamo__estado='AC'
     )
     # Filtrar por usuario (admin ve todo)
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         cuotas_qs = cuotas_qs.filter(prestamo__cobrador=request.user)
     
     cuotas = cuotas_qs.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__usuario', 'prestamo__cobrador').values(
@@ -623,7 +623,7 @@ def cambiar_categoria_cliente(request, pk):
     if request.method == 'POST':
         try:
             # Verificar propiedad del cliente
-            if not request.user.is_superuser:
+            if not es_usuario_admin(request.user):
                 cliente = get_object_or_404(Cliente, pk=pk, usuario=request.user)
             else:
                 cliente = get_object_or_404(Cliente, pk=pk)
@@ -667,7 +667,7 @@ def buscar_clientes(request):
         return JsonResponse({'results': []})
     
     queryset = Cliente.objects.filter(estado='AC')
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         queryset = queryset.filter(usuario=request.user)
     
     queryset = queryset.filter(
@@ -713,7 +713,7 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
             estado__in=['PA', 'PC']
         )
         # Filtrar por usuario (admin ve todo)
-        if not self.request.user.is_superuser:
+        if not es_usuario_admin(self.request.user):
             pagos_del_dia = pagos_del_dia.filter(prestamo__cobrador=self.request.user)
         pagos_del_dia = pagos_del_dia.select_related('prestamo', 'prestamo__cliente', 'cobrado_por').order_by(
             'prestamo__cliente__apellido'
@@ -818,7 +818,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
                 fecha_pago_real=fecha,
                 estado__in=['PA', 'PC']
             )
-            if not self.request.user.is_superuser:
+            if not es_usuario_admin(self.request.user):
                 cuotas_pendientes = cuotas_pendientes.filter(prestamo__cobrador=self.request.user)
             cuotas_pendientes = cuotas_pendientes.select_related(
                 'prestamo',
@@ -839,7 +839,7 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
                 estado__in=estados_cuota,
                 prestamo__estado='AC'
             )
-            if not self.request.user.is_superuser:
+            if not es_usuario_admin(self.request.user):
                 base_query = base_query.filter(prestamo__cobrador=self.request.user)
             base_query = base_query.select_related(
                 'prestamo', 
@@ -953,7 +953,7 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         
         # Estadísticas generales - filtradas por usuario
-        if not self.request.user.is_superuser:
+        if not es_usuario_admin(self.request.user):
             clientes_qs = Cliente.objects.filter(estado='AC', usuario=self.request.user)
             prestamos_qs = Prestamo.objects.filter(estado='AC', cobrador=self.request.user)
             cuotas_qs = Cuota.objects.filter(prestamo__estado='AC', prestamo__cobrador=self.request.user)
@@ -999,10 +999,9 @@ class UsuarioListView(LoginRequiredMixin, ListView):
     
     def dispatch(self, request, *args, **kwargs):
         # Solo admins pueden ver usuarios
-        if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
-            if not request.user.is_superuser:
-                messages.error(request, 'No tienes permiso para acceder a esta sección.')
-                return redirect('core:dashboard')
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'No tienes permiso para acceder a esta sección.')
+            return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_queryset(self):
@@ -1015,10 +1014,9 @@ class UsuarioCreateView(LoginRequiredMixin, TemplateView):
     
     def dispatch(self, request, *args, **kwargs):
         # Solo admins pueden crear usuarios
-        if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
-            if not request.user.is_superuser:
-                messages.error(request, 'No tienes permiso para crear usuarios.')
-                return redirect('core:dashboard')
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'No tienes permiso para crear usuarios.')
+            return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_context_data(self, **kwargs):
@@ -1066,10 +1064,9 @@ class UsuarioEditView(LoginRequiredMixin, TemplateView):
     
     def dispatch(self, request, *args, **kwargs):
         # Solo admins pueden editar usuarios
-        if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
-            if not request.user.is_superuser:
-                messages.error(request, 'No tienes permiso para editar usuarios.')
-                return redirect('core:dashboard')
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'No tienes permiso para editar usuarios.')
+            return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_user(self):
@@ -1132,10 +1129,9 @@ class UsuarioEditView(LoginRequiredMixin, TemplateView):
 def toggle_usuario_activo(request, pk):
     """Activar/desactivar un usuario"""
     # Verificar permisos
-    if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
-        if not request.user.is_superuser:
-            messages.error(request, 'No tienes permiso para realizar esta acción.')
-            return redirect('core:dashboard')
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'No tienes permiso para realizar esta acción.')
+        return redirect('core:dashboard')
     
     user = get_object_or_404(User, pk=pk)
     
@@ -1192,7 +1188,7 @@ def exportar_planilla_excel(request):
         prestamo__estado='AC',
         estado__in=['PE', 'PC']
     )
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         cuotas = cuotas.filter(prestamo__cobrador=request.user)
     cuotas = cuotas.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta')
     
@@ -1323,7 +1319,7 @@ def exportar_cierre_excel(request):
         fecha_pago_real=fecha,
         estado__in=['PA', 'PC']
     )
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         pagos = pagos.filter(prestamo__cobrador=request.user)
     pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
         'prestamo__cliente__apellido'
@@ -1464,7 +1460,7 @@ def exportar_clientes_excel(request):
         return redirect('core:cliente_list')
     
     clientes = Cliente.objects.filter(estado='AC')
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         clientes = clientes.filter(usuario=request.user)
     clientes = clientes.select_related('ruta', 'tipo_negocio')
     
@@ -1533,7 +1529,7 @@ def exportar_prestamos_excel(request):
     
     estado = request.GET.get('estado', '')
     prestamos = Prestamo.objects.select_related('cliente')
-    if not request.user.is_superuser:
+    if not es_usuario_admin(request.user):
         prestamos = prestamos.filter(cliente__usuario=request.user)
     if estado:
         prestamos = prestamos.filter(estado=estado)
@@ -1690,10 +1686,9 @@ class AuditoriaListView(LoginRequiredMixin, ListView):
     paginate_by = 50
     
     def dispatch(self, request, *args, **kwargs):
-        if not hasattr(request.user, 'perfil') or not request.user.perfil.es_admin:
-            if not request.user.is_superuser:
-                messages.error(request, 'No tienes permiso para ver el historial de auditoría.')
-                return redirect('core:dashboard')
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'No tienes permiso para ver el historial de auditoría.')
+            return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
     def get_queryset(self):
@@ -1732,8 +1727,8 @@ class AuditoriaListView(LoginRequiredMixin, ListView):
 @login_required
 def crear_respaldo(request):
     """Crear respaldo manual de la base de datos"""
-    if not request.user.is_superuser:
-        messages.error(request, 'Solo los superusuarios pueden crear respaldos.')
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'Solo los administradores pueden crear respaldos.')
         return redirect('core:dashboard')
     
     import shutil
@@ -1822,8 +1817,8 @@ def crear_respaldo(request):
 @login_required
 def descargar_respaldo(request, nombre):
     """Descargar un respaldo específico"""
-    if not request.user.is_superuser:
-        messages.error(request, 'Solo los superusuarios pueden descargar respaldos.')
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'Solo los administradores pueden descargar respaldos.')
         return redirect('core:dashboard')
     
     from django.conf import settings
@@ -1846,8 +1841,8 @@ class RespaldoListView(LoginRequiredMixin, TemplateView):
     template_name = 'core/respaldo_list.html'
     
     def dispatch(self, request, *args, **kwargs):
-        if not request.user.is_superuser:
-            messages.error(request, 'Solo los superusuarios pueden ver los respaldos.')
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo los administradores pueden ver los respaldos.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     
@@ -1891,7 +1886,7 @@ def get_client_ip(request):
 @login_required
 def generar_notificaciones(request):
     """Generar notificaciones de cuotas vencidas y por vencer"""
-    if not request.user.is_superuser and not (hasattr(request.user, 'perfil') and request.user.perfil.es_admin):
+    if not es_usuario_admin(request.user):
         return JsonResponse({'success': False, 'message': 'Sin permisos'}, status=403)
     
     Notificacion.notificar_cuotas_vencidas()

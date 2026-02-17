@@ -48,13 +48,13 @@
                     <small class="text-muted">
                         Préstamo #{{ prestamo.pk }} · {{ prestamo.monto_total_a_pagar|dinero }}
                     </small>
-                    {% if user.is_superuser and prestamo.cobrador %}
+                    {% if user.is_superuser or user.perfil.es_admin %}{% if prestamo.cobrador %}
                     <div>
                         <small class="text-info">
                             <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
                         </small>
                     </div>
-                    {% endif %}
+                    {% endif %}{% endif %}
                     <div class="mt-1">
                         <div class="progress" style="height: 4px; width: 100px;">
                             <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>

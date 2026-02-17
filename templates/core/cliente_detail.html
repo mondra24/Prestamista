@@ -47,13 +47,13 @@
                 </span>
                 {% endif %}
             </div>
-            {% if user.is_superuser and cliente.usuario %}
+            {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
             <div class="mt-2">
                 <span class="badge bg-primary bg-opacity-75 fs-6">
                     <i class="bi bi-person-badge me-1"></i>Cobrador: {{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
                 </span>
             </div>
-            {% endif %}
+            {% endif %}{% endif %}
         </div>
     </div>
     
@@ -225,13 +225,13 @@
                 <small class="text-muted">
                     {{ prestamo.fecha_inicio|date:"d/m/Y" }} - {{ prestamo.monto_solicitado|dinero }}
                 </small>
-                {% if user.is_superuser and cliente.usuario %}
+                {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
                 <div>
                     <small class="text-info">
                         <i class="bi bi-person-badge me-1"></i>{{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
                     </small>
                 </div>
-                {% endif %}
+                {% endif %}{% endif %}
             </div>
             <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %}">
                 {{ prestamo.get_estado_display }}
