@@ -40,7 +40,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         
         # Filtro base por usuario (admin ve todo)
         cliente_filter = {}
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             cliente_filter['prestamo__cobrador'] = self.request.user
         
         # Estadísticas del día (incluye pagos completos y parciales)
@@ -78,7 +79,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         
         # Estadísticas generales (filtradas por usuario)
-        if not self.request.user.is_superuser:
+        if not (self.request.user.is_superuser or es_admin):
             prestamos_activos = Prestamo.objects.filter(estado='AC', cobrador=self.request.user).count()
             clientes_activos = Cliente.objects.filter(estado='AC', usuario=self.request.user).count()
             total_cartera = Cuota.objects.filter(
@@ -120,7 +121,8 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Base queryset - filtrar por usuario si no es admin
         base_filter = {}
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             base_filter['prestamo__cobrador'] = self.request.user
         
         # Cuotas del día (pendientes) - ordenadas por ruta
@@ -172,7 +174,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
-        if not self.request.user.is_superuser:
+        if not (self.request.user.is_superuser or es_admin):
             cobros_filter['prestamo__cobrador'] = self.request.user
         
         cobros_realizados_hoy = Cuota.objects.filter(
@@ -233,7 +235,8 @@ class ClienteListView(LoginRequiredMixin, ListView):
         queryset = super().get_queryset().select_related('usuario')
         
         # Filtrar por usuario (admin ve todos, otros solo los suyos)
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             queryset = queryset.filter(usuario=self.request.user)
         
         busqueda = self.request.GET.get('q', '')
@@ -281,7 +284,8 @@ class ClienteUpdateView(LoginRequiredMixin, UpdateView):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Admin puede editar todos, otros solo los suyos
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             queryset = queryset.filter(usuario=self.request.user)
         return queryset
     
@@ -299,7 +303,8 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         queryset = super().get_queryset()
         # Admin puede ver todos, otros solo los suyos
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             queryset = queryset.filter(usuario=self.request.user)
         return queryset
     
@@ -321,7 +326,8 @@ class PrestamoListView(LoginRequiredMixin, ListView):
         queryset = super().get_queryset()
         
         # Filtrar por clientes del usuario (admin ve todos)
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             queryset = queryset.filter(cobrador=self.request.user)
         
         estado = self.request.GET.get('estado', '')
@@ -353,7 +359,8 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         # Filtrar clientes por usuario (admin ve todos)
-        if not self.request.user.is_superuser:
+        es_admin = hasattr(self.request.user, 'perfil') and self.request.user.perfil.es_admin
+        if not (self.request.user.is_superuser or es_admin):
             form.fields['cliente'].queryset = Cliente.objects.filter(
                 estado='AC', usuario=self.request.user
             ).order_by('apellido', 'nombre')
