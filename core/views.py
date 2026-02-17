@@ -14,7 +14,7 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 
 
@@ -405,8 +405,26 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['cuotas'] = self.object.cuotas.all()
+        cuotas = list(self.object.cuotas.all())
         context['config_mora'] = ConfiguracionMora.obtener_config_activa()
+        
+        # Cargar historial de modificaciones para todas las cuotas
+        cuota_ids = [c.id for c in cuotas]
+        historial = HistorialModificacionPago.objects.filter(
+            cuota_id__in=cuota_ids
+        ).select_related('cuota_relacionada', 'usuario').order_by('-fecha_modificacion')
+        
+        historial_por_cuota = {}
+        for h in historial:
+            if h.cuota_id not in historial_por_cuota:
+                historial_por_cuota[h.cuota_id] = []
+            historial_por_cuota[h.cuota_id].append(h)
+        
+        # Anotar cada cuota con su historial
+        for cuota in cuotas:
+            cuota.historial_list = historial_por_cuota.get(cuota.id, [])
+        
+        context['cuotas'] = cuotas
         return context
 
 
@@ -1207,6 +1225,17 @@ def exportar_planilla_excel(request):
     ws = wb.active
     ws.title = f"Planilla {fecha.strftime('%d-%m-%Y')}"
     
+    # Pre-cargar historial de modificaciones (cuotas que recibieron monto)
+    cuota_ids = list(cuotas.values_list('id', flat=True))
+    cuotas_con_monto_recibido = {}
+    if cuota_ids:
+        historiales_recibidos = HistorialModificacionPago.objects.filter(
+            cuota_id__in=cuota_ids,
+            tipo_modificacion='MR'
+        ).select_related('cuota_relacionada')
+        for h in historiales_recibidos:
+            cuotas_con_monto_recibido[h.cuota_id] = h
+    
     # Estilos
     header_font = Font(bold=True, color='FFFFFF')
     header_fill = PatternFill(start_color='333333', end_color='333333', fill_type='solid')
@@ -1217,22 +1246,29 @@ def exportar_planilla_excel(request):
         top=Side(style='thin'),
         bottom=Side(style='thin')
     )
+    recibida_fill = PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid')  # Celeste claro
     
     # Título
-    ws.merge_cells('A1:H1')
+    ws.merge_cells('A1:L1')
     ws['A1'] = f'PLANILLA DE COBROS - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
     
     # Info
-    ws.merge_cells('A2:H2')
+    ws.merge_cells('A2:L2')
     ws['A2'] = f'Total cobros: {cuotas.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
+    # Leyenda
+    ws.merge_cells('A3:L3')
+    ws['A3'] = '■ Celeste = Cuota modificada (recibió monto de otra cuota por pago parcial)'
+    ws['A3'].font = Font(italic=True, size=9)
+    ws['A3'].alignment = Alignment(horizontal='center')
+    
     # Headers
-    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Venc.', 'Fecha Fin', 'Cobrado']
+    headers = ['#', 'Cliente', 'Teléfono', 'Ruta', 'Cuota', 'Monto', 'Monto Original', 'Venc.', 'Fecha Fin', 'Cobrado', 'Modificada', 'Observaciones']
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=header)
+        cell = ws.cell(row=5, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_alignment
@@ -1245,14 +1281,17 @@ def exportar_planilla_excel(request):
     ws.column_dimensions['D'].width = 15
     ws.column_dimensions['E'].width = 10
     ws.column_dimensions['F'].width = 15
-    ws.column_dimensions['G'].width = 12
-    ws.column_dimensions['H'].width = 14
-    ws.column_dimensions['I'].width = 15
+    ws.column_dimensions['G'].width = 16
+    ws.column_dimensions['H'].width = 12
+    ws.column_dimensions['I'].width = 14
+    ws.column_dimensions['J'].width = 15
+    ws.column_dimensions['K'].width = 14
+    ws.column_dimensions['L'].width = 40
     
     # Datos
     total = Decimal('0.00')
     for i, cuota in enumerate(cuotas, 1):
-        row = i + 4
+        row = i + 5
         ws.cell(row=row, column=1, value=i).border = border
         ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
         ws.cell(row=row, column=3, value=cuota.prestamo.cliente.telefono).border = border
@@ -1263,14 +1302,47 @@ def exportar_planilla_excel(request):
         monto_cell.number_format = '#,##0'
         monto_cell.border = border
         
-        ws.cell(row=row, column=7, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
-        ws.cell(row=row, column=8, value=cuota.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if cuota.prestamo.fecha_finalizacion else '-').border = border
-        ws.cell(row=row, column=9, value='').border = border
+        # Columna Monto Original y Observaciones
+        recibido = cuotas_con_monto_recibido.get(cuota.id)
+        fue_modificada = recibido is not None
+        
+        if recibido:
+            orig_cell = ws.cell(row=row, column=7, value=float(recibido.monto_cuota_anterior))
+            orig_cell.number_format = '#,##0'
+        else:
+            orig_cell = ws.cell(row=row, column=7, value='-')
+        orig_cell.border = border
+        
+        ws.cell(row=row, column=8, value=cuota.fecha_vencimiento.strftime('%d/%m')).border = border
+        ws.cell(row=row, column=9, value=cuota.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if cuota.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=10, value='').border = border
+        
+        mod_cell = ws.cell(row=row, column=11, value='SÍ' if fue_modificada else '-')
+        mod_cell.border = border
+        mod_cell.alignment = Alignment(horizontal='center')
+        if fue_modificada:
+            mod_cell.font = Font(bold=True, color='856404')
+        
+        obs_text = ''
+        if recibido:
+            origen = f' de cuota #{recibido.cuota_relacionada.numero_cuota}' if recibido.cuota_relacionada else ''
+            obs_text = f'Recibió ${recibido.monto_restante_transferido:,.0f}{origen}'
+            if recibido.interes_mora > 0:
+                obs_text += f' (mora: ${recibido.interes_mora:,.0f})'
+        
+        obs_cell = ws.cell(row=row, column=12, value=obs_text if obs_text else '-')
+        obs_cell.border = border
+        obs_cell.alignment = Alignment(wrap_text=True)
+        
+        # Aplicar color de fondo si fue modificada
+        if fue_modificada:
+            for col_idx in range(1, 13):
+                ws.cell(row=row, column=col_idx).fill = recibida_fill
         
         total += cuota.monto_cuota
     
     # Fila de total
-    total_row = cuotas.count() + 5
+    total_row = cuotas.count() + 6
     ws.merge_cells(f'A{total_row}:F{total_row}')
     ws.cell(row=total_row, column=1, value='TOTAL ESPERADO:').font = Font(bold=True)
     total_cell = ws.cell(row=total_row, column=7, value=float(total))
@@ -1325,6 +1397,27 @@ def exportar_cierre_excel(request):
         'prestamo__cliente__apellido'
     )
     
+    # Pre-cargar historial de modificaciones para las cuotas del día
+    cuota_ids = list(pagos.values_list('id', flat=True))
+    historial_por_cuota = {}
+    if cuota_ids:
+        historiales = HistorialModificacionPago.objects.filter(
+            cuota_id__in=cuota_ids
+        ).select_related('cuota_relacionada').order_by('fecha_modificacion')
+        for h in historiales:
+            if h.cuota_id not in historial_por_cuota:
+                historial_por_cuota[h.cuota_id] = []
+            historial_por_cuota[h.cuota_id].append(h)
+    
+    # También buscar cuotas que recibieron monto (fueron modificadas por un pago parcial previo)
+    cuotas_con_monto_recibido = {}
+    historiales_recibidos = HistorialModificacionPago.objects.filter(
+        cuota_id__in=cuota_ids,
+        tipo_modificacion='MR'
+    ).select_related('cuota_relacionada')
+    for h in historiales_recibidos:
+        cuotas_con_monto_recibido[h.cuota_id] = h
+    
     # Crear workbook
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1338,9 +1431,11 @@ def exportar_cierre_excel(request):
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
+    modificada_fill = PatternFill(start_color='FFF3CD', end_color='FFF3CD', fill_type='solid')  # Amarillo claro
+    recibida_fill = PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid')  # Celeste claro
     
     # Título
-    ws.merge_cells('A1:O1')
+    ws.merge_cells('A1:R1')
     ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
     ws['A1'].font = Font(bold=True, size=14)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -1348,14 +1443,23 @@ def exportar_cierre_excel(request):
     total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
     total_efectivo = pagos.aggregate(total=Sum('monto_efectivo'))['total'] or Decimal('0.00')
     total_transferencia = pagos.aggregate(total=Sum('monto_transferencia'))['total'] or Decimal('0.00')
-    ws.merge_cells('A2:O2')
+    ws.merge_cells('A2:R2')
     ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} (Efectivo: ${total_efectivo:,.0f} | Transferencia: ${total_transferencia:,.0f}) | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
     ws['A2'].alignment = Alignment(horizontal='center')
     
-    # Headers
-    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', '% Interés', 'Fecha Fin Préstamo', 'Cobrador']
+    # Leyenda de colores
+    ws.merge_cells('A3:R3')
+    ws['A3'] = '■ Amarillo = Pago parcial (se transfirió monto a otra cuota)  |  ■ Celeste = Cuota que recibió monto de otra cuota'
+    ws['A3'].font = Font(italic=True, size=9)
+    ws['A3'].alignment = Alignment(horizontal='center')
+    
+    # Headers - ahora con columnas de modificaciones
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 
+               'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', 
+               '% Interés', 'Fecha Fin Préstamo', 'Cobrador',
+               'Modificada', 'Monto Original', 'Observaciones']
     for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=4, column=col, value=header)
+        cell = ws.cell(row=5, column=col, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_alignment
@@ -1377,11 +1481,14 @@ def exportar_cierre_excel(request):
     ws.column_dimensions['M'].width = 12
     ws.column_dimensions['N'].width = 16
     ws.column_dimensions['O'].width = 20
+    ws.column_dimensions['P'].width = 14
+    ws.column_dimensions['Q'].width = 16
+    ws.column_dimensions['R'].width = 45
     
     # Datos
     total = Decimal('0.00')
     for i, pago in enumerate(pagos, 1):
-        row = i + 4
+        row = i + 5
         ws.cell(row=row, column=1, value=i).border = border
         ws.cell(row=row, column=2, value=pago.prestamo.cliente.nombre_completo).border = border
         ws.cell(row=row, column=3, value=pago.prestamo.cliente.direccion or '-').border = border
@@ -1413,10 +1520,80 @@ def exportar_cierre_excel(request):
         ws.cell(row=row, column=14, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
         ws.cell(row=row, column=15, value=pago.cobrado_por.get_full_name() or pago.cobrado_por.username if pago.cobrado_por else '-').border = border
         
+        # --- Columnas de Modificaciones ---
+        historial = historial_por_cuota.get(pago.id, [])
+        recibido = cuotas_con_monto_recibido.get(pago.id)
+        
+        fue_modificada = False
+        monto_original = ''
+        observaciones_parts = []
+        row_fill = None
+        
+        for h in historial:
+            if h.tipo_modificacion == 'PP':
+                # Esta cuota tuvo pago parcial
+                fue_modificada = True
+                row_fill = modificada_fill
+                if h.monto_restante_transferido > 0:
+                    observaciones_parts.append(
+                        f'Pago parcial: cobrado ${h.monto_pagado:,.0f} de ${h.monto_cuota_anterior:,.0f}. '
+                        f'Restante ${h.monto_restante_transferido:,.0f} transferido'
+                    )
+                else:
+                    observaciones_parts.append(
+                        f'Pago parcial: cobrado ${h.monto_pagado:,.0f} de ${h.monto_cuota_anterior:,.0f}'
+                    )
+            elif h.tipo_modificacion == 'TR':
+                # Transfirió monto a otra cuota
+                destino = f' a cuota #{h.cuota_relacionada.numero_cuota}' if h.cuota_relacionada else ''
+                observaciones_parts.append(
+                    f'Transferido ${h.monto_restante_transferido:,.0f}{destino}'
+                )
+                if h.interes_mora > 0:
+                    observaciones_parts.append(f'(incluye mora: ${h.interes_mora:,.0f})')
+            elif h.tipo_modificacion == 'CE':
+                destino = f' (cuota #{h.cuota_relacionada.numero_cuota})' if h.cuota_relacionada else ''
+                observaciones_parts.append(
+                    f'Cuota especial creada por ${h.monto_restante_transferido:,.0f}{destino}'
+                )
+        
+        if recibido:
+            # Esta cuota recibió monto de otra
+            fue_modificada = True
+            if not row_fill:
+                row_fill = recibida_fill
+            monto_original = float(recibido.monto_cuota_anterior)
+            origen = f' de cuota #{recibido.cuota_relacionada.numero_cuota}' if recibido.cuota_relacionada else ''
+            observaciones_parts.insert(0,
+                f'Recibió ${recibido.monto_restante_transferido:,.0f}{origen}'
+            )
+            if recibido.interes_mora > 0:
+                observaciones_parts.insert(1, f'(incluye mora: ${recibido.interes_mora:,.0f})')
+        
+        mod_cell = ws.cell(row=row, column=16, value='SÍ' if fue_modificada else '-')
+        mod_cell.border = border
+        mod_cell.alignment = Alignment(horizontal='center')
+        if fue_modificada:
+            mod_cell.font = Font(bold=True, color='856404')
+        
+        orig_cell = ws.cell(row=row, column=17, value=monto_original if monto_original else '-')
+        if isinstance(monto_original, float):
+            orig_cell.number_format = '#,##0'
+        orig_cell.border = border
+        
+        obs_cell = ws.cell(row=row, column=18, value=' | '.join(observaciones_parts) if observaciones_parts else '-')
+        obs_cell.border = border
+        obs_cell.alignment = Alignment(wrap_text=True)
+        
+        # Aplicar color de fondo a toda la fila si fue modificada
+        if row_fill:
+            for col_idx in range(1, 19):
+                ws.cell(row=row, column=col_idx).fill = row_fill
+        
         total += pago.monto_pagado
     
     # Fila total
-    total_row = pagos.count() + 5
+    total_row = pagos.count() + 6
     ws.merge_cells(f'A{total_row}:F{total_row}')
     total_label = ws.cell(row=total_row, column=1, value='TOTAL COBRADO:')
     total_label.font = Font(bold=True, size=12)

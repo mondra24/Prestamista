@@ -980,10 +980,13 @@ class Cuota(models.Model):
         - 'TR': Transferencia
         - 'MX': Mixto
         """
+        from core.models import HistorialModificacionPago
+        
         if monto is None:
             monto = self.monto_restante
         
         monto = Decimal(str(monto))
+        monto_cuota_original = self.monto_cuota
         monto_restante_anterior = self.monto_restante
         
         self.monto_pagado += monto
@@ -1027,6 +1030,23 @@ class Cuota(models.Model):
         mora_pendiente = Decimal(str(interes_mora or 0))
         monto_a_transferir = restante + mora_pendiente
         
+        # --- HISTORIAL: Registrar el pago en esta cuota ---
+        es_parcial = monto < monto_restante_anterior
+        tipo_pago = 'PP' if es_parcial else 'PA'
+        
+        HistorialModificacionPago.objects.create(
+            cuota=self,
+            usuario=cobrador,
+            tipo_modificacion=tipo_pago,
+            monto_cuota_anterior=monto_cuota_original,
+            monto_cuota_nuevo=self.monto_cuota,
+            monto_pagado=monto,
+            monto_restante_transferido=monto_a_transferir if monto_a_transferir > 0 and accion_restante != 'ignorar' else Decimal('0.00'),
+            interes_mora=mora_pendiente,
+            metodo_pago=metodo_pago,
+            notas=f'Acción restante: {accion_restante}' if es_parcial else ''
+        )
+        
         if monto_a_transferir > 0 and accion_restante == 'proxima':
             # Sumar a la próxima cuota pendiente o parcial
             proxima = self.prestamo.cuotas.filter(
@@ -1035,8 +1055,40 @@ class Cuota(models.Model):
             ).order_by('numero_cuota').first()
             
             if proxima:
+                monto_proxima_anterior = proxima.monto_cuota
                 proxima.monto_cuota += monto_a_transferir
                 proxima.save()
+                
+                # --- HISTORIAL: Registrar que la próxima cuota recibió monto ---
+                HistorialModificacionPago.objects.create(
+                    cuota=proxima,
+                    cuota_relacionada=self,
+                    usuario=cobrador,
+                    tipo_modificacion='MR',
+                    monto_cuota_anterior=monto_proxima_anterior,
+                    monto_cuota_nuevo=proxima.monto_cuota,
+                    monto_pagado=Decimal('0.00'),
+                    monto_restante_transferido=monto_a_transferir,
+                    interes_mora=mora_pendiente,
+                    metodo_pago='',
+                    notas=f'Recibió ${monto_a_transferir:,.0f} de cuota #{self.numero_cuota} (restante: ${restante:,.0f}, mora: ${mora_pendiente:,.0f})'
+                )
+                
+                # --- HISTORIAL: Registrar que esta cuota transfirió monto ---
+                HistorialModificacionPago.objects.create(
+                    cuota=self,
+                    cuota_relacionada=proxima,
+                    usuario=cobrador,
+                    tipo_modificacion='TR',
+                    monto_cuota_anterior=monto_cuota_original,
+                    monto_cuota_nuevo=self.monto_cuota,
+                    monto_pagado=Decimal('0.00'),
+                    monto_restante_transferido=monto_a_transferir,
+                    interes_mora=mora_pendiente,
+                    metodo_pago='',
+                    notas=f'Transferido ${monto_a_transferir:,.0f} a cuota #{proxima.numero_cuota}'
+                )
+                
                 # Marcar esta cuota como pagada ya que se transfirió el restante
                 if restante > 0:
                     self.estado = self.Estado.PAGADO
@@ -1048,7 +1100,7 @@ class Cuota(models.Model):
                 max_num=models.Max('numero_cuota')
             )['max_num'] or 0
             
-            Cuota.objects.create(
+            cuota_especial = Cuota.objects.create(
                 prestamo=self.prestamo,
                 numero_cuota=ultimo_numero + 1,
                 monto_cuota=monto_a_transferir,
@@ -1058,6 +1110,37 @@ class Cuota(models.Model):
             # Actualizar número de cuotas pactadas
             self.prestamo.cuotas_pactadas = ultimo_numero + 1
             self.prestamo.save(update_fields=['cuotas_pactadas'])
+            
+            # --- HISTORIAL: Registrar cuota especial creada ---
+            HistorialModificacionPago.objects.create(
+                cuota=self,
+                cuota_relacionada=cuota_especial,
+                usuario=cobrador,
+                tipo_modificacion='CE',
+                monto_cuota_anterior=monto_cuota_original,
+                monto_cuota_nuevo=self.monto_cuota,
+                monto_pagado=Decimal('0.00'),
+                monto_restante_transferido=monto_a_transferir,
+                interes_mora=mora_pendiente,
+                metodo_pago='',
+                notas=f'Cuota especial #{cuota_especial.numero_cuota} creada por ${monto_a_transferir:,.0f}'
+            )
+            
+            # --- HISTORIAL: Registrar en la cuota especial ---
+            HistorialModificacionPago.objects.create(
+                cuota=cuota_especial,
+                cuota_relacionada=self,
+                usuario=cobrador,
+                tipo_modificacion='MR',
+                monto_cuota_anterior=Decimal('0.00'),
+                monto_cuota_nuevo=monto_a_transferir,
+                monto_pagado=Decimal('0.00'),
+                monto_restante_transferido=monto_a_transferir,
+                interes_mora=mora_pendiente,
+                metodo_pago='',
+                notas=f'Cuota especial. Recibió ${monto_a_transferir:,.0f} de cuota #{self.numero_cuota}'
+            )
+            
             # Marcar esta cuota como pagada
             self.estado = self.Estado.PAGADO
             self.save()
@@ -1070,6 +1153,130 @@ class Cuota(models.Model):
             prestamo.cliente.actualizar_categoria()
         
         return self
+
+
+# ==================== HISTORIAL DE MODIFICACIONES DE PAGO ====================
+
+class HistorialModificacionPago(models.Model):
+    """
+    Registra cada modificación en cuotas durante el proceso de pago.
+    Permite rastrear pagos parciales, transferencias de montos a cuotas siguientes,
+    y creación de cuotas especiales.
+    """
+    
+    class TipoModificacion(models.TextChoices):
+        PAGO_PARCIAL = 'PP', 'Pago Parcial'
+        PAGO_COMPLETO = 'PA', 'Pago Completo'
+        TRANSFERENCIA_RESTANTE = 'TR', 'Restante a Próxima Cuota'
+        CUOTA_ESPECIAL = 'CE', 'Cuota Especial Creada'
+        MONTO_RECIBIDO = 'MR', 'Monto Recibido de Otra Cuota'
+    
+    cuota = models.ForeignKey(
+        'Cuota',
+        on_delete=models.CASCADE,
+        related_name='historial_modificaciones',
+        verbose_name='Cuota'
+    )
+    cuota_relacionada = models.ForeignKey(
+        'Cuota',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='modificaciones_relacionadas',
+        verbose_name='Cuota Relacionada',
+        help_text='Cuota origen o destino de la transferencia de monto'
+    )
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name='Usuario'
+    )
+    fecha_modificacion = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Fecha de Modificación'
+    )
+    tipo_modificacion = models.CharField(
+        max_length=2,
+        choices=TipoModificacion.choices,
+        verbose_name='Tipo de Modificación'
+    )
+    
+    # Montos antes/después
+    monto_cuota_anterior = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Monto Cuota Anterior'
+    )
+    monto_cuota_nuevo = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        verbose_name='Monto Cuota Nuevo'
+    )
+    monto_pagado = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name='Monto Pagado'
+    )
+    monto_restante_transferido = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name='Monto Restante Transferido',
+        help_text='Monto que se transfirió a otra cuota'
+    )
+    interes_mora = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name='Interés por Mora'
+    )
+    metodo_pago = models.CharField(
+        max_length=2,
+        blank=True,
+        default='',
+        verbose_name='Método de Pago'
+    )
+    notas = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Notas'
+    )
+    
+    class Meta:
+        verbose_name = 'Historial de Modificación de Pago'
+        verbose_name_plural = 'Historial de Modificaciones de Pago'
+        ordering = ['-fecha_modificacion']
+        indexes = [
+            models.Index(fields=['-fecha_modificacion']),
+            models.Index(fields=['cuota']),
+            models.Index(fields=['tipo_modificacion']),
+        ]
+    
+    def __str__(self):
+        return f'{self.get_tipo_modificacion_display()} - Cuota #{self.cuota.numero_cuota} - ${self.monto_pagado:,.0f}'
+    
+    @property
+    def diferencia_monto(self):
+        """Diferencia entre monto anterior y nuevo"""
+        return self.monto_cuota_nuevo - self.monto_cuota_anterior
+    
+    @property
+    def resumen(self):
+        """Resumen legible de la modificación"""
+        if self.tipo_modificacion == 'PP':
+            return f'Pago parcial ${self.monto_pagado:,.0f} de ${self.monto_cuota_anterior:,.0f}. Restante: ${self.monto_restante_transferido:,.0f}'
+        elif self.tipo_modificacion == 'PA':
+            return f'Pago completo ${self.monto_pagado:,.0f}'
+        elif self.tipo_modificacion == 'TR':
+            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota'
+        elif self.tipo_modificacion == 'CE':
+            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}'
+        elif self.tipo_modificacion == 'MR':
+            return f'Recibió ${self.monto_restante_transferido:,.0f} de cuota #{self.cuota_relacionada.numero_cuota if self.cuota_relacionada else "?"}'
+        return self.notas or str(self)
 
 
 # ==================== SISTEMA DE AUDITORÍA ====================

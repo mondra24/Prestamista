@@ -8,7 +8,7 @@ from .models import (
     Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro,
     TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
-    ConfiguracionMora, InteresMora
+    ConfiguracionMora, InteresMora, HistorialModificacionPago
 )
 
 User = get_user_model()
@@ -316,3 +316,14 @@ class InteresMoraAdmin(admin.ModelAdmin):
     readonly_fields = ['fecha_calculo']
     raw_id_fields = ['cuota']
     date_hierarchy = 'fecha_calculo'
+
+
+@admin.register(HistorialModificacionPago)
+class HistorialModificacionPagoAdmin(admin.ModelAdmin):
+    list_display = ['cuota', 'tipo_modificacion', 'monto_pagado', 'monto_restante_transferido',
+                    'monto_cuota_anterior', 'monto_cuota_nuevo', 'interes_mora', 'usuario', 'fecha_modificacion']
+    list_filter = ['tipo_modificacion', 'fecha_modificacion', 'metodo_pago']
+    search_fields = ['cuota__prestamo__cliente__nombre', 'cuota__prestamo__cliente__apellido', 'notas']
+    readonly_fields = ['fecha_modificacion']
+    raw_id_fields = ['cuota', 'cuota_relacionada']
+    date_hierarchy = 'fecha_modificacion'

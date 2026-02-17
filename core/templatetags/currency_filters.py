@@ -136,3 +136,14 @@ def numero_raw(value):
         return str(num)
     except (ValueError, TypeError):
         return '0'
+
+
+@register.filter(name='dict_get')
+def dict_get(dictionary, key):
+    """
+    Accede a un valor de diccionario por clave.
+    Uso en template: {{ mi_dict|dict_get:clave_variable }}
+    """
+    if isinstance(dictionary, dict):
+        return dictionary.get(key, [])
+    return []

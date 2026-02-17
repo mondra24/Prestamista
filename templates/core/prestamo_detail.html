@@ -160,6 +160,14 @@
                 {% if cuota.cobrado_por %}
                 <div class="text-muted" style="font-size:0.75rem;"><i class="bi bi-person-check"></i> {{ cuota.cobrado_por.get_full_name|default:cuota.cobrado_por.username }}</div>
                 {% endif %}
+                {% if cuota.historial_list %}
+                <div class="mt-1">
+                    <button class="btn btn-sm btn-outline-warning py-0 px-2" style="font-size:0.7rem;" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#historial-{{ cuota.pk }}">
+                        <i class="bi bi-clock-history me-1"></i>Historial
+                    </button>
+                </div>
+                {% endif %}
             </div>
             
             <div class="cuota-accion">
@@ -186,6 +194,30 @@
                 {% endif %}
             </div>
         </div>
+        {% if cuota.historial_list %}
+        <div class="collapse" id="historial-{{ cuota.pk }}">
+            <div class="card card-body border-warning mb-2 p-2" style="font-size:0.8rem; background: var(--bg-card);">
+                <h6 class="mb-2 text-warning"><i class="bi bi-clock-history me-1"></i>Historial de Modificaciones</h6>
+                {% for h in cuota.historial_list %}
+                <div class="d-flex justify-content-between align-items-start border-bottom py-1">
+                    <div>
+                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">
+                            {{ h.get_tipo_modificacion_display }}
+                        </span>
+                        <span>{{ h.resumen }}</span>
+                        {% if h.metodo_pago %}
+                        <span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-muted text-end" style="white-space:nowrap;">
+                        {{ h.fecha_modificacion|date:"d/m/Y H:i" }}
+                        {% if h.usuario %}<br><small>{{ h.usuario.get_full_name|default:h.usuario.username }}</small>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         {% endfor %}
     </section>
     
