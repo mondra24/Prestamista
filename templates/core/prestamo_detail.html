@@ -175,7 +175,7 @@
                     <div class="check-pagado">
                         <i class="bi bi-check-lg"></i>
                     </div>
-                {% elif prestamo.estado == 'AC' and prestamo.cobrador == user or user.is_superuser or user.perfil.es_admin %}
+                {% elif prestamo.estado == 'AC' and prestamo.cobrador == user %}
                     <div class="d-flex gap-1">
                         <button class="btn-editar-cobro" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;"
                                 data-cuota-id="{{ cuota.pk }}"

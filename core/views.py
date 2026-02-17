@@ -516,11 +516,8 @@ def cobrar_cuota(request, pk):
     """Registrar pago de cuota via AJAX"""
     if request.method == 'POST':
         try:
-            # Admin puede cobrar cualquier cuota, cobrador solo las suyas
-            if es_usuario_admin(request.user):
-                cuota = get_object_or_404(Cuota, pk=pk)
-            else:
-                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
+            # Solo el cobrador asignado puede cobrar
+            cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
             
             # Obtener datos del body
             try:
