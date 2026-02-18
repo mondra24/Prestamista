@@ -30,6 +30,11 @@ def es_usuario_admin(user):
     return hasattr(user, 'perfil') and user.perfil.es_admin
 
 
+def es_superadmin(user):
+    """Verifica si el usuario es superusuario (solo desarrolladores)"""
+    return user.is_superuser
+
+
 def logout_view(request):
     """Vista para cerrar sesión"""
     logout(request)
@@ -1060,7 +1065,8 @@ class UsuarioListView(LoginRequiredMixin, ListView):
         return super().dispatch(request, *args, **kwargs)
     
     def get_queryset(self):
-        return User.objects.select_related('perfil').order_by('-date_joined')
+        # Excluir superusuarios (cuentas de desarrolladores) del listado
+        return User.objects.select_related('perfil').exclude(is_superuser=True).order_by('-date_joined')
 
 
 class UsuarioCreateView(LoginRequiredMixin, TemplateView):
@@ -1117,15 +1123,24 @@ class UsuarioEditView(LoginRequiredMixin, TemplateView):
     """Editar usuario existente"""
     template_name = 'core/usuario_form.html'
     
+    def get_user(self):
+        user = get_object_or_404(User, pk=self.kwargs['pk'])
+        # No permitir editar superusuarios (cuentas de desarrolladores)
+        if user.is_superuser:
+            return None
+        return user
+
     def dispatch(self, request, *args, **kwargs):
         # Solo admins pueden editar usuarios
         if not es_usuario_admin(request.user):
             messages.error(request, 'No tienes permiso para editar usuarios.')
             return redirect('core:dashboard')
+        # Verificar que no se intente editar un superusuario
+        user = get_object_or_404(User, pk=self.kwargs['pk'])
+        if user.is_superuser:
+            messages.error(request, 'No tienes permiso para editar este usuario.')
+            return redirect('core:usuario_list')
         return super().dispatch(request, *args, **kwargs)
-    
-    def get_user(self):
-        return get_object_or_404(User, pk=self.kwargs['pk'])
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1189,6 +1204,11 @@ def toggle_usuario_activo(request, pk):
         return redirect('core:dashboard')
     
     user = get_object_or_404(User, pk=pk)
+    
+    # No permitir modificar superusuarios (cuentas de desarrolladores)
+    if user.is_superuser:
+        messages.error(request, 'No tienes permiso para modificar este usuario.')
+        return redirect('core:usuario_list')
     
     # No permitir desactivarse a sí mismo
     if user == request.user:
@@ -1931,7 +1951,11 @@ class AuditoriaListView(LoginRequiredMixin, ListView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['usuarios'] = User.objects.all()
+        # Excluir superusuarios del filtro de usuarios (no visibles para admins)
+        if not self.request.user.is_superuser:
+            context['usuarios'] = User.objects.exclude(is_superuser=True)
+        else:
+            context['usuarios'] = User.objects.all()
         context['tipos_accion'] = RegistroAuditoria.TipoAccion.choices
         context['tipos_modelo'] = RegistroAuditoria.TipoModelo.choices
         return context
@@ -1942,8 +1966,8 @@ class AuditoriaListView(LoginRequiredMixin, ListView):
 @login_required
 def crear_respaldo(request):
     """Crear respaldo manual de la base de datos"""
-    if not es_usuario_admin(request.user):
-        messages.error(request, 'Solo los administradores pueden crear respaldos.')
+    if not es_superadmin(request.user):
+        messages.error(request, 'Solo los desarrolladores pueden crear respaldos.')
         return redirect('core:dashboard')
     
     import shutil
@@ -2032,8 +2056,8 @@ def crear_respaldo(request):
 @login_required
 def descargar_respaldo(request, nombre):
     """Descargar un respaldo específico"""
-    if not es_usuario_admin(request.user):
-        messages.error(request, 'Solo los administradores pueden descargar respaldos.')
+    if not es_superadmin(request.user):
+        messages.error(request, 'Solo los desarrolladores pueden descargar respaldos.')
         return redirect('core:dashboard')
     
     from django.conf import settings
@@ -2056,8 +2080,8 @@ class RespaldoListView(LoginRequiredMixin, TemplateView):
     template_name = 'core/respaldo_list.html'
     
     def dispatch(self, request, *args, **kwargs):
-        if not es_usuario_admin(request.user):
-            messages.error(request, 'Solo los administradores pueden ver los respaldos.')
+        if not es_superadmin(request.user):
+            messages.error(request, 'Solo los desarrolladores pueden ver los respaldos.')
             return redirect('core:dashboard')
         return super().dispatch(request, *args, **kwargs)
     

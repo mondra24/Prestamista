@@ -14,6 +14,17 @@ from .models import (
 User = get_user_model()
 
 
+# ==================== RESTRINGIR ADMIN A SUPERUSUARIOS ====================
+
+class SuperuserAdminSite(admin.AdminSite):
+    """Admin site restringido solo a superusuarios (desarrolladores)"""
+    def has_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+# Reemplazar el site default
+admin.site.__class__ = SuperuserAdminSite
+
+
 # ==================== ADMINISTRACIÓN DE USUARIOS ====================
 
 class PerfilUsuarioInline(admin.StackedInline):

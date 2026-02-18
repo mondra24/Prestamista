@@ -148,11 +148,12 @@
             <a href="{% url 'core:auditoria_list' %}" class="{% if request.resolver_match.url_name == 'auditoria_list' %}active{% endif %}">
                 <i class="bi bi-clock-history"></i> Auditoría
             </a>
+            {% endif %}
+            {% if user.is_superuser %}
+            {% if not user.perfil.es_admin %}<hr class="my-2 opacity-25">{% endif %}
             <a href="{% url 'core:respaldo_list' %}" class="{% if request.resolver_match.url_name == 'respaldo_list' %}active{% endif %}">
                 <i class="bi bi-cloud-download"></i> Respaldos
             </a>
-            {% endif %}
-            {% if user.is_staff %}
             <a href="{% url 'admin:index' %}" target="_blank">
                 <i class="bi bi-gear"></i> Admin
             </a>
