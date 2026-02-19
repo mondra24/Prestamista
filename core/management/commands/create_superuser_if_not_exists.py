@@ -24,8 +24,15 @@ class Command(BaseCommand):
             return
         
         if User.objects.filter(username=username).exists():
+            # Forzar actualización de contraseña por si cambió
+            user = User.objects.get(username=username)
+            user.set_password(password)
+            user.is_active = True
+            user.is_staff = True
+            user.is_superuser = True
+            user.save()
             self.stdout.write(self.style.SUCCESS(
-                f'El superusuario "{username}" ya existe.'
+                f'El superusuario "{username}" ya existe. Contraseña actualizada.'
             ))
         else:
             User.objects.create_superuser(
