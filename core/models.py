@@ -822,10 +822,11 @@ class Prestamo(models.Model):
         return self.monto_pendiente
     
     @classmethod
-    def renovar_prestamo(cls, prestamo_anterior, nuevo_monto, nueva_tasa, nuevas_cuotas, nueva_frecuencia, cobrador=None):
+    def renovar_prestamo(cls, prestamo_anterior, nuevo_monto, nueva_tasa, nuevas_cuotas, nueva_frecuencia, cobrador=None, fecha_finalizacion=None):
         """
         Renueva un préstamo existente.
         El saldo pendiente se suma al nuevo capital.
+        Si se proporciona fecha_finalizacion, se marca como manual.
         """
         saldo_pendiente = prestamo_anterior.calcular_saldo_para_renovacion()
         
@@ -845,7 +846,7 @@ class Prestamo(models.Model):
         # Crear nuevo préstamo con capital = nuevo_monto + saldo_pendiente
         nuevo_capital = nuevo_monto + saldo_pendiente
         
-        nuevo_prestamo = cls.objects.create(
+        create_kwargs = dict(
             cliente=prestamo_anterior.cliente,
             monto_solicitado=nuevo_capital,
             tasa_interes_porcentaje=nueva_tasa,
@@ -857,6 +858,12 @@ class Prestamo(models.Model):
             cobrador=cobrador or prestamo_anterior.cobrador,
             notas=f"Renovación del préstamo #{prestamo_anterior.pk}. Saldo anterior: ${saldo_pendiente}"
         )
+        
+        if fecha_finalizacion:
+            create_kwargs['fecha_finalizacion'] = fecha_finalizacion
+            create_kwargs['fecha_finalizacion_manual'] = True
+        
+        nuevo_prestamo = cls.objects.create(**create_kwargs)
         
         return nuevo_prestamo
 

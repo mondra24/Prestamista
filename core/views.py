@@ -502,7 +502,8 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
                 nueva_tasa=form.cleaned_data['nueva_tasa'],
                 nuevas_cuotas=form.cleaned_data['nuevas_cuotas'],
                 nueva_frecuencia=form.cleaned_data['nueva_frecuencia'],
-                cobrador=request.user
+                cobrador=request.user,
+                fecha_finalizacion=form.cleaned_data.get('fecha_finalizacion')
             )
             
             messages.success(

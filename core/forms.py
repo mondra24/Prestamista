@@ -339,10 +339,20 @@ class RenovacionPrestamoForm(forms.Form):
         })
     )
     
+    fecha_finalizacion = forms.DateField(
+        required=False,
+        label='Fecha de Finalización',
+        widget=forms.DateInput(attrs={
+            'class': 'form-control form-control-lg',
+            'type': 'date'
+        })
+    )
+    
     def __init__(self, *args, **kwargs):
         self.cliente = kwargs.pop('cliente', None)
         self.saldo_pendiente = kwargs.pop('saldo_pendiente', 0)
         super().__init__(*args, **kwargs)
+        self.fields['fecha_finalizacion'].help_text = 'Opcional. Si la completás, se calculan las cuotas automáticamente.'
         self.helper = FormHelper()
         self.helper.form_method = 'post'
         self.helper.layout = Layout(
@@ -352,6 +362,12 @@ class RenovacionPrestamoForm(forms.Form):
                 Column('nuevas_cuotas', css_class='col-6'),
             ),
             'nueva_frecuencia',
+            'fecha_finalizacion',
+            HTML('''
+                <div class="text-muted small mb-2" style="margin-top:-0.5rem;">
+                    <i class="bi bi-info-circle me-1"></i>Si completás la fecha de finalización, las cuotas se calculan automáticamente según la frecuencia.
+                </div>
+            '''),
             Div(
                 Submit('submit', 'Renovar Préstamo', css_class='btn btn-warning btn-lg w-100 mt-3'),
                 css_class='d-grid'
@@ -398,6 +414,14 @@ class RenovacionPrestamoForm(forms.Form):
                         f'El capital adicional (${nuevo_monto:,.0f}) excede el límite disponible. '
                         f'Máximo capital adicional: ${maximo_para_renovacion:,.0f}'.replace(',', '.')
                     )
+        
+        # Validar fecha de finalización
+        fecha_fin = cleaned_data.get('fecha_finalizacion')
+        if fecha_fin:
+            from datetime import date
+            hoy = date.today()
+            if fecha_fin <= hoy:
+                self.add_error('fecha_finalizacion', 'La fecha de finalización debe ser posterior a hoy.')
         
         return cleaned_data
 
