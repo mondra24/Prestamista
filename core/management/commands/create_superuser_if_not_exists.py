@@ -17,6 +17,8 @@ class Command(BaseCommand):
         email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
         password = os.environ.get('DJANGO_SUPERUSER_PASSWORD')
         
+        self.stdout.write(f'[DEBUG] Username: "{username}", Password length: {len(password) if password else 0}')
+        
         if not password:
             self.stdout.write(self.style.WARNING(
                 'DJANGO_SUPERUSER_PASSWORD no está configurada. Saltando creación de superusuario.'
@@ -31,15 +33,19 @@ class Command(BaseCommand):
             user.is_staff = True
             user.is_superuser = True
             user.save()
+            # Verificar que la contraseña se guardó bien
+            user.refresh_from_db()
+            check = user.check_password(password)
             self.stdout.write(self.style.SUCCESS(
-                f'El superusuario "{username}" ya existe. Contraseña actualizada.'
+                f'Superusuario "{username}" actualizado. Password check: {check}, is_active: {user.is_active}'
             ))
         else:
-            User.objects.create_superuser(
+            user = User.objects.create_superuser(
                 username=username,
                 email=email,
                 password=password
             )
+            check = user.check_password(password)
             self.stdout.write(self.style.SUCCESS(
-                f'Superusuario "{username}" creado exitosamente.'
+                f'Superusuario "{username}" creado. Password check: {check}, is_active: {user.is_active}'
             ))
