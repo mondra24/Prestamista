@@ -30,6 +30,7 @@ urlpatterns = [
     
     # Cobros (AJAX)
     path('api/cobrar/<int:pk>/', views.cobrar_cuota, name='cobrar_cuota'),
+    path('api/anular-pago/<int:pk>/', views.anular_pago_cuota, name='anular_pago_cuota'),
     path('api/cuotas-hoy/', views.obtener_cuotas_hoy, name='cuotas_hoy'),
     path('api/cliente/<int:pk>/categoria/', views.cambiar_categoria_cliente, name='cambiar_categoria'),
     path('api/buscar-clientes/', views.buscar_clientes, name='buscar_clientes'),

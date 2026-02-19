@@ -623,9 +623,15 @@ class Prestamo(models.Model):
     )
     fecha_inicio = models.DateField(verbose_name='Fecha de Inicio')
     fecha_finalizacion = models.DateField(
-        editable=False,
         null=True,
-        verbose_name='Fecha de Finalización'
+        blank=True,
+        verbose_name='Fecha de Finalización',
+        help_text='Dejar vacío para calcular automáticamente según frecuencia y cuotas'
+    )
+    fecha_finalizacion_manual = models.BooleanField(
+        default=False,
+        verbose_name='Fecha de finalización manual',
+        help_text='Indica si la fecha fue establecida manualmente'
     )
     estado = models.CharField(
         max_length=2,
@@ -671,8 +677,9 @@ class Prestamo(models.Model):
         interes = self.monto_solicitado * (self.tasa_interes_porcentaje / 100)
         self.monto_total_a_pagar = self.monto_solicitado + interes
         
-        # Calcular fecha de finalización
-        self.fecha_finalizacion = self.calcular_fecha_finalizacion()
+        # Calcular fecha de finalización solo si no fue establecida manualmente
+        if not self.fecha_finalizacion_manual or not self.fecha_finalizacion:
+            self.fecha_finalizacion = self.calcular_fecha_finalizacion()
         
         is_new = self.pk is None
         super().save(*args, **kwargs)
@@ -714,25 +721,53 @@ class Prestamo(models.Model):
         monto_cuota = self.monto_total_a_pagar / self.cuotas_pactadas
         fecha_vencimiento = self.fecha_inicio
         
-        for numero in range(1, self.cuotas_pactadas + 1):
-            if numero == 1 and self.frecuencia == self.Frecuencia.DIARIO:
-                # Primera cuota diaria: mismo día de inicio
-                # Asegurar que no caiga domingo
-                while fecha_vencimiento.weekday() == 6:
-                    fecha_vencimiento += timedelta(days=1)
-            else:
-                # Calcular fecha de vencimiento según frecuencia
-                if self.frecuencia == self.Frecuencia.DIARIO:
-                    fecha_vencimiento += timedelta(days=1)
-                    # Saltar domingos
+        if self.fecha_finalizacion_manual and self.fecha_finalizacion:
+            # Distribuir cuotas uniformemente entre fecha_inicio y fecha_finalizacion
+            self._generar_cuotas_con_fecha_fin(monto_cuota)
+        else:
+            # Distribución normal por frecuencia
+            for numero in range(1, self.cuotas_pactadas + 1):
+                if numero == 1 and self.frecuencia == self.Frecuencia.DIARIO:
+                    # Primera cuota diaria: mismo día de inicio
+                    # Asegurar que no caiga domingo
                     while fecha_vencimiento.weekday() == 6:
                         fecha_vencimiento += timedelta(days=1)
-                elif self.frecuencia == self.Frecuencia.SEMANAL:
-                    fecha_vencimiento += timedelta(weeks=1)
-                elif self.frecuencia == self.Frecuencia.QUINCENAL:
-                    fecha_vencimiento += timedelta(days=15)
-                elif self.frecuencia == self.Frecuencia.MENSUAL:
-                    fecha_vencimiento += timedelta(days=30)
+                else:
+                    # Calcular fecha de vencimiento según frecuencia
+                    if self.frecuencia == self.Frecuencia.DIARIO:
+                        fecha_vencimiento += timedelta(days=1)
+                        # Saltar domingos
+                        while fecha_vencimiento.weekday() == 6:
+                            fecha_vencimiento += timedelta(days=1)
+                    elif self.frecuencia == self.Frecuencia.SEMANAL:
+                        fecha_vencimiento += timedelta(weeks=1)
+                    elif self.frecuencia == self.Frecuencia.QUINCENAL:
+                        fecha_vencimiento += timedelta(days=15)
+                    elif self.frecuencia == self.Frecuencia.MENSUAL:
+                        fecha_vencimiento += timedelta(days=30)
+                
+                Cuota.objects.create(
+                    prestamo=self,
+                    numero_cuota=numero,
+                    monto_cuota=round(monto_cuota, 2),
+                    fecha_vencimiento=fecha_vencimiento
+                )
+    
+    def _generar_cuotas_con_fecha_fin(self, monto_cuota):
+        """Genera cuotas distribuyéndolas uniformemente hasta la fecha de finalización"""
+        total_dias = (self.fecha_finalizacion - self.fecha_inicio).days
+        if total_dias <= 0:
+            total_dias = 1
+        
+        for numero in range(1, self.cuotas_pactadas + 1):
+            # Distribuir proporcionalmente
+            dias_offset = int(round(total_dias * numero / self.cuotas_pactadas))
+            fecha_vencimiento = self.fecha_inicio + timedelta(days=dias_offset)
+            
+            # Si es frecuencia diaria, saltar domingos
+            if self.frecuencia == self.Frecuencia.DIARIO:
+                while fecha_vencimiento.weekday() == 6:
+                    fecha_vencimiento += timedelta(days=1)
             
             Cuota.objects.create(
                 prestamo=self,
@@ -1153,6 +1188,53 @@ class Cuota(models.Model):
             prestamo.cliente.actualizar_categoria()
         
         return self
+    
+    def cancelar_pago(self, usuario=None):
+        """
+        Cancela/revierte el pago de esta cuota.
+        Devuelve la cuota al estado pendiente con monto_pagado = 0.
+        """
+        from core.models import HistorialModificacionPago
+        
+        if self.estado not in ['PA', 'PC']:
+            raise ValueError('Solo se pueden anular pagos de cuotas pagadas o con pago parcial.')
+        
+        monto_pagado_anterior = self.monto_pagado
+        estado_anterior = self.estado
+        
+        # Registrar en historial antes de revertir
+        HistorialModificacionPago.objects.create(
+            cuota=self,
+            usuario=usuario,
+            tipo_modificacion='AN',
+            monto_cuota_anterior=self.monto_cuota,
+            monto_cuota_nuevo=self.monto_cuota,
+            monto_pagado=monto_pagado_anterior,
+            monto_restante_transferido=Decimal('0.00'),
+            interes_mora=self.interes_mora_cobrado,
+            metodo_pago=self.metodo_pago or '',
+            notas=f'Pago anulado. Estado anterior: {self.get_estado_display()}. Monto revertido: ${monto_pagado_anterior:,.0f}'
+        )
+        
+        # Revertir la cuota
+        self.monto_pagado = Decimal('0.00')
+        self.estado = self.Estado.PENDIENTE
+        self.fecha_pago_real = None
+        self.metodo_pago = None
+        self.monto_efectivo = Decimal('0.00')
+        self.monto_transferencia = Decimal('0.00')
+        self.referencia_transferencia = None
+        self.interes_mora_cobrado = Decimal('0.00')
+        self.cobrado_por = None
+        self.save()
+        
+        # Si el préstamo estaba finalizado, reactivarlo
+        prestamo = self.prestamo
+        if prestamo.estado == Prestamo.Estado.FINALIZADO:
+            prestamo.estado = Prestamo.Estado.ACTIVO
+            prestamo.save(update_fields=['estado'])
+        
+        return self
 
 
 # ==================== HISTORIAL DE MODIFICACIONES DE PAGO ====================
@@ -1170,6 +1252,7 @@ class HistorialModificacionPago(models.Model):
         TRANSFERENCIA_RESTANTE = 'TR', 'Restante a Próxima Cuota'
         CUOTA_ESPECIAL = 'CE', 'Cuota Especial Creada'
         MONTO_RECIBIDO = 'MR', 'Monto Recibido de Otra Cuota'
+        ANULACION = 'AN', 'Pago Anulado'
     
     cuota = models.ForeignKey(
         'Cuota',
@@ -1276,6 +1359,8 @@ class HistorialModificacionPago(models.Model):
             return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}'
         elif self.tipo_modificacion == 'MR':
             return f'Recibió ${self.monto_restante_transferido:,.0f} de cuota #{self.cuota_relacionada.numero_cuota if self.cuota_relacionada else "?"}'
+        elif self.tipo_modificacion == 'AN':
+            return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}'
         return self.notas or str(self)
 
 
