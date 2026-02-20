@@ -46,24 +46,49 @@ class Command(BaseCommand):
         self.stdout.write("=" * 60)
 
         # FRENO DE SEGURIDAD: Si estamos en Railway y usando SQLite, ABORTAR
-        is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+        # Detectar Railway con TODAS las variables posibles
+        railway_vars = [
+            'RAILWAY_ENVIRONMENT', 'RAILWAY_PUBLIC_DOMAIN',
+            'RAILWAY_SERVICE_ID', 'RAILWAY_PROJECT_ID',
+            'RAILWAY_REPLICA_ID', 'RAILWAY_DEPLOYMENT_ID',
+            'RAILWAY_ENVIRONMENT_NAME', 'RAILWAY_GIT_BRANCH',
+            'RAILWAY_STATIC_URL', 'RAILWAY_ENVIRONMENT_ID',
+        ]
+        is_railway = any(os.environ.get(var) for var in railway_vars)
 
-        if 'sqlite' in engine.lower() and is_railway:
-            self.stderr.write(self.style.ERROR(
-                "\n"
-                "╔══════════════════════════════════════════════════════╗\n"
-                "║  ¡¡¡ ERROR CRÍTICO !!!                              ║\n"
-                "║                                                      ║\n"
-                "║  La app está usando SQLite en Railway.               ║\n"
-                "║  SQLite se BORRA en cada deploy.                     ║\n"
-                "║                                                      ║\n"
-                "║  SOLUCIÓN:                                           ║\n"
-                "║  1. Ir a Railway → tu servicio web → Variables       ║\n"
-                "║  2. Agregar: DATABASE_URL = ${{Postgres.DATABASE_URL}} ║\n"
-                "║  3. Re-deploy                                        ║\n"
-                "╚══════════════════════════════════════════════════════╝\n"
-            ))
-            sys.exit(1)
+        if 'sqlite' in engine.lower():
+            if is_railway:
+                self.stderr.write(self.style.ERROR(
+                    "\n"
+                    "╔══════════════════════════════════════════════════════╗\n"
+                    "║  ¡¡¡ ERROR CRÍTICO !!!                              ║\n"
+                    "║                                                      ║\n"
+                    "║  La app está usando SQLite en Railway.               ║\n"
+                    "║  SQLite se BORRA en cada deploy.                     ║\n"
+                    "║                                                      ║\n"
+                    "║  SOLUCIÓN:                                           ║\n"
+                    "║  1. Ir a Railway → tu servicio web → Variables       ║\n"
+                    "║  2. Agregar: DATABASE_URL = ${{Postgres.DATABASE_URL}} ║\n"
+                    "║  3. Re-deploy                                        ║\n"
+                    "╚══════════════════════════════════════════════════════╝\n"
+                ))
+                sys.exit(1)
+            elif not settings.DEBUG:
+                # No es Railway detectado, pero tampoco es DEBUG → producción
+                self.stderr.write(self.style.ERROR(
+                    "\n"
+                    "╔══════════════════════════════════════════════════════╗\n"
+                    "║  ¡¡¡ ERROR CRÍTICO !!!                              ║\n"
+                    "║                                                      ║\n"
+                    "║  La app está usando SQLite en modo producción.       ║\n"
+                    "║  Los datos se PERDERÁN en cada deploy.               ║\n"
+                    "║                                                      ║\n"
+                    "║  SOLUCIÓN:                                           ║\n"
+                    "║  Configurar la variable de entorno DATABASE_URL      ║\n"
+                    "║  apuntando a una base PostgreSQL persistente.        ║\n"
+                    "╚══════════════════════════════════════════════════════╝\n"
+                ))
+                sys.exit(1)
 
         if 'postgresql' in engine.lower() or 'postgres' in engine.lower():
             # Intentar conectar y contar registros

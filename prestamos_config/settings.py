@@ -100,6 +100,18 @@ if DATABASE_URL:
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
 else:
+    # SQLite solo para desarrollo local (DEBUG=True)
+    if not DEBUG:
+        import sys
+        print(
+            "\n"
+            "=" * 60 + "\n"
+            "  ⚠️  ADVERTENCIA: DATABASE_URL no está configurada.\n"
+            "  Se está usando SQLite, que NO persiste datos en deploy.\n"
+            "  Configurar DATABASE_URL para producción.\n"
+            "=" * 60 + "\n",
+            file=sys.stderr,
+        )
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
