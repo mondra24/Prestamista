@@ -277,7 +277,8 @@ class ViewsAccessTest(TestCase):
             tasa_interes_porcentaje=Decimal('10'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user
         )
     
     def test_dashboard_view(self):
@@ -357,7 +358,8 @@ class APIViewsTest(TestCase):
             nombre='API',
             apellido='Test',
             telefono='2222222222',
-            direccion='Dirección API Test'
+            direccion='Dirección API Test',
+            usuario=self.user
         )
         self.prestamo = Prestamo.objects.create(
             cliente=self.cliente,
@@ -365,7 +367,8 @@ class APIViewsTest(TestCase):
             tasa_interes_porcentaje=Decimal('15'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user
         )
         self.cuota = self.prestamo.cuotas.first()
     
@@ -829,3 +832,366 @@ class IntegridadDatosTest(TestCase):
         
         cuotas_count_after = Cuota.objects.filter(prestamo=prestamo).count()
         self.assertEqual(cuotas_count_after, 0)
+
+
+class FrecuenciaCalendarioTest(TestCase):
+    """Tests para verificar los intervalos de frecuencia (14 días quincenal, 28 días mensual)"""
+    
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Calendario',
+            apellido='Test',
+            telefono='1234567890',
+            direccion='Dir Test'
+        )
+    
+    def test_quincenal_14_dias(self):
+        """Test que la frecuencia quincenal usa 14 días"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='QU',
+            fecha_inicio=date(2026, 3, 1)
+        )
+        cuotas = list(prestamo.cuotas.order_by('numero_cuota'))
+        self.assertEqual(len(cuotas), 2)
+        # Primera cuota: 1 marzo + 14 = 15 marzo
+        self.assertEqual(cuotas[0].fecha_vencimiento, date(2026, 3, 15))
+        # Segunda cuota: 15 marzo + 14 = 29 marzo
+        self.assertEqual(cuotas[1].fecha_vencimiento, date(2026, 3, 29))
+    
+    def test_mensual_28_dias(self):
+        """Test que la frecuencia mensual usa 28 días"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='ME',
+            fecha_inicio=date(2026, 3, 1)
+        )
+        cuotas = list(prestamo.cuotas.order_by('numero_cuota'))
+        self.assertEqual(len(cuotas), 2)
+        # Primera cuota: 1 marzo + 28 = 29 marzo
+        self.assertEqual(cuotas[0].fecha_vencimiento, date(2026, 3, 29))
+        # Segunda cuota: 29 marzo + 28 = 26 abril
+        self.assertEqual(cuotas[1].fecha_vencimiento, date(2026, 4, 26))
+    
+    def test_semanal_7_dias(self):
+        """Test que la frecuencia semanal se mantiene en 7 días"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date(2026, 3, 2)  # Lunes
+        )
+        cuotas = list(prestamo.cuotas.order_by('numero_cuota'))
+        self.assertEqual(len(cuotas), 2)
+        # Primera cuota: 2 marzo + 7 = 9 marzo
+        self.assertEqual(cuotas[0].fecha_vencimiento, date(2026, 3, 9))
+        # Segunda cuota: 9 marzo + 7 = 16 marzo
+        self.assertEqual(cuotas[1].fecha_vencimiento, date(2026, 3, 16))
+    
+    def test_fecha_finalizacion_quincenal(self):
+        """Test fecha de finalización se calcula con 14 días"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='QU',
+            fecha_inicio=date(2026, 3, 1)
+        )
+        # 3 cuotas quincenales = 3 x 14 = 42 días desde inicio
+        self.assertEqual(prestamo.fecha_finalizacion, date(2026, 4, 12))
+    
+    def test_fecha_finalizacion_mensual(self):
+        """Test fecha de finalización se calcula con 28 días"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='ME',
+            fecha_inicio=date(2026, 3, 1)
+        )
+        # 3 cuotas mensuales = 3 x 28 = 84 días desde inicio
+        self.assertEqual(prestamo.fecha_finalizacion, date(2026, 5, 24))
+
+
+class PagoUnicoTest(TestCase):
+    """Tests para préstamos con pago único"""
+    
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='PagoUnico',
+            apellido='Test',
+            telefono='9876543210',
+            direccion='Dir PU Test'
+        )
+    
+    def test_pago_unico_genera_una_cuota(self):
+        """Test que pago único genera exactamente 1 cuota"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        self.assertEqual(prestamo.cuotas.count(), 1)
+        self.assertEqual(prestamo.cuotas_pactadas, 1)
+    
+    def test_pago_unico_monto_cuota_es_total(self):
+        """Test que la cuota del pago único es el monto total a pagar"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        cuota = prestamo.cuotas.first()
+        # 50000 + 20% = 60000
+        self.assertEqual(cuota.monto_cuota, Decimal('60000.00'))
+    
+    def test_pago_unico_fecha_vencimiento(self):
+        """Test que la cuota vence en la fecha de finalización"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        cuota = prestamo.cuotas.first()
+        self.assertEqual(cuota.fecha_vencimiento, date(2026, 4, 1))
+    
+    def test_pago_unico_fuerza_una_cuota(self):
+        """Test que pago único fuerza cuotas_pactadas a 1 incluso si se pasa otro valor"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=5,  # Intentar 5 cuotas
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        self.assertEqual(prestamo.cuotas_pactadas, 1)
+        self.assertEqual(prestamo.cuotas.count(), 1)
+    
+    def test_pago_unico_es_pago_unico_property(self):
+        """Test propiedad es_pago_unico"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        self.assertTrue(prestamo.es_pago_unico)
+    
+    def test_pago_unico_no_tiene_penalizacion(self):
+        """Test que pago único NO tiene penalización (solo semanales)"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+            fecha_finalizacion=date(2026, 4, 1),
+            fecha_finalizacion_manual=True
+        )
+        self.assertFalse(prestamo.tiene_penalizacion)
+        self.assertIsNone(prestamo.fecha_limite_gracia)
+    
+    def test_pago_unico_fallback_28_dias(self):
+        """Test que pago único sin fecha manual usa 28 días por defecto"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=1,
+            frecuencia='PU',
+            fecha_inicio=date(2026, 3, 1),
+        )
+        self.assertEqual(prestamo.fecha_finalizacion, date(2026, 3, 29))
+
+
+class PenalizacionSemanalTest(TestCase):
+    """Tests para la penalización del 50% en préstamos semanales"""
+    
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Semanal',
+            apellido='Test',
+            telefono='5555555555',
+            direccion='Dir Semanal'
+        )
+    
+    def test_semanal_tiene_periodo_gracia(self):
+        """Test que préstamos semanales tienen período de gracia"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.assertTrue(prestamo.es_semanal)
+        self.assertEqual(prestamo.dias_gracia, 7)
+        self.assertIsNotNone(prestamo.fecha_limite_gracia)
+    
+    def test_fecha_limite_gracia_7_dias(self):
+        """Test que la fecha límite de gracia es 7 días desde el inicio"""
+        fecha_inicio = date(2026, 3, 1)
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=fecha_inicio
+        )
+        self.assertEqual(prestamo.fecha_limite_gracia, date(2026, 3, 8))
+    
+    def test_penalizacion_50_calculo(self):
+        """Test cálculo del 50% de penalización"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        # Total = 10000 + 10% = 11000, penalización = 50% de 11000 = 5500
+        self.assertEqual(prestamo.penalizacion_50, Decimal('5500.00'))
+    
+    def test_no_semanal_sin_penalizacion(self):
+        """Test que préstamos no semanales no tienen penalización"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='QU',
+            fecha_inicio=date.today()
+        )
+        self.assertFalse(prestamo.es_semanal)
+        self.assertIsNone(prestamo.fecha_limite_gracia)
+        self.assertEqual(prestamo.penalizacion_50, Decimal('0.00'))
+        self.assertFalse(prestamo.tiene_penalizacion)
+    
+    def test_penalizacion_no_activa_dentro_gracia(self):
+        """Test que no hay penalización dentro del período de gracia"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        # Hoy es el día 0, no puede tener penalización
+        self.assertFalse(prestamo.tiene_penalizacion)
+    
+    def test_monto_con_penalizacion_sin_penalizacion(self):
+        """Test que monto_con_penalizacion es igual al total sin penalización activa"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.assertEqual(prestamo.monto_con_penalizacion, prestamo.monto_total_a_pagar)
+
+
+class ClienteDNIReferenciasTest(TestCase):
+    """Tests para DNI y contactos de referencia del cliente"""
+    
+    def test_cliente_con_dni(self):
+        """Test crear cliente con DNI"""
+        cliente = Cliente.objects.create(
+            nombre='Con',
+            apellido='DNI',
+            telefono='1111111111',
+            direccion='Dir',
+            dni='12345678'
+        )
+        self.assertEqual(cliente.dni, '12345678')
+    
+    def test_cliente_sin_dni(self):
+        """Test crear cliente sin DNI (campo opcional)"""
+        cliente = Cliente.objects.create(
+            nombre='Sin',
+            apellido='DNI',
+            telefono='2222222222',
+            direccion='Dir'
+        )
+        self.assertIsNone(cliente.dni)
+    
+    def test_cliente_con_referencias(self):
+        """Test crear cliente con contactos de referencia"""
+        cliente = Cliente.objects.create(
+            nombre='Con',
+            apellido='Refs',
+            telefono='3333333333',
+            direccion='Dir',
+            referencia1_nombre='Juan Pérez - Hermano',
+            referencia1_telefono='4444444444',
+            referencia2_nombre='María López - Vecina',
+            referencia2_telefono='5555555555'
+        )
+        self.assertEqual(cliente.referencia1_nombre, 'Juan Pérez - Hermano')
+        self.assertEqual(cliente.referencia1_telefono, '4444444444')
+        self.assertEqual(cliente.referencia2_nombre, 'María López - Vecina')
+        self.assertEqual(cliente.referencia2_telefono, '5555555555')
+    
+    def test_cliente_sin_referencias(self):
+        """Test crear cliente sin contactos de referencia (opcionales)"""
+        cliente = Cliente.objects.create(
+            nombre='Sin',
+            apellido='Refs',
+            telefono='6666666666',
+            direccion='Dir'
+        )
+        self.assertIsNone(cliente.referencia1_nombre)
+        self.assertIsNone(cliente.referencia1_telefono)
+        self.assertIsNone(cliente.referencia2_nombre)
+        self.assertIsNone(cliente.referencia2_telefono)
+    
+    def test_cliente_con_una_referencia(self):
+        """Test crear cliente con solo una referencia"""
+        cliente = Cliente.objects.create(
+            nombre='Una',
+            apellido='Ref',
+            telefono='7777777777',
+            direccion='Dir',
+            referencia1_nombre='Pedro García - Padre',
+            referencia1_telefono='8888888888'
+        )
+        self.assertEqual(cliente.referencia1_nombre, 'Pedro García - Padre')
+        self.assertIsNone(cliente.referencia2_nombre)

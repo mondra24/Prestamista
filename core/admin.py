@@ -158,17 +158,21 @@ class ConfiguracionPlanillaAdmin(admin.ModelAdmin):
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ['nombre_completo', 'telefono', 'tipo_negocio', 'categoria', 
+    list_display = ['nombre_completo', 'dni', 'telefono', 'tipo_negocio', 'categoria', 
                     'limite_credito', 'get_maximo_prestable', 'ruta', 'estado']
     list_filter = ['categoria', 'estado', 'ruta', 'tipo_negocio']
-    search_fields = ['nombre', 'apellido', 'telefono', 'tipo_comercio']
+    search_fields = ['nombre', 'apellido', 'telefono', 'tipo_comercio', 'dni']
     ordering = ['apellido', 'nombre']
     list_editable = ['categoria', 'ruta']
     autocomplete_fields = ['tipo_negocio', 'ruta']
     
     fieldsets = (
         ('Información Personal', {
-            'fields': ('nombre', 'apellido', 'telefono', 'direccion')
+            'fields': ('nombre', 'apellido', 'dni', 'telefono', 'direccion')
+        }),
+        ('Contactos de Referencia', {
+            'fields': ('referencia1_nombre', 'referencia1_telefono', 'referencia2_nombre', 'referencia2_telefono'),
+            'description': 'Contactos de referencia con nombre y parentesco'
         }),
         ('Tipo de Negocio', {
             'fields': ('tipo_negocio', 'tipo_comercio'),

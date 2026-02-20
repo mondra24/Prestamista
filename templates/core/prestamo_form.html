@@ -135,9 +135,11 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (freq === 'SE') {
             cuotas = Math.floor(diffDias / 7);
         } else if (freq === 'QU') {
-            cuotas = Math.floor(diffDias / 15);
+            cuotas = Math.floor(diffDias / 14);
         } else if (freq === 'ME') {
-            cuotas = Math.floor(diffDias / 30);
+            cuotas = Math.floor(diffDias / 28);
+        } else if (freq === 'PU') {
+            cuotas = 1;
         }
 
         if (cuotas > 0 && cuotasEl) {
@@ -150,6 +152,43 @@ document.addEventListener('DOMContentLoaded', function() {
     if (fechaInicioEl) fechaInicioEl.addEventListener('change', calcularCuotas);
     if (fechaFinEl) fechaFinEl.addEventListener('change', calcularCuotas);
     if (frecuenciaEl) frecuenciaEl.addEventListener('change', calcularCuotas);
+    
+    // Lógica para Pago Único: ocultar cuotas y hacer fecha obligatoria
+    if (frecuenciaEl && cuotasEl) {
+        function togglePagoUnico() {
+            const esPagoUnico = frecuenciaEl.value === 'PU';
+            const cuotasContainer = cuotasEl.closest('.col-6') || cuotasEl.closest('.mb-3');
+            
+            if (esPagoUnico) {
+                // Ocultar campo de cuotas y fijar en 1
+                if (cuotasContainer) cuotasContainer.style.display = 'none';
+                cuotasEl.value = 1;
+                // Hacer fecha de finalización requerida
+                if (fechaFinEl) {
+                    fechaFinEl.required = true;
+                    const label = fechaFinEl.closest('.mb-3')?.querySelector('label') || 
+                                  fechaFinEl.closest('.col-6')?.querySelector('label');
+                    if (label && !label.textContent.includes('*')) {
+                        label.innerHTML += ' <span class="text-danger">*</span>';
+                    }
+                }
+            } else {
+                if (cuotasContainer) cuotasContainer.style.display = '';
+                if (fechaFinEl) {
+                    fechaFinEl.required = false;
+                    const label = fechaFinEl.closest('.mb-3')?.querySelector('label') || 
+                                  fechaFinEl.closest('.col-6')?.querySelector('label');
+                    if (label) {
+                        label.innerHTML = label.innerHTML.replace(/ <span class="text-danger">\*<\/span>/, '');
+                    }
+                }
+            }
+        }
+        
+        frecuenciaEl.addEventListener('change', togglePagoUnico);
+        // Ejecutar al cargar por si ya viene seleccionado
+        togglePagoUnico();
+    }
 });
 
 // Mostrar información del cliente seleccionado

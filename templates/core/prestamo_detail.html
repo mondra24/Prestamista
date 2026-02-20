@@ -106,6 +106,45 @@
             </div>
             
             {% if prestamo.estado == 'AC' %}
+            
+            {% if prestamo.es_semanal %}
+            <hr>
+            <div class="alert {% if prestamo.tiene_penalizacion %}alert-danger{% else %}alert-info{% endif %} mb-3">
+                <h6 class="mb-2">
+                    <i class="bi bi-clock-history me-1"></i> Préstamo Semanal - Período de Gracia
+                </h6>
+                <div class="row text-center">
+                    <div class="col-6">
+                        <small class="text-muted d-block">Fecha límite gracia</small>
+                        <strong>{{ prestamo.fecha_limite_gracia|date:"d/m/Y" }}</strong>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted d-block">Días de gracia</small>
+                        <strong>{{ prestamo.dias_gracia }} días</strong>
+                    </div>
+                </div>
+                {% if prestamo.tiene_penalizacion %}
+                <hr class="my-2">
+                <div class="text-center">
+                    <span class="text-danger fw-bold">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Penalización activa: +{{ prestamo.penalizacion_50|dinero }} (50%)
+                    </span>
+                    <div class="mt-1">
+                        <small class="text-muted">Total con penalización:</small>
+                        <strong class="text-danger fs-5"> {{ prestamo.monto_con_penalizacion|dinero }}</strong>
+                    </div>
+                </div>
+                {% else %}
+                <hr class="my-2">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Si no paga dentro de los 7 días de gracia, se aplicará un 50% de penalización ({{ prestamo.penalizacion_50|dinero }}).
+                </small>
+                {% endif %}
+            </div>
+            {% endif %}
+            
             <hr>
             <div class="d-flex gap-2">
                 <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">

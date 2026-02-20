@@ -23,7 +23,10 @@ class ClienteForm(forms.ModelForm):
     
     class Meta:
         model = Cliente
-        fields = ['nombre', 'apellido', 'telefono', 'direccion', 'tipo_negocio', 'tipo_comercio', 
+        fields = ['nombre', 'apellido', 'dni', 'telefono', 'direccion', 
+                  'referencia1_nombre', 'referencia1_telefono',
+                  'referencia2_nombre', 'referencia2_telefono',
+                  'tipo_negocio', 'tipo_comercio', 
                   'limite_credito', 'ruta', 'dia_pago_preferido', 'categoria', 'estado', 'notas']
         widgets = {
             'nombre': forms.TextInput(attrs={
@@ -36,6 +39,12 @@ class ClienteForm(forms.ModelForm):
                 'placeholder': 'Apellido',
                 'autocomplete': 'off'
             }),
+            'dni': forms.TextInput(attrs={
+                'class': 'form-control form-control-lg',
+                'placeholder': 'DNI',
+                'inputmode': 'numeric',
+                'autocomplete': 'off'
+            }),
             'telefono': forms.TextInput(attrs={
                 'class': 'form-control form-control-lg',
                 'placeholder': 'Teléfono',
@@ -46,6 +55,26 @@ class ClienteForm(forms.ModelForm):
                 'class': 'form-control',
                 'placeholder': 'Dirección completa',
                 'rows': 2
+            }),
+            'referencia1_nombre': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Nombre y parentesco (ej: Juan Pérez - Hermano)'
+            }),
+            'referencia1_telefono': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Teléfono referencia 1',
+                'type': 'tel',
+                'inputmode': 'tel'
+            }),
+            'referencia2_nombre': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Nombre y parentesco (ej: María López - Vecina)'
+            }),
+            'referencia2_telefono': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Teléfono referencia 2',
+                'type': 'tel',
+                'inputmode': 'tel'
             }),
             'tipo_negocio': forms.Select(attrs={
                 'class': 'form-select'
@@ -95,8 +124,19 @@ class ClienteForm(forms.ModelForm):
                 Column('nombre', css_class='col-6'),
                 Column('apellido', css_class='col-6'),
             ),
+            'dni',
             'telefono',
             'direccion',
+            HTML('<hr class="my-3"><h6 class="text-muted mb-3"><i class="bi bi-people me-1"></i> Contactos de Referencia</h6>'),
+            Row(
+                Column('referencia1_nombre', css_class='col-7'),
+                Column('referencia1_telefono', css_class='col-5'),
+            ),
+            Row(
+                Column('referencia2_nombre', css_class='col-7'),
+                Column('referencia2_telefono', css_class='col-5'),
+            ),
+            HTML('<hr class="my-3">'),
             Row(
                 Column('tipo_negocio', css_class='col-6'),
                 Column('tipo_comercio', css_class='col-6'),
@@ -271,9 +311,19 @@ class PrestamoForm(forms.ModelForm):
         # Validar fecha de finalización si se proporcionó
         fecha_fin = cleaned_data.get('fecha_finalizacion')
         fecha_inicio = cleaned_data.get('fecha_inicio')
+        frecuencia = cleaned_data.get('frecuencia')
+        
+        # Pago único requiere fecha de finalización obligatoria
+        if frecuencia == 'PU' and not fecha_fin:
+            self.add_error('fecha_finalizacion', 'Para pago único, debe indicar la fecha de vencimiento.')
+        
         if fecha_fin and fecha_inicio:
             if fecha_fin <= fecha_inicio:
                 self.add_error('fecha_finalizacion', 'La fecha de finalización debe ser posterior a la fecha de inicio.')
+        
+        # Pago único fuerza 1 cuota
+        if frecuencia == 'PU':
+            cleaned_data['cuotas_pactadas'] = 1
         
         return cleaned_data
     

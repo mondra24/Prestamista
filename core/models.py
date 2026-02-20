@@ -313,8 +313,43 @@ class Cliente(models.Model):
     
     nombre = models.CharField(max_length=100, verbose_name='Nombre')
     apellido = models.CharField(max_length=100, verbose_name='Apellido')
+    dni = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name='DNI',
+        help_text='Documento Nacional de Identidad'
+    )
     telefono = models.CharField(max_length=20, verbose_name='Teléfono')
     direccion = models.TextField(verbose_name='Dirección')
+    
+    # Contactos de referencia
+    referencia1_nombre = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name='Referencia 1 - Nombre/Parentesco',
+        help_text='Nombre y parentesco del contacto de referencia'
+    )
+    referencia1_telefono = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name='Referencia 1 - Teléfono'
+    )
+    referencia2_nombre = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name='Referencia 2 - Nombre/Parentesco',
+        help_text='Nombre y parentesco del contacto de referencia'
+    )
+    referencia2_telefono = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        verbose_name='Referencia 2 - Teléfono'
+    )
     categoria = models.CharField(
         max_length=2,
         choices=Categoria.choices,
@@ -580,6 +615,7 @@ class Prestamo(models.Model):
         SEMANAL = 'SE', 'Semanal'
         QUINCENAL = 'QU', 'Quincenal'
         MENSUAL = 'ME', 'Mensual'
+        PAGO_UNICO = 'PU', 'Pago Único'
     
     class Estado(models.TextChoices):
         ACTIVO = 'AC', 'Activo'
@@ -677,6 +713,10 @@ class Prestamo(models.Model):
         interes = self.monto_solicitado * (self.tasa_interes_porcentaje / 100)
         self.monto_total_a_pagar = self.monto_solicitado + interes
         
+        # Para pago único, forzar 1 cuota
+        if self.frecuencia == self.Frecuencia.PAGO_UNICO:
+            self.cuotas_pactadas = 1
+        
         # Calcular fecha de finalización solo si no fue establecida manualmente
         if not self.fecha_finalizacion_manual or not self.fecha_finalizacion:
             self.fecha_finalizacion = self.calcular_fecha_finalizacion()
@@ -691,6 +731,13 @@ class Prestamo(models.Model):
     def calcular_fecha_finalizacion(self):
         """Calcula la fecha de finalización del préstamo"""
         fecha = self.fecha_inicio
+        
+        # Pago único: la fecha de finalización es la fecha_finalizacion manual
+        if self.frecuencia == self.Frecuencia.PAGO_UNICO:
+            if self.fecha_finalizacion:
+                return self.fecha_finalizacion
+            # Si no hay fecha manual, por defecto 28 días
+            return fecha + timedelta(days=28)
         
         # Para diarios, la primera cuota es el mismo día de inicio
         if self.frecuencia == self.Frecuencia.DIARIO:
@@ -709,15 +756,22 @@ class Prestamo(models.Model):
                 if self.frecuencia == self.Frecuencia.SEMANAL:
                     fecha += timedelta(weeks=1)
                 elif self.frecuencia == self.Frecuencia.QUINCENAL:
-                    fecha += timedelta(days=15)
+                    fecha += timedelta(days=14)
                 elif self.frecuencia == self.Frecuencia.MENSUAL:
-                    fecha += timedelta(days=30)
+                    fecha += timedelta(days=28)
+                elif self.frecuencia == self.Frecuencia.PAGO_UNICO:
+                    pass  # La fecha ya es la fecha de finalización
                 dias_agregados += 1
         
         return fecha
     
     def generar_cuotas(self):
         """Genera todas las cuotas del préstamo automáticamente"""
+        # Pago único: genera 1 cuota con la fecha de vencimiento del préstamo
+        if self.frecuencia == self.Frecuencia.PAGO_UNICO:
+            self._generar_cuota_pago_unico()
+            return
+        
         monto_cuota = self.monto_total_a_pagar / self.cuotas_pactadas
         fecha_vencimiento = self.fecha_inicio
         
@@ -742,9 +796,11 @@ class Prestamo(models.Model):
                     elif self.frecuencia == self.Frecuencia.SEMANAL:
                         fecha_vencimiento += timedelta(weeks=1)
                     elif self.frecuencia == self.Frecuencia.QUINCENAL:
-                        fecha_vencimiento += timedelta(days=15)
+                        fecha_vencimiento += timedelta(days=14)
                     elif self.frecuencia == self.Frecuencia.MENSUAL:
-                        fecha_vencimiento += timedelta(days=30)
+                        fecha_vencimiento += timedelta(days=28)
+                    elif self.frecuencia == self.Frecuencia.PAGO_UNICO:
+                        pass  # Fecha ya calculada
                 
                 Cuota.objects.create(
                     prestamo=self,
@@ -776,6 +832,64 @@ class Prestamo(models.Model):
                 fecha_vencimiento=fecha_vencimiento
             )
     
+    def _generar_cuota_pago_unico(self):
+        """
+        Genera la cuota para pago único.
+        La fecha de vencimiento es la fecha de finalización del préstamo.
+        """
+        Cuota.objects.create(
+            prestamo=self,
+            numero_cuota=1,
+            monto_cuota=round(self.monto_total_a_pagar, 2),
+            fecha_vencimiento=self.fecha_finalizacion
+        )
+    
+    @property
+    def es_pago_unico(self):
+        """Indica si el préstamo es de pago único"""
+        return self.frecuencia == self.Frecuencia.PAGO_UNICO
+    
+    @property
+    def es_semanal(self):
+        """Indica si el préstamo es semanal"""
+        return self.frecuencia == self.Frecuencia.SEMANAL
+    
+    @property
+    def dias_gracia(self):
+        """Días de gracia para préstamos semanales (7 días desde la fecha de inicio)"""
+        return 7
+    
+    @property
+    def fecha_limite_gracia(self):
+        """Fecha límite del período de gracia (7 días después del inicio)"""
+        if self.es_semanal:
+            return self.fecha_inicio + timedelta(days=self.dias_gracia)
+        return None
+    
+    @property
+    def penalizacion_50(self):
+        """Monto de penalización (50% del préstamo) si no paga dentro del período de gracia"""
+        if self.es_semanal:
+            return round(self.monto_total_a_pagar * Decimal('0.50'), 2)
+        return Decimal('0.00')
+    
+    @property
+    def monto_con_penalizacion(self):
+        """Monto total incluyendo penalización si aplica (solo semanales)"""
+        if self.es_semanal and self.estado == self.Estado.ACTIVO:
+            hoy = fecha_local_hoy()
+            if hoy > self.fecha_limite_gracia and self.monto_pagado == Decimal('0.00'):
+                return self.monto_total_a_pagar + self.penalizacion_50
+        return self.monto_total_a_pagar
+    
+    @property
+    def tiene_penalizacion(self):
+        """Indica si el préstamo semanal tiene penalización activa"""
+        if self.es_semanal and self.estado == self.Estado.ACTIVO:
+            hoy = fecha_local_hoy()
+            return hoy > self.fecha_limite_gracia and self.monto_pagado == Decimal('0.00')
+        return False
+
     @property
     def monto_pagado(self):
         """Suma de todos los pagos realizados"""

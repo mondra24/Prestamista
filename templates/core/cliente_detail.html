@@ -25,6 +25,11 @@
                 {{ cliente.nombre|slice:":1" }}{{ cliente.apellido|slice:":1" }}
             </div>
             <h2 class="h4 mb-1">{{ cliente.nombre_completo }}</h2>
+            {% if cliente.dni %}
+            <p class="text-muted mb-1">
+                <i class="bi bi-person-vcard me-1"></i>DNI: {{ cliente.dni }}
+            </p>
+            {% endif %}
             <p class="text-muted mb-2">
                 <i class="bi bi-telephone me-1"></i>
                 <a href="tel:{{ cliente.telefono }}" class="text-decoration-none">{{ cliente.telefono }}</a>
@@ -56,6 +61,43 @@
             {% endif %}{% endif %}
         </div>
     </div>
+    
+    <!-- Contactos de Referencia -->
+    {% if cliente.referencia1_nombre or cliente.referencia2_nombre %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <h6 class="text-muted mb-3">
+                <i class="bi bi-people me-1"></i> Contactos de Referencia
+            </h6>
+            {% if cliente.referencia1_nombre %}
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                    <i class="bi bi-person me-1"></i>
+                    <strong>{{ cliente.referencia1_nombre }}</strong>
+                </div>
+                {% if cliente.referencia1_telefono %}
+                <a href="tel:{{ cliente.referencia1_telefono }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-telephone me-1"></i>{{ cliente.referencia1_telefono }}
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if cliente.referencia2_nombre %}
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <i class="bi bi-person me-1"></i>
+                    <strong>{{ cliente.referencia2_nombre }}</strong>
+                </div>
+                {% if cliente.referencia2_telefono %}
+                <a href="tel:{{ cliente.referencia2_telefono }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-telephone me-1"></i>{{ cliente.referencia2_telefono }}
+                </a>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     
     <!-- Info de Crédito -->
     <div class="card border-0 shadow-sm mb-4">
