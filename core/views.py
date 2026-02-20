@@ -502,7 +502,8 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
                 nueva_tasa=form.cleaned_data['nueva_tasa'],
                 nuevas_cuotas=form.cleaned_data['nuevas_cuotas'],
                 nueva_frecuencia=form.cleaned_data['nueva_frecuencia'],
-                cobrador=request.user
+                cobrador=request.user,
+                fecha_finalizacion=form.cleaned_data.get('fecha_finalizacion')
             )
             
             messages.success(
@@ -515,6 +516,71 @@ class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
 
 
 # ============== VISTAS DE COBROS (AJAX) ==============
+
+@login_required
+def anular_pago_cuota(request, pk):
+    """Anular/revertir un pago de cuota via AJAX"""
+    if request.method == 'POST':
+        try:
+            # Solo el cobrador asignado o admin puede anular
+            if es_usuario_admin(request.user):
+                cuota = get_object_or_404(Cuota, pk=pk)
+            else:
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
+            
+            if cuota.estado not in ['PA', 'PC']:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Solo se pueden anular pagos de cuotas cobradas.'
+                }, status=400)
+            
+            cuota.cancelar_pago(usuario=request.user)
+            
+            # Recalcular estadísticas
+            hoy = fecha_local_hoy()
+            stats_filter = {
+                'fecha_pago_real': hoy,
+                'estado__in': ['PA', 'PC'],
+            }
+            if not es_usuario_admin(request.user):
+                stats_filter['prestamo__cobrador'] = request.user
+            
+            total_cobrado_hoy = Cuota.objects.filter(
+                **stats_filter
+            ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+            
+            cantidad_cobros_hoy = Cuota.objects.filter(
+                **stats_filter
+            ).count()
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Pago anulado exitosamente. La cuota volvió a estado pendiente.',
+                'cuota': {
+                    'id': cuota.pk,
+                    'estado': cuota.estado,
+                    'estado_display': cuota.get_estado_display(),
+                    'monto_cuota': float(cuota.monto_cuota),
+                    'monto_pagado': float(cuota.monto_pagado),
+                    'monto_restante': float(cuota.monto_restante),
+                },
+                'prestamo': {
+                    'progreso': cuota.prestamo.progreso_porcentaje,
+                    'estado': cuota.prestamo.estado,
+                },
+                'estadisticas': {
+                    'total_cobrado_hoy': int(total_cobrado_hoy),
+                    'cantidad_cobros_hoy': cantidad_cobros_hoy,
+                }
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
 
 @login_required
 def cobrar_cuota(request, pk):

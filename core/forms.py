@@ -147,7 +147,7 @@ class PrestamoForm(forms.ModelForm):
     class Meta:
         model = Prestamo
         fields = ['cliente', 'monto_solicitado', 'tasa_interes_porcentaje', 
-                  'cuotas_pactadas', 'frecuencia', 'fecha_inicio', 'notas']
+                  'cuotas_pactadas', 'frecuencia', 'fecha_inicio', 'fecha_finalizacion', 'notas']
         widgets = {
             'cliente': forms.Select(attrs={
                 'class': 'form-select form-select-lg'
@@ -173,6 +173,10 @@ class PrestamoForm(forms.ModelForm):
                 'class': 'form-control form-control-lg',
                 'type': 'date'
             }),
+            'fecha_finalizacion': forms.DateInput(attrs={
+                'class': 'form-control form-control-lg',
+                'type': 'date'
+            }),
             'notas': forms.Textarea(attrs={
                 'class': 'form-control',
                 'placeholder': 'Notas adicionales (opcional)',
@@ -184,6 +188,9 @@ class PrestamoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Solo mostrar clientes activos
         self.fields['cliente'].queryset = Cliente.objects.filter(estado='AC')
+        # Fecha de finalización es opcional
+        self.fields['fecha_finalizacion'].required = False
+        self.fields['fecha_finalizacion'].help_text = 'Opcional. Dejar vacío para calcular automáticamente.'
         
         self.helper = FormHelper()
         self.helper.form_method = 'post'
@@ -197,7 +204,15 @@ class PrestamoForm(forms.ModelForm):
                 Column('cuotas_pactadas', css_class='col-6'),
                 Column('frecuencia', css_class='col-6'),
             ),
-            'fecha_inicio',
+            Row(
+                Column('fecha_inicio', css_class='col-6'),
+                Column('fecha_finalizacion', css_class='col-6'),
+            ),
+            HTML('''
+                <div class="text-muted small mb-2" style="margin-top:-0.5rem;">
+                    <i class="bi bi-info-circle me-1"></i>Si dejás vacía la fecha de finalización, se calcula automáticamente según la frecuencia y cantidad de cuotas.
+                </div>
+            '''),
             HTML('''
                 <div class="alert alert-info mt-3" id="resumen-prestamo" style="display:none;">
                     <h6 class="mb-2"><i class="bi bi-calculator"></i> Resumen del Préstamo</h6>
@@ -253,7 +268,25 @@ class PrestamoForm(forms.ModelForm):
                         f'para {cliente.nombre_completo}. Máximo prestable: ${maximo:,.0f}'.replace(',', '.')
                     )
         
+        # Validar fecha de finalización si se proporcionó
+        fecha_fin = cleaned_data.get('fecha_finalizacion')
+        fecha_inicio = cleaned_data.get('fecha_inicio')
+        if fecha_fin and fecha_inicio:
+            if fecha_fin <= fecha_inicio:
+                self.add_error('fecha_finalizacion', 'La fecha de finalización debe ser posterior a la fecha de inicio.')
+        
         return cleaned_data
+    
+    def save(self, commit=True):
+        """Guardar préstamo marcando si la fecha de finalización fue manual"""
+        instance = super().save(commit=False)
+        if self.cleaned_data.get('fecha_finalizacion'):
+            instance.fecha_finalizacion_manual = True
+        else:
+            instance.fecha_finalizacion_manual = False
+        if commit:
+            instance.save()
+        return instance
 
 
 class RenovacionPrestamoForm(forms.Form):
@@ -306,10 +339,20 @@ class RenovacionPrestamoForm(forms.Form):
         })
     )
     
+    fecha_finalizacion = forms.DateField(
+        required=False,
+        label='Fecha de Finalización',
+        widget=forms.DateInput(attrs={
+            'class': 'form-control form-control-lg',
+            'type': 'date'
+        })
+    )
+    
     def __init__(self, *args, **kwargs):
         self.cliente = kwargs.pop('cliente', None)
         self.saldo_pendiente = kwargs.pop('saldo_pendiente', 0)
         super().__init__(*args, **kwargs)
+        self.fields['fecha_finalizacion'].help_text = 'Opcional. Si la completás, se calculan las cuotas automáticamente.'
         self.helper = FormHelper()
         self.helper.form_method = 'post'
         self.helper.layout = Layout(
@@ -319,6 +362,12 @@ class RenovacionPrestamoForm(forms.Form):
                 Column('nuevas_cuotas', css_class='col-6'),
             ),
             'nueva_frecuencia',
+            'fecha_finalizacion',
+            HTML('''
+                <div class="text-muted small mb-2" style="margin-top:-0.5rem;">
+                    <i class="bi bi-info-circle me-1"></i>Si completás la fecha de finalización, las cuotas se calculan automáticamente según la frecuencia.
+                </div>
+            '''),
             Div(
                 Submit('submit', 'Renovar Préstamo', css_class='btn btn-warning btn-lg w-100 mt-3'),
                 css_class='d-grid'
@@ -365,6 +414,14 @@ class RenovacionPrestamoForm(forms.Form):
                         f'El capital adicional (${nuevo_monto:,.0f}) excede el límite disponible. '
                         f'Máximo capital adicional: ${maximo_para_renovacion:,.0f}'.replace(',', '.')
                     )
+        
+        # Validar fecha de finalización
+        fecha_fin = cleaned_data.get('fecha_finalizacion')
+        if fecha_fin:
+            from datetime import date
+            hoy = date.today()
+            if fecha_fin <= hoy:
+                self.add_error('fecha_finalizacion', 'La fecha de finalización debe ser posterior a hoy.')
         
         return cleaned_data
 

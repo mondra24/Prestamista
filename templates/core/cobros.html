@@ -108,7 +108,7 @@
                                 {% for h in cuota.historial_list %}
                                 <div class="d-flex justify-content-between align-items-start border-bottom py-1">
                                     <div>
-                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
                                         <span>{{ h.resumen }}</span>
                                         {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
                                     </div>
@@ -199,7 +199,7 @@
                                     {% for h in cuota.historial_list %}
                                     <div class="d-flex justify-content-between align-items-start border-bottom py-1">
                                         <div>
-                                            <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                            <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
                                             <span>{{ h.resumen }}</span>
                                             {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
                                         </div>
@@ -296,7 +296,7 @@
                                 {% for h in cuota.historial_list %}
                                 <div class="d-flex justify-content-between align-items-start border-bottom py-1">
                                     <div>
-                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
                                         <span>{{ h.resumen }}</span>
                                         {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
                                     </div>
@@ -366,7 +366,7 @@
                                 {% for h in cuota.historial_list %}
                                 <div class="d-flex justify-content-between align-items-start border-bottom py-1">
                                     <div>
-                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
                                         <span>{{ h.resumen }}</span>
                                         {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
                                     </div>
