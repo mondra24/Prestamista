@@ -221,8 +221,14 @@
                                 data-fecha="{{ cuota.fecha_pago_real|date:'d/m/Y' }}"
                                 data-cuota="{{ cuota.numero_cuota }}"
                                 data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
-                                data-monto="{{ cuota.monto_cuota|numero_raw }}"
+                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
+                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
                                 data-saldo="{{ prestamo.monto_pendiente|numero_raw }}"
+                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
+                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
+                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
+                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
+                                data-estado="{{ cuota.estado }}"
                                 title="Enviar talón por WhatsApp"
                                 style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
                             <i class="bi bi-whatsapp"></i>
@@ -241,6 +247,24 @@
                 {% elif prestamo.estado == 'AC' and prestamo.cobrador == user %}
                     <div class="d-flex gap-1">
                         {% if cuota.estado == 'PC' %}
+                        <button class="btn-wp-talon"
+                                data-telefono="{{ prestamo.cliente.telefono }}"
+                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                                data-fecha="{{ cuota.fecha_pago_real|date:'d/m/Y' }}"
+                                data-cuota="{{ cuota.numero_cuota }}"
+                                data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
+                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
+                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
+                                data-saldo="{{ prestamo.monto_pendiente|numero_raw }}"
+                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
+                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
+                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
+                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
+                                data-estado="PC"
+                                title="Enviar talón por WhatsApp"
+                                style="width:32px;height:32px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
+                            <i class="bi bi-whatsapp"></i>
+                        </button>
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
                                 data-cliente="{{ prestamo.cliente.nombre_completo }}"
@@ -738,6 +762,14 @@ async function confirmarPagoParcial() {
                     const accionEl = cuotaItem.querySelector('.cuota-accion');
                     if (accionEl) {
                         const hoy = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        const metodoPago = document.getElementById('pago-metodo').value;
+                        const montoEfStr = document.getElementById('pago-monto-efectivo').value;
+                        const montoTrStr = document.getElementById('pago-monto-transferencia').value;
+                        const moraStr = document.getElementById('pago-interes-mora').value;
+                        const montoEf = parseFloat(montoEfStr.replace(/\./g, '').replace(',', '.')) || 0;
+                        const montoTr = parseFloat(montoTrStr.replace(/\./g, '').replace(',', '.')) || 0;
+                        const mora = parseFloat(moraStr.replace(/\./g, '').replace(',', '.')) || 0;
+                        const nuevoSaldo = Math.max(0, {{ prestamo.monto_pendiente|numero_raw }} - monto);
                         accionEl.innerHTML = `
                             <div class="d-flex align-items-center gap-1">
                                 <div class="check-pagado"><i class="bi bi-check-lg"></i></div>
@@ -747,8 +779,14 @@ async function confirmarPagoParcial() {
                                     data-fecha="${hoy}"
                                     data-cuota="${cuotaItem.querySelector('.numero')?.textContent || '1'}"
                                     data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
-                                    data-monto="${montoMaxActual}"
-                                    data-saldo="${Math.max(0, {{ prestamo.monto_pendiente|numero_raw }} - monto)}"
+                                    data-monto-cuota="${montoMaxActual}"
+                                    data-monto-pagado="${monto}"
+                                    data-saldo="${nuevoSaldo}"
+                                    data-metodo="${metodoPago}"
+                                    data-efectivo="${montoEf}"
+                                    data-transferencia="${montoTr}"
+                                    data-mora="${mora}"
+                                    data-estado="PA"
                                     title="Enviar talón por WhatsApp"
                                     style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
                                     <i class="bi bi-whatsapp"></i>
@@ -815,6 +853,8 @@ document.addEventListener('click', function(e) {
 });
 
 // ============ ENVIAR TALÓN POR WHATSAPP ============
+function fmtMoney(n) { return Math.round(n).toLocaleString('es-AR'); }
+
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-wp-talon');
     if (!btn) return;
@@ -826,11 +866,50 @@ document.addEventListener('click', function(e) {
     const fecha = btn.dataset.fecha;
     const cuota = String(parseInt(btn.dataset.cuota)).padStart(2, '0');
     const totalCuotas = String(parseInt(btn.dataset.totalCuotas)).padStart(2, '0');
-    const monto = parseFloat(btn.dataset.monto) || 0;
+    const montoCuota = parseFloat(btn.dataset.montoCuota) || 0;
+    const montoPagado = parseFloat(btn.dataset.montoPagado) || 0;
     const saldo = parseFloat(btn.dataset.saldo) || 0;
+    const metodo = btn.dataset.metodo || 'EF';
+    const efectivo = parseFloat(btn.dataset.efectivo) || 0;
+    const transferencia = parseFloat(btn.dataset.transferencia) || 0;
+    const mora = parseFloat(btn.dataset.mora) || 0;
+    const estado = btn.dataset.estado || 'PA';
 
-    const montoFmt = Math.round(monto).toLocaleString('es-AR');
-    const saldoFmt = Math.round(saldo).toLocaleString('es-AR');
+    // Determinar si es pago parcial
+    const esParcial = estado === 'PC' || montoPagado < montoCuota;
+    const valorAbonado = esParcial ? montoPagado : montoCuota;
+
+    // Construir detalle de pago
+    let detallePago = '';
+    detallePago += `\`CUOTA:           ${cuota} / ${totalCuotas}\`\n`;
+    detallePago += `\`VALOR CUOTA:     $ ${fmtMoney(montoCuota)}\`\n`;
+    detallePago += `\`VALOR ABONADO:   $ ${fmtMoney(valorAbonado)}\`\n`;
+
+    // Detalle de método de pago
+    if (metodo === 'MX' && efectivo > 0 && transferencia > 0) {
+        detallePago += `\`  └ EFECTIVO:    $ ${fmtMoney(efectivo)}\`\n`;
+        detallePago += `\`  └ TRANSFER.:   $ ${fmtMoney(transferencia)}\`\n`;
+    } else if (metodo === 'TR') {
+        detallePago += `\`MÉTODO:          Transferencia\`\n`;
+    }
+
+    // Mora cobrada
+    if (mora > 0) {
+        detallePago += `\`INTERÉS MORA:    $ ${fmtMoney(mora)}\`\n`;
+        detallePago += `\`TOTAL COBRADO:   $ ${fmtMoney(valorAbonado + mora)}\`\n`;
+    }
+
+    // Pago parcial: mostrar restante de cuota
+    if (esParcial) {
+        const restanteCuota = montoCuota - montoPagado;
+        detallePago += `\`RESTA DE CUOTA:  $ ${fmtMoney(restanteCuota)}\`\n`;
+    }
+
+    detallePago += `\`SALDO RESTANTE:  $ ${fmtMoney(saldo)}\``;
+
+    // Tipo de pago para el encabezado
+    let tipoPago = '💵 PAGO COMPLETO';
+    if (esParcial) tipoPago = '📝 PAGO PARCIAL';
 
     const mensaje = `━━━━━━━━━━━━━━━━━━━━━━
       *PRONTO CRED*
@@ -838,12 +917,11 @@ document.addEventListener('click', function(e) {
 
 *CLIENTE:* ${cliente.toUpperCase()}
 *FECHA:* ${fecha}
+*TIPO:* ${tipoPago}
 
 *DETALLE DEL PAGO:*
 --------------------------------------
-\`CUOTA:           ${cuota} / ${totalCuotas}\`
-\`VALOR ABONADO:   $ ${montoFmt}\`
-\`SALDO RESTANTE:  $ ${saldoFmt}\`
+${detallePago}
 --------------------------------------
 
 *⚠️ AVISO IMPORTANTE:*
