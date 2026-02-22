@@ -15,7 +15,7 @@ class ClienteForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control form-control-lg input-monto-formateado',
-            'placeholder': 'Límite individual (0 = usar límite de categoría)',
+            'placeholder': 'Dejar vacío = sin límite (ilimitado)',
             'inputmode': 'numeric',
             'autocomplete': 'off'
         })

@@ -385,7 +385,7 @@ class Cliente(models.Model):
         default=Decimal('0.00'),
         validators=[MinValueValidator(Decimal('0.00'))],
         verbose_name='Límite de Crédito',
-        help_text='Máximo que se le puede prestar a este cliente'
+        help_text='Máximo que se le puede prestar. 0 = sin límite (ilimitado)'
     )
     ruta = models.ForeignKey(
         RutaCobro,
@@ -495,32 +495,12 @@ class Cliente(models.Model):
     
     @property
     def maximo_prestable(self):
-        """El máximo que se le puede prestar considerando todas las reglas"""
-        limites = []
-        deuda_actual = self.credito_usado
-        
-        # 1. Límite individual del cliente
+        """El máximo que se le puede prestar. Solo aplica límite individual si está definido."""
+        # Solo se limita si el cliente tiene un límite individual > 0
         if self.limite_credito > 0:
-            limites.append(self.limite_credito - deuda_actual)
-        
-        # 2. Límite por categoría
-        limite_cat = self.limite_por_categoria
-        if limite_cat:
-            limites.append(limite_cat - deuda_actual)
-        
-        # 3. Límite por tipo de negocio
-        limite_neg = self.limite_por_tipo_negocio
-        if limite_neg:
-            limites.append(limite_neg - deuda_actual)
-        
-        # 4. Límite basado en % sobre deuda
-        limite_deuda = self.limite_sobre_deuda
-        if limite_deuda and deuda_actual > 0:
-            limites.append(limite_deuda)
-        
-        if limites:
-            return max(Decimal('0.00'), min(limites))
-        return None  # Sin límite definido
+            disponible = self.limite_credito - self.credito_usado
+            return max(Decimal('0.00'), disponible)
+        return None  # Sin límite = ilimitado
     
     @property
     def puede_renovar(self):
