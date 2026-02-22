@@ -215,6 +215,18 @@
                         <div class="check-pagado">
                             <i class="bi bi-check-lg"></i>
                         </div>
+                        <button class="btn-wp-talon" 
+                                data-telefono="{{ prestamo.cliente.telefono }}"
+                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                                data-fecha="{{ cuota.fecha_pago_real|date:'d/m/Y' }}"
+                                data-cuota="{{ cuota.numero_cuota }}"
+                                data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
+                                data-monto="{{ cuota.monto_cuota|numero_raw }}"
+                                data-saldo="{{ prestamo.monto_pendiente|numero_raw }}"
+                                title="Enviar talón por WhatsApp"
+                                style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
+                            <i class="bi bi-whatsapp"></i>
+                        </button>
                         {% if prestamo.estado != 'RE' and prestamo.estado != 'CA' %}
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
@@ -725,7 +737,23 @@ async function confirmarPagoParcial() {
                     }
                     const accionEl = cuotaItem.querySelector('.cuota-accion');
                     if (accionEl) {
-                        accionEl.innerHTML = '<div class="check-pagado"><i class="bi bi-check-lg"></i></div>';
+                        const hoy = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                        accionEl.innerHTML = `
+                            <div class="d-flex align-items-center gap-1">
+                                <div class="check-pagado"><i class="bi bi-check-lg"></i></div>
+                                <button class="btn-wp-talon"
+                                    data-telefono="{{ prestamo.cliente.telefono }}"
+                                    data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                                    data-fecha="${hoy}"
+                                    data-cuota="${cuotaItem.querySelector('.numero')?.textContent || '1'}"
+                                    data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
+                                    data-monto="${montoMaxActual}"
+                                    data-saldo="${Math.max(0, {{ prestamo.monto_pendiente|numero_raw }} - monto)}"
+                                    title="Enviar talón por WhatsApp"
+                                    style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
+                                    <i class="bi bi-whatsapp"></i>
+                                </button>
+                            </div>`;
                     }
                     const montoDiv = cuotaItem.querySelector('.cuota-monto');
                     if (montoDiv) {
@@ -784,6 +812,56 @@ document.addEventListener('click', function(e) {
             btn.dataset.fecha || ''
         );
     }
+});
+
+// ============ ENVIAR TALÓN POR WHATSAPP ============
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-wp-talon');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const telefono = btn.dataset.telefono;
+    const cliente = btn.dataset.cliente;
+    const fecha = btn.dataset.fecha;
+    const cuota = String(parseInt(btn.dataset.cuota)).padStart(2, '0');
+    const totalCuotas = String(parseInt(btn.dataset.totalCuotas)).padStart(2, '0');
+    const monto = parseFloat(btn.dataset.monto) || 0;
+    const saldo = parseFloat(btn.dataset.saldo) || 0;
+
+    const montoFmt = Math.round(monto).toLocaleString('es-AR');
+    const saldoFmt = Math.round(saldo).toLocaleString('es-AR');
+
+    const mensaje = `━━━━━━━━━━━━━━━━━━━━━━
+      *PRONTO CRED*
+━━━━━━━━━━━━━━━━━━━━━━
+
+*CLIENTE:* ${cliente.toUpperCase()}
+*FECHA:* ${fecha}
+
+*DETALLE DEL PAGO:*
+--------------------------------------
+\`CUOTA:           ${cuota} / ${totalCuotas}\`
+\`VALOR ABONADO:   $ ${montoFmt}\`
+\`SALDO RESTANTE:  $ ${saldoFmt}\`
+--------------------------------------
+
+*⚠️ AVISO IMPORTANTE:*
+La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota y del 100% si la cuota se acumula.
+
+*CONTACTO:*
+📞 11 3271-6516
+📞 11 5056-0854
+
+_¡Gracias por su pago!_
+━━━━━━━━━━━━━━━━━━━━━━`;
+
+    // Formatear teléfono para Argentina
+    let tel = telefono.replace(/[^0-9]/g, '');
+    if (tel.startsWith('0')) tel = tel.substring(1);
+    if (!tel.startsWith('54')) tel = '54' + tel;
+
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
 });
 
 // ============ ANULAR PAGO ============
