@@ -228,24 +228,6 @@
                                 style="width:28px;height:28px;border-radius:50%;border:1px solid #128C7E;background:#128C7E;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
                             <i class="bi bi-whatsapp"></i>
                         </button>
-                        <button class="btn-wp-talon" 
-                                data-telefono="{{ prestamo.cliente.telefono }}"
-                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
-                                data-fecha="{{ cuota.fecha_pago_real|date:'d/m/Y' }}"
-                                data-cuota="{{ cuota.numero_cuota }}"
-                                data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
-                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
-                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
-                                data-saldo="{{ prestamo.monto_pendiente|numero_raw }}"
-                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
-                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
-                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
-                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
-                                data-estado="{{ cuota.estado }}"
-                                title="Enviar talón por WhatsApp"
-                                style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
-                            <i class="bi bi-whatsapp"></i>
-                        </button>
                         {% if prestamo.estado != 'RE' and prestamo.estado != 'CA' %}
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
@@ -266,24 +248,6 @@
                             <i class="bi bi-whatsapp"></i>
                         </button>
                         {% if cuota.estado == 'PC' %}
-                        <button class="btn-wp-talon"
-                                data-telefono="{{ prestamo.cliente.telefono }}"
-                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
-                                data-fecha="{{ cuota.fecha_pago_real|date:'d/m/Y' }}"
-                                data-cuota="{{ cuota.numero_cuota }}"
-                                data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
-                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
-                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
-                                data-saldo="{{ prestamo.monto_pendiente|numero_raw }}"
-                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
-                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
-                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
-                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
-                                data-estado="PC"
-                                title="Enviar talón por WhatsApp"
-                                style="width:32px;height:32px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
-                            <i class="bi bi-whatsapp"></i>
-                        </button>
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
                                 data-cliente="{{ prestamo.cliente.nombre_completo }}"
@@ -826,22 +790,10 @@ async function confirmarPagoParcial() {
                         accionEl.innerHTML = `
                             <div class="d-flex align-items-center gap-1">
                                 <div class="check-pagado"><i class="bi bi-check-lg"></i></div>
-                                <button class="btn-wp-talon"
-                                    data-telefono="{{ prestamo.cliente.telefono }}"
-                                    data-cliente="{{ prestamo.cliente.nombre_completo }}"
-                                    data-fecha="${hoy}"
-                                    data-cuota="${cuotaItem.querySelector('.numero')?.textContent || '1'}"
-                                    data-total-cuotas="{{ prestamo.cuotas_pactadas }}"
-                                    data-monto-cuota="${montoMaxActual}"
-                                    data-monto-pagado="${monto}"
-                                    data-saldo="${nuevoSaldo}"
-                                    data-metodo="${metodoPago}"
-                                    data-efectivo="${montoEf}"
-                                    data-transferencia="${montoTr}"
-                                    data-mora="${mora}"
-                                    data-estado="PA"
-                                    title="Enviar talón por WhatsApp"
-                                    style="width:28px;height:28px;border-radius:50%;border:1px solid #25D366;background:#25D366;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
+                                <button class="btn-resumen-cuota-wp"
+                                    data-cuota-destacada="${cuotaItem.querySelector('.numero')?.textContent || '1'}"
+                                    title="Enviar resumen por WhatsApp"
+                                    style="width:28px;height:28px;border-radius:50%;border:1px solid #128C7E;background:#128C7E;color:white;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;">
                                     <i class="bi bi-whatsapp"></i>
                                 </button>
                             </div>`;
@@ -966,91 +918,6 @@ document.addEventListener('click', function(e) {
 
 // ============ ENVIAR TALÓN POR WHATSAPP ============
 function fmtMoney(n) { return Math.round(n).toLocaleString('es-AR'); }
-
-document.addEventListener('click', function(e) {
-    const btn = e.target.closest('.btn-wp-talon');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const telefono = btn.dataset.telefono;
-    const cliente = btn.dataset.cliente;
-    const fecha = btn.dataset.fecha;
-    const cuota = String(parseInt(btn.dataset.cuota)).padStart(2, '0');
-    const totalCuotas = String(parseInt(btn.dataset.totalCuotas)).padStart(2, '0');
-    const montoCuota = parseFloat(btn.dataset.montoCuota) || 0;
-    const montoPagado = parseFloat(btn.dataset.montoPagado) || 0;
-    const saldo = parseFloat(btn.dataset.saldo) || 0;
-    const metodo = btn.dataset.metodo || 'EF';
-    const efectivo = parseFloat(btn.dataset.efectivo) || 0;
-    const transferencia = parseFloat(btn.dataset.transferencia) || 0;
-    const mora = parseFloat(btn.dataset.mora) || 0;
-    const estado = btn.dataset.estado || 'PA';
-
-    // Determinar si es pago parcial
-    const esParcial = estado === 'PC' || montoPagado < montoCuota;
-    const valorAbonado = esParcial ? montoPagado : montoCuota;
-
-    // Construir detalle de pago
-    let detallePago = '';
-    detallePago += `\`CUOTA:           ${cuota} / ${totalCuotas}\`\n`;
-    detallePago += `\`VALOR CUOTA:     $ ${fmtMoney(montoCuota)}\`\n`;
-    detallePago += `\`VALOR ABONADO:   $ ${fmtMoney(valorAbonado)}\`\n`;
-
-    // Detalle de método de pago
-    if (metodo === 'MX' && efectivo > 0 && transferencia > 0) {
-        detallePago += `\`  └ EFECTIVO:    $ ${fmtMoney(efectivo)}\`\n`;
-        detallePago += `\`  └ TRANSFER.:   $ ${fmtMoney(transferencia)}\`\n`;
-    } else if (metodo === 'TR') {
-        detallePago += `\`MÉTODO:          Transferencia\`\n`;
-    }
-
-    // Mora cobrada
-    if (mora > 0) {
-        detallePago += `\`INTERÉS MORA:    $ ${fmtMoney(mora)}\`\n`;
-        detallePago += `\`TOTAL COBRADO:   $ ${fmtMoney(valorAbonado + mora)}\`\n`;
-    }
-
-    // Pago parcial: mostrar restante de cuota
-    if (esParcial) {
-        const restanteCuota = montoCuota - montoPagado;
-        detallePago += `\`RESTA DE CUOTA:  $ ${fmtMoney(restanteCuota)}\`\n`;
-    }
-
-    detallePago += `\`SALDO RESTANTE:  $ ${fmtMoney(saldo)}\``;
-
-    // Tipo de pago para el encabezado
-    let tipoPago = '💵 PAGO COMPLETO';
-    if (esParcial) tipoPago = '📝 PAGO PARCIAL';
-
-    const mensaje = `━━━━━━━━━━━━━━━━━━━━━━
-
-*CLIENTE:* ${cliente.toUpperCase()}
-*FECHA:* ${fecha}
-*TIPO:* ${tipoPago}
-
-*DETALLE DEL PAGO:*
---------------------------------------
-${detallePago}
---------------------------------------
-
-⚠️ *Aclaración:* La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota, y del 100% si la cuota se acumula.
-
-⚠️ *Aclaración:* Es responsabilidad del cliente realizar los pagos en tiempo y forma y enviarnos los comprobantes correspondientes los días de pago.
-
-*CONTACTO:*
-📞 11 3271-6516
-
-_¡Gracias por su pago!_
-━━━━━━━━━━━━━━━━━━━━━━`;
-
-    // Formatear teléfono para Argentina
-    let tel = telefono.replace(/[^0-9]/g, '');
-    if (tel.startsWith('0')) tel = tel.substring(1);
-    if (!tel.startsWith('54')) tel = '54' + tel;
-
-    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
-});
 
 // ============ ANULAR PAGO ============
 document.addEventListener('click', function(e) {
