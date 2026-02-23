@@ -154,6 +154,25 @@
             {% endif %}
         </div>
     </div>
+
+    <!-- Botón enviar resumen de crédito por WhatsApp -->
+    <div class="d-grid mb-4">
+        <button class="btn btn-success btn-lg" id="btn-resumen-credito-wp"
+                data-telefono="{{ prestamo.cliente.telefono }}"
+                data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                data-capital="{{ prestamo.monto_solicitado|numero_raw }}"
+                data-tasa="{{ prestamo.tasa_interes_porcentaje }}"
+                data-total="{{ prestamo.monto_total_a_pagar|numero_raw }}"
+                data-cuotas="{{ prestamo.cuotas_pactadas }}"
+                data-frecuencia="{{ prestamo.get_frecuencia_display }}"
+                data-fecha-inicio="{{ prestamo.fecha_inicio|date:'d/m/Y' }}"
+                data-fecha-fin="{{ prestamo.fecha_finalizacion|date:'d/m/Y' }}"
+                data-monto-cuota="{% with cuota=prestamo.proxima_cuota %}{{ cuota.monto_cuota|numero_raw }}{% endwith %}"
+                data-pendiente="{{ prestamo.monto_pendiente|numero_raw }}"
+                data-pagadas="{{ prestamo.cuotas_pagadas }}">
+            <i class="bi bi-whatsapp me-2"></i>Enviar Resumen de Crédito por WhatsApp
+        </button>
+    </div>
     
     <!-- Lista de cuotas -->
     <section>
@@ -850,6 +869,66 @@ document.addEventListener('click', function(e) {
             btn.dataset.fecha || ''
         );
     }
+});
+
+// ============ ENVIAR RESUMEN DE CRÉDITO POR WHATSAPP ============
+document.getElementById('btn-resumen-credito-wp')?.addEventListener('click', function() {
+    const btn = this;
+    const telefono = btn.dataset.telefono;
+    const cliente = btn.dataset.cliente;
+    const capital = parseFloat(btn.dataset.capital) || 0;
+    const tasa = btn.dataset.tasa;
+    const total = parseFloat(btn.dataset.total) || 0;
+    const cuotas = btn.dataset.cuotas;
+    const frecuencia = btn.dataset.frecuencia;
+    const fechaInicio = btn.dataset.fechaInicio;
+    const fechaFin = btn.dataset.fechaFin;
+    const montoCuota = parseFloat(btn.dataset.montoCuota) || 0;
+    const pendiente = parseFloat(btn.dataset.pendiente) || 0;
+    const pagadas = parseInt(btn.dataset.pagadas) || 0;
+
+    let detalle = '';
+    detalle += `\`CAPITAL:         $ ${fmtMoney(capital)}\`\n`;
+    detalle += `\`INTERÉS:         ${tasa}%\`\n`;
+    detalle += `\`TOTAL A PAGAR:   $ ${fmtMoney(total)}\`\n`;
+    detalle += `\`CUOTAS:          ${cuotas} (${frecuencia})\`\n`;
+    detalle += `\`VALOR CUOTA:     $ ${fmtMoney(montoCuota)}\`\n`;
+    detalle += `\`INICIO:          ${fechaInicio}\`\n`;
+    if (fechaFin) {
+        detalle += `\`VENCIMIENTO:     ${fechaFin}\`\n`;
+    }
+    if (pagadas > 0) {
+        detalle += `\n\`CUOTAS PAGADAS:  ${pagadas} / ${cuotas}\`\n`;
+        detalle += `\`SALDO PENDIENTE: $ ${fmtMoney(pendiente)}\``;
+    }
+
+    const mensaje = `━━━━━━━━━━━━━━━━━━━━━━
+      *PRONTO CRED*
+━━━━━━━━━━━━━━━━━━━━━━
+
+*CLIENTE:* ${cliente.toUpperCase()}
+*FECHA:* ${new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+
+📊 *RESUMEN DE CRÉDITO:*
+--------------------------------------
+${detalle}
+--------------------------------------
+
+*⚠️ AVISO IMPORTANTE:*
+La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota y del 100% si la cuota se acumula.
+
+*CONTACTO:*
+📞 11 3271-6516
+📞 11 5056-0854
+
+_¡Gracias por confiar en nosotros!_
+━━━━━━━━━━━━━━━━━━━━━━`;
+
+    let tel = telefono.replace(/[^0-9]/g, '');
+    if (tel.startsWith('0')) tel = tel.substring(1);
+    if (!tel.startsWith('54')) tel = '54' + tel;
+
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
 });
 
 // ============ ENVIAR TALÓN POR WHATSAPP ============
