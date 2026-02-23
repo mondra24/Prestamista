@@ -197,7 +197,6 @@ class PrestamoForm(forms.ModelForm):
                 'placeholder': '% de interés',
                 'inputmode': 'decimal',
                 'min': '0',
-                'max': '100',
                 'step': '0.01'
             }),
             'cuotas_pactadas': forms.NumberInput(attrs={

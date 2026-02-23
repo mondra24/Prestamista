@@ -616,10 +616,11 @@ class Prestamo(models.Model):
         verbose_name='Monto Solicitado'
     )
     tasa_interes_porcentaje = models.DecimalField(
-        max_digits=5,
+        max_digits=7,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
-        verbose_name='Tasa de Interés (%)'
+        validators=[MinValueValidator(Decimal('0.00'))],
+        verbose_name='Tasa de Interés (%)',
+        help_text='Porcentaje de interés sobre el capital. Ej: 20 = 20%'
     )
     monto_total_a_pagar = models.DecimalField(
         max_digits=12,
