@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load crispy_forms_tags %}
 
-{% block title %}Nuevo Préstamo - Préstamos{% endblock %}
+{% block title %}{% if editando %}Editar{% else %}Nuevo{% endif %} Préstamo - Préstamos{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-2 px-lg-4">
@@ -12,7 +12,7 @@
             <i class="bi bi-arrow-left"></i>
         </a>
         <h1 class="h4 mb-0">
-            <i class="bi bi-wallet-fill me-2"></i>Nuevo Préstamo
+            <i class="bi bi-wallet-fill me-2"></i>{% if editando %}Editar{% else %}Nuevo{% endif %} Préstamo
         </h1>
     </div>
     

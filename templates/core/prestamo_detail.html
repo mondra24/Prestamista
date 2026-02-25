@@ -147,6 +147,9 @@
             
             <hr>
             <div class="d-flex gap-2">
+                <a href="{% url 'core:prestamo_update' prestamo.pk %}" class="btn btn-outline-primary flex-grow-1">
+                    <i class="bi bi-pencil me-1"></i> Editar
+                </a>
                 <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
                     <i class="bi bi-arrow-repeat me-1"></i> Renovar
                 </a>
@@ -229,6 +232,20 @@
                             <i class="bi bi-whatsapp"></i>
                         </button>
                         {% if prestamo.estado != 'RE' and prestamo.estado != 'CA' %}
+                        <button class="btn-editar-cobro-existente"
+                                data-cuota-id="{{ cuota.pk }}"
+                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
+                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
+                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
+                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
+                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
+                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
+                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                                data-estado="{{ cuota.estado }}"
+                                title="Editar cobro"
+                                style="width:28px;height:28px;border-radius:50%;border:1px solid #0d6efd;background:transparent;color:#0d6efd;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.75rem;">
+                            <i class="bi bi-pencil"></i>
+                        </button>
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
                                 data-cliente="{{ prestamo.cliente.nombre_completo }}"
@@ -248,6 +265,20 @@
                             <i class="bi bi-whatsapp"></i>
                         </button>
                         {% if cuota.estado == 'PC' %}
+                        <button class="btn-editar-cobro-existente"
+                                data-cuota-id="{{ cuota.pk }}"
+                                data-monto-pagado="{{ cuota.monto_pagado|numero_raw }}"
+                                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
+                                data-metodo="{{ cuota.metodo_pago|default:'EF' }}"
+                                data-efectivo="{{ cuota.monto_efectivo|default:0|numero_raw }}"
+                                data-transferencia="{{ cuota.monto_transferencia|default:0|numero_raw }}"
+                                data-mora="{{ cuota.interes_mora_cobrado|default:0|numero_raw }}"
+                                data-cliente="{{ prestamo.cliente.nombre_completo }}"
+                                data-estado="{{ cuota.estado }}"
+                                title="Editar cobro parcial"
+                                style="width:32px;height:32px;border-radius:50%;border:1px solid #0d6efd;background:transparent;color:#0d6efd;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.75rem;">
+                            <i class="bi bi-pencil"></i>
+                        </button>
                         <button class="btn-anular-pago" 
                                 data-cuota-id="{{ cuota.pk }}" 
                                 data-cliente="{{ prestamo.cliente.nombre_completo }}"
@@ -256,7 +287,8 @@
                                 style="width:32px;height:32px;border-radius:50%;border:1px solid #dc3545;background:transparent;color:#dc3545;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.75rem;">
                             <i class="bi bi-x-lg"></i>
                         </button>
-                        {% endif %}    <button class="btn-editar-cobro" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;"
+                        {% endif %}
+                        <button class="btn-editar-cobro" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;"
                                 data-cuota-id="{{ cuota.pk }}"
                                 data-monto="{{ cuota.monto_restante|numero_raw }}"
                                 data-mora="0"
@@ -481,6 +513,91 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-success" onclick="confirmarPagoParcial()">
                     <i class="bi bi-check-lg me-1"></i>Registrar Cobro
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para editar cobro existente -->
+<div class="modal fade" id="modal-editar-cobro" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title">
+                    <i class="bi bi-pencil-square me-2"></i>Editar Cobro
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-cuota-id">
+                
+                <div class="text-center mb-3 pb-2 border-bottom">
+                    <h6 class="mb-1" id="edit-cliente-nombre">Cliente</h6>
+                    <div class="d-flex justify-content-center gap-3 small">
+                        <span>Cuota original: <strong id="edit-monto-cuota-label" class="text-primary">$0</strong></span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small">Monto cobrado:</label>
+                    <input type="text" class="form-control form-control-lg text-center" id="edit-monto"
+                           inputmode="numeric" placeholder="0"
+                           oninput="formatearInputMonto(this)">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small">Interés por mora cobrado:</label>
+                    <input type="text" class="form-control text-center" id="edit-interes-mora"
+                           inputmode="numeric" placeholder="0"
+                           oninput="formatearInputMonto(this)">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold small">Método de pago:</label>
+                    <select class="form-select" id="edit-metodo" onchange="toggleEditMetodo()">
+                        <option value="EF">Efectivo</option>
+                        <option value="TR">Transferencia</option>
+                        <option value="MX">Mixto</option>
+                    </select>
+                </div>
+                
+                <div id="edit-mixto-container" style="display: none;">
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small">Efectivo:</label>
+                            <input type="text" class="form-control" id="edit-monto-efectivo"
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this)">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Transferencia:</label>
+                            <input type="text" class="form-control" id="edit-monto-transferencia"
+                                   inputmode="numeric" placeholder="0"
+                                   oninput="formatearInputMonto(this)">
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="edit-referencia-container" style="display: none;">
+                    <div class="mb-3">
+                        <label class="form-label small">Referencia/Nº operación:</label>
+                        <input type="text" class="form-control" id="edit-referencia" placeholder="Número de operación">
+                    </div>
+                </div>
+                
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="edit-marcar-completo" checked>
+                    <label class="form-check-label fw-semibold" for="edit-marcar-completo">
+                        <i class="bi bi-check-circle me-1"></i>Marcar como pago completo
+                        <small class="d-block text-muted">Ajusta el valor de la cuota al monto cobrado para que no quede pendiente</small>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="confirmarEditarCobro()">
+                    <i class="bi bi-check-lg me-1"></i>Guardar Cambios
                 </button>
             </div>
         </div>
@@ -961,5 +1078,98 @@ document.addEventListener('click', function(e) {
         btn.innerHTML = '<i class="bi bi-x-lg"></i>';
     });
 });
+
+// ============ EDITAR COBRO EXISTENTE ============
+function toggleEditMetodo() {
+    const metodo = document.getElementById('edit-metodo').value;
+    document.getElementById('edit-mixto-container').style.display = metodo === 'MX' ? 'block' : 'none';
+    document.getElementById('edit-referencia-container').style.display = (metodo === 'TR' || metodo === 'MX') ? 'block' : 'none';
+}
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-editar-cobro-existente');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    document.getElementById('edit-cuota-id').value = btn.dataset.cuotaId;
+    document.getElementById('edit-cliente-nombre').textContent = btn.dataset.cliente;
+    document.getElementById('edit-monto-cuota-label').textContent = formatearMoneda(parseFloat(btn.dataset.montoCuota));
+    document.getElementById('edit-monto').value = formatearNumero(parseFloat(btn.dataset.montoPagado));
+    document.getElementById('edit-interes-mora').value = formatearNumero(parseFloat(btn.dataset.mora || 0));
+    document.getElementById('edit-metodo').value = btn.dataset.metodo || 'EF';
+    document.getElementById('edit-monto-efectivo').value = formatearNumero(parseFloat(btn.dataset.efectivo || 0));
+    document.getElementById('edit-monto-transferencia').value = formatearNumero(parseFloat(btn.dataset.transferencia || 0));
+    document.getElementById('edit-referencia').value = '';
+    
+    // Si el monto pagado es igual al monto cuota, desmarcar "marcar completo" por defecto
+    const montoPagado = parseFloat(btn.dataset.montoPagado);
+    const montoCuota = parseFloat(btn.dataset.montoCuota);
+    document.getElementById('edit-marcar-completo').checked = (montoPagado < montoCuota);
+    
+    toggleEditMetodo();
+    
+    const modal = new bootstrap.Modal(document.getElementById('modal-editar-cobro'));
+    modal.show();
+});
+
+async function confirmarEditarCobro() {
+    const cuotaId = document.getElementById('edit-cuota-id').value;
+    const montoStr = document.getElementById('edit-monto').value;
+    const monto = parseFloat(montoStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const interesMoraStr = document.getElementById('edit-interes-mora').value;
+    const interesMora = parseFloat(interesMoraStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const metodoPago = document.getElementById('edit-metodo').value;
+    const montoEfStr = document.getElementById('edit-monto-efectivo').value;
+    const montoTrStr = document.getElementById('edit-monto-transferencia').value;
+    const montoEfectivo = parseFloat(montoEfStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const montoTransferencia = parseFloat(montoTrStr.replace(/\./g, '').replace(',', '.')) || 0;
+    const referencia = document.getElementById('edit-referencia').value;
+    const marcarCompleto = document.getElementById('edit-marcar-completo').checked;
+    
+    if (monto <= 0) {
+        showToast('El monto debe ser mayor a 0', 'danger');
+        return;
+    }
+    
+    if (metodoPago === 'MX' && Math.abs((montoEfectivo + montoTransferencia) - monto) > 1) {
+        showToast('La suma de efectivo y transferencia debe ser igual al monto cobrado', 'danger');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/editar-cobro/${cuotaId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                monto: monto,
+                metodo_pago: metodoPago,
+                monto_efectivo: montoEfectivo,
+                monto_transferencia: montoTransferencia,
+                referencia_transferencia: referencia,
+                interes_mora: interesMora,
+                marcar_completo: marcarCompleto
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('modal-editar-cobro'));
+            if (modal) modal.hide();
+            showToast('Cobro editado exitosamente', 'success');
+            // Recargar para reflejar cambios
+            setTimeout(() => location.reload(), 800);
+        } else {
+            showToast(result.message || 'Error al editar el cobro', 'danger');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error de conexión', 'danger');
+    }
+}
 </script>
 {% endblock %}

@@ -13,9 +13,12 @@
             <i class="bi bi-arrow-left"></i>
         </a>
         <h1 class="h5 mb-0 flex-grow-1">Perfil del Cliente</h1>
-        <a href="{% url 'core:cliente_update' cliente.pk %}" class="btn btn-outline-primary">
+        <a href="{% url 'core:cliente_update' cliente.pk %}" class="btn btn-outline-primary me-1">
             <i class="bi bi-pencil"></i>
         </a>
+        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modal-eliminar-cliente">
+            <i class="bi bi-trash"></i>
+        </button>
     </div>
     
     <!-- Info del cliente -->
@@ -289,5 +292,35 @@
     </section>
     {% endif %}
     
+</div>
+
+<!-- Modal Confirmar Eliminación -->
+<div class="modal fade" id="modal-eliminar-cliente" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background:var(--bg-card);color:var(--text-primary);">
+            <div class="modal-header border-0">
+                <h5 class="modal-title text-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Eliminar Cliente
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que deseas eliminar a <strong>{{ cliente.nombre_completo }}</strong>?</p>
+                <p class="text-danger mb-0">
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Esta acción no se puede deshacer. Si el cliente tiene préstamos asociados, no podrá ser eliminado.
+                </p>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'core:cliente_delete' cliente.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

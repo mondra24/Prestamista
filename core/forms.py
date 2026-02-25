@@ -269,10 +269,15 @@ class PrestamoForm(forms.ModelForm):
             '''),
             'notas',
             Div(
-                Submit('submit', 'Crear Préstamo', css_class='btn btn-success btn-lg w-100 mt-3'),
+                Submit('submit', 'Guardar Préstamo', css_class='btn btn-success btn-lg w-100 mt-3'),
                 css_class='d-grid'
             )
         )
+        
+        # Si estamos editando, formatear el monto con puntos de miles
+        if self.instance and self.instance.pk and self.instance.monto_solicitado:
+            valor = int(self.instance.monto_solicitado)
+            self.initial['monto_solicitado'] = '{:,}'.format(valor).replace(',', '.')
     
     def clean_monto_solicitado(self):
         """Limpiar y convertir monto con formato de puntos de miles"""
@@ -293,7 +298,14 @@ class PrestamoForm(forms.ModelForm):
         monto = cleaned_data.get('monto_solicitado')
         
         if cliente and monto:
+            # En edición, no validar límite contra el mismo préstamo
+            prestamo_actual = self.instance if self.instance and self.instance.pk else None
             maximo = cliente.maximo_prestable
+            
+            # Si editamos, sumar el monto del préstamo actual al disponible
+            if prestamo_actual and maximo is not None:
+                maximo = maximo + prestamo_actual.monto_solicitado
+            
             if maximo is not None and monto > maximo:
                 from decimal import Decimal
                 if maximo <= Decimal('0'):

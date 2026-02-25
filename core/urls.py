@@ -21,15 +21,18 @@ urlpatterns = [
     path('clientes/nuevo/', views.ClienteCreateView.as_view(), name='cliente_create'),
     path('clientes/<int:pk>/', views.ClienteDetailView.as_view(), name='cliente_detail'),
     path('clientes/<int:pk>/editar/', views.ClienteUpdateView.as_view(), name='cliente_update'),
+    path('clientes/<int:pk>/eliminar/', views.ClienteDeleteView.as_view(), name='cliente_delete'),
     
     # Préstamos
     path('prestamos/', views.PrestamoListView.as_view(), name='prestamo_list'),
     path('prestamos/nuevo/', views.PrestamoCreateView.as_view(), name='prestamo_create'),
     path('prestamos/<int:pk>/', views.PrestamoDetailView.as_view(), name='prestamo_detail'),
+    path('prestamos/<int:pk>/editar/', views.PrestamoUpdateView.as_view(), name='prestamo_update'),
     path('prestamos/<int:pk>/renovar/', views.RenovarPrestamoView.as_view(), name='prestamo_renovar'),
     
     # Cobros (AJAX)
     path('api/cobrar/<int:pk>/', views.cobrar_cuota, name='cobrar_cuota'),
+    path('api/editar-cobro/<int:pk>/', views.editar_cobro, name='editar_cobro'),
     path('api/anular-pago/<int:pk>/', views.anular_pago_cuota, name='anular_pago_cuota'),
     path('api/cuotas-hoy/', views.obtener_cuotas_hoy, name='cuotas_hoy'),
     path('api/cliente/<int:pk>/categoria/', views.cambiar_categoria_cliente, name='cambiar_categoria'),

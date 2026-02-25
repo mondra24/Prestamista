@@ -1355,6 +1355,7 @@ class HistorialModificacionPago(models.Model):
         CUOTA_ESPECIAL = 'CE', 'Cuota Especial Creada'
         MONTO_RECIBIDO = 'MR', 'Monto Recibido de Otra Cuota'
         ANULACION = 'AN', 'Pago Anulado'
+        EDICION = 'ED', 'Cobro Editado'
     
     cuota = models.ForeignKey(
         'Cuota',
@@ -1463,6 +1464,8 @@ class HistorialModificacionPago(models.Model):
             return f'Recibió ${self.monto_restante_transferido:,.0f} de cuota #{self.cuota_relacionada.numero_cuota if self.cuota_relacionada else "?"}'
         elif self.tipo_modificacion == 'AN':
             return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}'
+        elif self.tipo_modificacion == 'ED':
+            return f'Cobro editado. Nuevo monto: ${self.monto_pagado:,.0f}'
         return self.notas or str(self)
 
 

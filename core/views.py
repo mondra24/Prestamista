@@ -3,7 +3,7 @@ Vistas del Sistema de Gestión de Préstamos
 """
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
-from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
@@ -319,6 +319,34 @@ class ClienteUpdateView(LoginRequiredMixin, UpdateView):
         return super().form_valid(form)
 
 
+class ClienteDeleteView(LoginRequiredMixin, DeleteView):
+    """Eliminar cliente"""
+    model = Cliente
+    success_url = reverse_lazy('core:cliente_list')
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not es_usuario_admin(self.request.user):
+            queryset = queryset.filter(usuario=self.request.user)
+        return queryset
+    
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        # Verificar si tiene préstamos asociados
+        if self.object.prestamos.exists():
+            messages.error(request, 
+                f'No se puede eliminar a {self.object.nombre_completo} porque tiene '
+                f'{self.object.prestamos.count()} préstamo(s) asociado(s). '
+                f'Primero debe eliminar o reasignar los préstamos.'
+            )
+            return redirect('core:cliente_detail', pk=self.object.pk)
+        
+        nombre = self.object.nombre_completo
+        self.object.delete()
+        messages.success(request, f'Cliente {nombre} eliminado exitosamente.')
+        return redirect('core:cliente_list')
+
+
 class ClienteDetailView(LoginRequiredMixin, DetailView):
     """Detalle de cliente"""
     model = Cliente
@@ -451,6 +479,71 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
         
         context['cuotas'] = cuotas
         return context
+
+
+class PrestamoUpdateView(LoginRequiredMixin, UpdateView):
+    """Editar un préstamo existente"""
+    model = Prestamo
+    form_class = PrestamoForm
+    template_name = 'core/prestamo_form.html'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not es_usuario_admin(self.request.user):
+            queryset = queryset.filter(cobrador=self.request.user)
+        return queryset
+    
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Filtrar clientes por usuario (admin ve todos)
+        if not es_usuario_admin(self.request.user):
+            form.fields['cliente'].queryset = Cliente.objects.filter(
+                estado='AC', usuario=self.request.user
+            ).order_by('apellido', 'nombre')
+        else:
+            form.fields['cliente'].queryset = Cliente.objects.filter(
+                estado='AC'
+            ).order_by('apellido', 'nombre')
+        return form
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['editando'] = True
+        if not es_usuario_admin(self.request.user):
+            context['clientes'] = Cliente.objects.filter(
+                estado='AC', usuario=self.request.user
+            ).order_by('apellido', 'nombre')
+        else:
+            context['clientes'] = Cliente.objects.filter(
+                estado='AC'
+            ).order_by('apellido', 'nombre')
+        return context
+    
+    def form_valid(self, form):
+        prestamo = form.save(commit=False)
+        # Recalcular monto total
+        interes = prestamo.monto_solicitado * (prestamo.tasa_interes_porcentaje / 100)
+        prestamo.monto_total_a_pagar = prestamo.monto_solicitado + interes
+        
+        # Recalcular fecha de finalización si no es manual
+        if not prestamo.fecha_finalizacion_manual or not prestamo.fecha_finalizacion:
+            prestamo.fecha_finalizacion = prestamo.calcular_fecha_finalizacion()
+        
+        prestamo.save()
+        
+        # Redistribuir montos en cuotas pendientes
+        cuotas_pendientes = prestamo.cuotas.filter(estado='PE').order_by('numero_cuota')
+        if cuotas_pendientes.exists():
+            monto_pagado = prestamo.monto_pagado
+            monto_restante = prestamo.monto_total_a_pagar - monto_pagado
+            nueva_cuota_monto = monto_restante / cuotas_pendientes.count() if cuotas_pendientes.count() > 0 else Decimal('0')
+            cuotas_pendientes.update(monto_cuota=round(nueva_cuota_monto, 2))
+        
+        messages.success(self.request, 'Préstamo actualizado exitosamente.')
+        return redirect('core:prestamo_detail', pk=prestamo.pk)
+    
+    def get_success_url(self):
+        return reverse_lazy('core:prestamo_detail', kwargs={'pk': self.object.pk})
 
 
 class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
@@ -688,6 +781,112 @@ def cobrar_cuota(request, pk):
                 'estadisticas': {
                     'total_cobrado_hoy': int(total_cobrado_hoy),  # Sin decimales
                     'cantidad_cobros_hoy': cantidad_cobros_hoy,
+                }
+            })
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'message': str(e)
+            }, status=400)
+    
+    return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+
+@login_required
+def editar_cobro(request, pk):
+    """Editar un cobro existente via AJAX"""
+    if request.method == 'POST':
+        try:
+            if es_usuario_admin(request.user):
+                cuota = get_object_or_404(Cuota, pk=pk)
+            else:
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
+            
+            if cuota.estado not in ['PA', 'PC']:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Solo se pueden editar cobros de cuotas pagadas o parciales.'
+                }, status=400)
+            
+            data = json.loads(request.body)
+            nuevo_monto = Decimal(str(data.get('monto', float(cuota.monto_pagado))))
+            metodo_pago = data.get('metodo_pago', cuota.metodo_pago or 'EF')
+            monto_efectivo = data.get('monto_efectivo')
+            monto_transferencia = data.get('monto_transferencia')
+            referencia = data.get('referencia_transferencia')
+            interes_mora = Decimal(str(data.get('interes_mora', float(cuota.interes_mora_cobrado))))
+            marcar_completo = data.get('marcar_completo', False)
+            
+            monto_anterior = cuota.monto_pagado
+            monto_cuota_anterior = cuota.monto_cuota
+            
+            # Actualizar datos del pago
+            cuota.monto_pagado = nuevo_monto
+            cuota.metodo_pago = metodo_pago
+            cuota.interes_mora_cobrado = interes_mora
+            
+            if metodo_pago == 'EF':
+                cuota.monto_efectivo = nuevo_monto
+                cuota.monto_transferencia = Decimal('0.00')
+            elif metodo_pago == 'TR':
+                cuota.monto_efectivo = Decimal('0.00')
+                cuota.monto_transferencia = nuevo_monto
+                cuota.referencia_transferencia = referencia
+            elif metodo_pago == 'MX':
+                cuota.monto_efectivo = Decimal(str(monto_efectivo or 0))
+                cuota.monto_transferencia = Decimal(str(monto_transferencia or 0))
+                cuota.referencia_transferencia = referencia
+            
+            if marcar_completo:
+                # Ajustar monto de cuota para que coincida con lo pagado
+                cuota.monto_cuota = nuevo_monto
+                cuota.estado = Cuota.Estado.PAGADO
+            elif nuevo_monto >= cuota.monto_cuota:
+                cuota.estado = Cuota.Estado.PAGADO
+                cuota.monto_pagado = cuota.monto_cuota
+            else:
+                cuota.estado = Cuota.Estado.PARCIAL
+            
+            cuota.save()
+            
+            # Registrar en historial
+            HistorialModificacionPago.objects.create(
+                cuota=cuota,
+                usuario=request.user,
+                tipo_modificacion='ED',
+                monto_cuota_anterior=monto_cuota_anterior,
+                monto_cuota_nuevo=cuota.monto_cuota,
+                monto_pagado=nuevo_monto,
+                monto_restante_transferido=Decimal('0.00'),
+                interes_mora=interes_mora,
+                metodo_pago=metodo_pago,
+                notas=f'Cobro editado. Monto anterior: ${monto_anterior:,.0f} → Nuevo: ${nuevo_monto:,.0f}. Completo: {"Sí" if marcar_completo else "No"}'
+            )
+            
+            # Verificar si el préstamo está completamente pagado
+            prestamo = cuota.prestamo
+            if not prestamo.cuotas.filter(estado__in=['PE', 'PC']).exists():
+                prestamo.estado = Prestamo.Estado.FINALIZADO
+                prestamo.save(update_fields=['estado'])
+            elif prestamo.estado == Prestamo.Estado.FINALIZADO:
+                prestamo.estado = Prestamo.Estado.ACTIVO
+                prestamo.save(update_fields=['estado'])
+            
+            return JsonResponse({
+                'success': True,
+                'message': 'Cobro editado exitosamente',
+                'cuota': {
+                    'id': cuota.pk,
+                    'estado': cuota.estado,
+                    'monto_cuota': float(cuota.monto_cuota),
+                    'monto_pagado': float(cuota.monto_pagado),
+                    'monto_restante': float(cuota.monto_restante),
+                    'metodo_pago': cuota.metodo_pago,
+                    'interes_mora_cobrado': float(cuota.interes_mora_cobrado),
+                },
+                'prestamo': {
+                    'progreso': cuota.prestamo.progreso_porcentaje,
+                    'estado': cuota.prestamo.estado,
                 }
             })
         except Exception as e:
