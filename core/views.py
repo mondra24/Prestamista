@@ -546,6 +546,28 @@ class PrestamoUpdateView(LoginRequiredMixin, UpdateView):
         return reverse_lazy('core:prestamo_detail', kwargs={'pk': self.object.pk})
 
 
+class PrestamoDeleteView(LoginRequiredMixin, DeleteView):
+    """Eliminar un préstamo y todas sus cuotas"""
+    model = Prestamo
+    success_url = reverse_lazy('core:prestamo_list')
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if not es_usuario_admin(self.request.user):
+            queryset = queryset.filter(cobrador=self.request.user)
+        return queryset
+    
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        prestamo_pk = self.object.pk
+        cliente_nombre = self.object.cliente.nombre_completo
+        # Eliminar cuotas asociadas y el préstamo
+        self.object.cuotas.all().delete()
+        self.object.delete()
+        messages.success(request, f'Préstamo #{prestamo_pk} de {cliente_nombre} eliminado exitosamente.')
+        return redirect('core:prestamo_list')
+
+
 class RenovarPrestamoView(LoginRequiredMixin, TemplateView):
     """Vista para renovar un préstamo"""
     template_name = 'core/prestamo_renovar.html'

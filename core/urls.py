@@ -28,6 +28,7 @@ urlpatterns = [
     path('prestamos/nuevo/', views.PrestamoCreateView.as_view(), name='prestamo_create'),
     path('prestamos/<int:pk>/', views.PrestamoDetailView.as_view(), name='prestamo_detail'),
     path('prestamos/<int:pk>/editar/', views.PrestamoUpdateView.as_view(), name='prestamo_update'),
+    path('prestamos/<int:pk>/eliminar/', views.PrestamoDeleteView.as_view(), name='prestamo_delete'),
     path('prestamos/<int:pk>/renovar/', views.RenovarPrestamoView.as_view(), name='prestamo_renovar'),
     
     # Cobros (AJAX)

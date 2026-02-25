@@ -153,6 +153,9 @@
                 <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
                     <i class="bi bi-arrow-repeat me-1"></i> Renovar
                 </a>
+                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modal-eliminar-prestamo" title="Eliminar préstamo">
+                    <i class="bi bi-trash"></i>
+                </button>
             </div>
             {% endif %}
         </div>
@@ -518,6 +521,46 @@
         </div>
     </div>
 </div>
+
+<!-- Modal para eliminar préstamo -->
+{% if prestamo.estado == 'AC' %}
+<div class="modal fade" id="modal-eliminar-prestamo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="background:var(--bg-card);color:var(--text-primary);">
+            <div class="modal-header border-0">
+                <h5 class="modal-title text-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Eliminar Préstamo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que deseas eliminar el <strong>Préstamo #{{ prestamo.pk }}</strong> de <strong>{{ prestamo.cliente.nombre_completo }}</strong>?</p>
+                <div class="alert alert-warning py-2 mb-2">
+                    <small>
+                        <i class="bi bi-info-circle me-1"></i>
+                        Capital: <strong>{{ prestamo.monto_solicitado|dinero }}</strong> &bull;
+                        Pagado: <strong>{{ prestamo.monto_pagado|dinero }}</strong> &bull;
+                        Cuotas: <strong>{{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }}</strong>
+                    </small>
+                </div>
+                <p class="text-danger mb-0">
+                    <i class="bi bi-exclamation-circle me-1"></i>
+                    Esta acción eliminará el préstamo y todas sus cuotas. No se puede deshacer.
+                </p>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <form method="post" action="{% url 'core:prestamo_delete' prestamo.pk %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>Eliminar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Modal para editar cobro existente -->
 <div class="modal fade" id="modal-editar-cobro" tabindex="-1">
