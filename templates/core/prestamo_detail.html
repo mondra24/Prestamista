@@ -209,6 +209,9 @@
                 {% if cuota.fecha_pago_real %}
                 <div class="fecha-pago"><i class="bi bi-check2"></i> {{ cuota.fecha_pago_real|date:"d/m" }}</div>
                 {% endif %}
+                {% if cuota.interes_mora_cobrado > 0 %}
+                <div class="text-warning" style="font-size:0.75rem;"><i class="bi bi-percent me-1"></i>Mora: {{ cuota.interes_mora_cobrado|dinero }}</div>
+                {% endif %}
                 {% if cuota.cobrado_por %}
                 <div class="text-muted" style="font-size:0.75rem;"><i class="bi bi-person-check"></i> {{ cuota.cobrado_por.get_full_name|default:cuota.cobrado_por.username }}</div>
                 {% endif %}
@@ -294,7 +297,7 @@
                         <button class="btn-editar-cobro" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border-color);background:var(--bg-card);color:var(--text-secondary);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.85rem;"
                                 data-cuota-id="{{ cuota.pk }}"
                                 data-monto="{{ cuota.monto_restante|numero_raw }}"
-                                data-mora="0"
+                                data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
                                 data-cliente="{{ prestamo.cliente.nombre_completo }}"
                                 data-dias-vencida="{% if cuota.esta_vencida %}{{ cuota.dias_vencida }}{% else %}0{% endif %}"
                                 data-fecha="{{ cuota.fecha_vencimiento|date:'Y-m-d' }}"
@@ -322,7 +325,7 @@
                 {% for h in cuota.historial_list %}
                 <div class="d-flex justify-content-between align-items-start border-bottom py-1">
                     <div>
-                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% endif %} me-1">
+                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% elif h.tipo_modificacion == 'RM' %}bg-warning{% elif h.tipo_modificacion == 'ED' %}bg-info{% endif %} me-1">
                             {{ h.get_tipo_modificacion_display }}
                         </span>
                         <span>{{ h.resumen }}</span>
@@ -882,8 +885,8 @@ async function confirmarPagoParcial() {
     const interesMoraStr = document.getElementById('pago-interes-mora').value;
     const interesMora = parseFloat(interesMoraStr.replace(/\./g, '').replace(',', '.')) || 0;
     
-    if (monto <= 0) {
-        showToast('El monto debe ser mayor a 0', 'danger');
+    if (monto <= 0 && interesMora <= 0) {
+        showToast('Debe ingresar un monto de cuota o de mora', 'danger');
         return;
     }
     

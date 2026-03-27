@@ -1127,7 +1127,6 @@ class Cuota(models.Model):
         monto_restante_anterior = self.monto_restante
         
         self.monto_pagado += monto
-        self.fecha_pago_real = fecha_local_hoy()
         
         # Registrar método de pago
         self.metodo_pago = metodo_pago
@@ -1154,8 +1153,12 @@ class Cuota(models.Model):
         if self.monto_pagado >= self.monto_cuota:
             self.estado = self.Estado.PAGADO
             self.monto_pagado = self.monto_cuota  # Evitar sobrepagos
-        else:
+            self.fecha_pago_real = fecha_local_hoy()
+        elif monto > 0:
+            # Solo marcar como parcial si efectivamente se pagó algo de cuota
             self.estado = self.Estado.PARCIAL
+            self.fecha_pago_real = fecha_local_hoy()
+        # Si monto == 0 (solo mora), no cambiar estado ni fecha_pago_real
         
         self.save()
         
@@ -1163,13 +1166,17 @@ class Cuota(models.Model):
         restante = monto_restante_anterior - monto
         
         # Manejar el monto restante según la acción elegida
-        # Incluir interés por mora en lo que se transfiere
+        # La mora se registra por separado, no se mezcla con el restante de cuota
         mora_pendiente = Decimal(str(interes_mora or 0))
-        monto_a_transferir = restante + mora_pendiente
+        monto_a_transferir = restante  # Solo el restante de cuota, sin mora
         
         # --- HISTORIAL: Registrar el pago en esta cuota ---
-        es_parcial = monto < monto_restante_anterior
-        tipo_pago = 'PP' if es_parcial else 'PA'
+        if monto == 0 and mora_pendiente > 0:
+            tipo_pago = 'RM'  # Solo registro de mora
+        elif monto < monto_restante_anterior:
+            tipo_pago = 'PP'  # Pago parcial
+        else:
+            tipo_pago = 'PA'  # Pago completo
         
         HistorialModificacionPago.objects.create(
             cuota=self,
@@ -1181,7 +1188,7 @@ class Cuota(models.Model):
             monto_restante_transferido=monto_a_transferir if monto_a_transferir > 0 and accion_restante != 'ignorar' else Decimal('0.00'),
             interes_mora=mora_pendiente,
             metodo_pago=metodo_pago,
-            notas=f'Acción restante: {accion_restante}' if es_parcial else ''
+            notas=f'Acción restante: {accion_restante}' if tipo_pago == 'PP' or mora_pendiente > 0 else ''
         )
         
         if monto_a_transferir > 0 and accion_restante == 'proxima':
@@ -1356,6 +1363,7 @@ class HistorialModificacionPago(models.Model):
         MONTO_RECIBIDO = 'MR', 'Monto Recibido de Otra Cuota'
         ANULACION = 'AN', 'Pago Anulado'
         EDICION = 'ED', 'Cobro Editado'
+        REGISTRO_MORA = 'RM', 'Registro de Mora'
     
     cuota = models.ForeignKey(
         'Cuota',
@@ -1452,20 +1460,24 @@ class HistorialModificacionPago(models.Model):
     @property
     def resumen(self):
         """Resumen legible de la modificación"""
+        mora_texto = f' (Mora: ${self.interes_mora:,.0f})' if self.interes_mora and self.interes_mora > 0 else ''
         if self.tipo_modificacion == 'PP':
-            return f'Pago parcial ${self.monto_pagado:,.0f} de ${self.monto_cuota_anterior:,.0f}. Restante: ${self.monto_restante_transferido:,.0f}'
+            restante_cuota = self.monto_cuota_anterior - self.monto_pagado
+            return f'Pago parcial ${self.monto_pagado:,.0f} de ${self.monto_cuota_anterior:,.0f}. Restante cuota: ${restante_cuota:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'PA':
-            return f'Pago completo ${self.monto_pagado:,.0f}'
+            return f'Pago completo ${self.monto_pagado:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'TR':
-            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota'
+            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota{mora_texto}'
         elif self.tipo_modificacion == 'CE':
-            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}'
+            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'MR':
             return f'Recibió ${self.monto_restante_transferido:,.0f} de cuota #{self.cuota_relacionada.numero_cuota if self.cuota_relacionada else "?"}'
         elif self.tipo_modificacion == 'AN':
-            return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}'
+            return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'ED':
-            return f'Cobro editado. Nuevo monto: ${self.monto_pagado:,.0f}'
+            return f'Cobro editado. Nuevo monto: ${self.monto_pagado:,.0f}{mora_texto}'
+        elif self.tipo_modificacion == 'RM':
+            return f'Mora registrada: ${self.interes_mora:,.0f}'
         return self.notas or str(self)
 
 

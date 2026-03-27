@@ -445,8 +445,9 @@ function confirmarPagoParcial() {
     const accionRestante = document.getElementById('pago-accion-restante')?.value || 'ignorar';
     const fechaEspecial = document.getElementById('pago-fecha-especial')?.value || null;
     
-    if (!monto || monto <= 0) {
-        showToast('Ingrese un monto válido', 'error');
+    const interesMora = parseFloat(document.getElementById('pago-interes-mora')?.value?.replace(/\./g, '').replace(',', '.')) || 0;
+    if (monto <= 0 && interesMora <= 0) {
+        showToast('Debe ingresar un monto de cuota o de mora', 'error');
         return;
     }
     
