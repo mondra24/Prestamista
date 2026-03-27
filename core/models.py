@@ -1166,9 +1166,8 @@ class Cuota(models.Model):
         restante = monto_restante_anterior - monto
         
         # Manejar el monto restante según la acción elegida
-        # La mora se registra por separado, no se mezcla con el restante de cuota
         mora_pendiente = Decimal(str(interes_mora or 0))
-        monto_a_transferir = restante  # Solo el restante de cuota, sin mora
+        monto_a_transferir = restante + mora_pendiente  # Capital restante + mora no pagada
         
         # --- HISTORIAL: Registrar el pago en esta cuota ---
         if monto == 0 and mora_pendiente > 0:
