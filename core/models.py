@@ -1512,11 +1512,21 @@ class HistorialModificacionPago(models.Model):
         elif self.tipo_modificacion == 'PA':
             return f'Pago completo ${self.monto_pagado:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'TR':
-            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota{mora_texto}'
+            if self.interes_mora and self.interes_mora > 0:
+                capital_transferido = self.monto_restante_transferido - self.interes_mora
+                return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota (Capital: ${capital_transferido:,.0f} + Mora: ${self.interes_mora:,.0f})'
+            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota'
         elif self.tipo_modificacion == 'CE':
-            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}{mora_texto}'
+            if self.interes_mora and self.interes_mora > 0:
+                capital_transferido = self.monto_restante_transferido - self.interes_mora
+                return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f} (Capital: ${capital_transferido:,.0f} + Mora: ${self.interes_mora:,.0f})'
+            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}'
         elif self.tipo_modificacion == 'MR':
-            return f'Recibió ${self.monto_restante_transferido:,.0f} de cuota #{self.cuota_relacionada.numero_cuota if self.cuota_relacionada else "?"}'
+            origen = f'cuota #{self.cuota_relacionada.numero_cuota}' if self.cuota_relacionada else '?'
+            if self.interes_mora and self.interes_mora > 0:
+                capital_recibido = self.monto_restante_transferido - self.interes_mora
+                return f'Recibió ${self.monto_restante_transferido:,.0f} de {origen} (Capital: ${capital_recibido:,.0f} + Mora: ${self.interes_mora:,.0f})'
+            return f'Recibió ${self.monto_restante_transferido:,.0f} de {origen}'
         elif self.tipo_modificacion == 'AN':
             return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}{mora_texto}'
         elif self.tipo_modificacion == 'ED':

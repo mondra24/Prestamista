@@ -1074,7 +1074,7 @@ function enviarResumenCredito(cuotaDestacada) {
             linea += `\n   ⚠️ Mora pendiente: $${fmtMoney(c.moraPendiente)}`;
         }
 
-        // Agregar historial relevante (transferencias, cuotas especiales, anulaciones, ediciones)
+        // Agregar historial relevante para el cliente (sin anulaciones ni ediciones internas)
         if (c.historial && c.historial.length > 0) {
             c.historial.forEach(h => {
                 if (h.tipo === 'TR') {
@@ -1083,12 +1083,6 @@ function enviarResumenCredito(cuotaDestacada) {
                     linea += `\n   ↙️ ${h.resumen}`;
                 } else if (h.tipo === 'CE') {
                     linea += `\n   📌 ${h.resumen}`;
-                } else if (h.tipo === 'AN') {
-                    linea += `\n   ❌ ${h.resumen}`;
-                } else if (h.tipo === 'ED') {
-                    linea += `\n   ✏️ ${h.resumen}`;
-                } else if (h.tipo === 'RM') {
-                    linea += `\n   📝 ${h.resumen}`;
                 }
             });
         }
