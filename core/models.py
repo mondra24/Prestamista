@@ -1301,6 +1301,7 @@ class Cuota(models.Model):
         """
         Cancela/revierte el pago de esta cuota.
         Devuelve la cuota al estado pendiente con monto_pagado = 0.
+        También revierte transferencias a próxima cuota y elimina cuotas especiales.
         """
         from core.models import HistorialModificacionPago
         
@@ -1309,6 +1310,51 @@ class Cuota(models.Model):
         
         monto_pagado_anterior = self.monto_pagado
         estado_anterior = self.estado
+        notas_anulacion = f'Pago anulado. Estado anterior: {self.get_estado_display()}. Monto revertido: ${monto_pagado_anterior:,.0f}'
+        
+        # --- REVERTIR TRANSFERENCIAS A PRÓXIMA CUOTA ---
+        transferencias = HistorialModificacionPago.objects.filter(
+            cuota=self,
+            tipo_modificacion='TR',
+            cuota_relacionada__isnull=False
+        ).select_related('cuota_relacionada')
+        
+        for tr in transferencias:
+            cuota_destino = tr.cuota_relacionada
+            monto_transferido = tr.monto_restante_transferido
+            if monto_transferido > 0 and cuota_destino:
+                monto_destino_anterior = cuota_destino.monto_cuota
+                cuota_destino.monto_cuota = max(Decimal('0.00'), cuota_destino.monto_cuota - monto_transferido)
+                cuota_destino.save()
+                notas_anulacion += f'. Revertida transferencia de ${monto_transferido:,.0f} a cuota #{cuota_destino.numero_cuota}'
+                
+                # Registrar en historial de la cuota destino
+                HistorialModificacionPago.objects.create(
+                    cuota=cuota_destino,
+                    cuota_relacionada=self,
+                    usuario=usuario,
+                    tipo_modificacion='AN',
+                    monto_cuota_anterior=monto_destino_anterior,
+                    monto_cuota_nuevo=cuota_destino.monto_cuota,
+                    monto_pagado=Decimal('0.00'),
+                    monto_restante_transferido=monto_transferido,
+                    interes_mora=Decimal('0.00'),
+                    metodo_pago='',
+                    notas=f'Revertida recepción de ${monto_transferido:,.0f} de cuota #{self.numero_cuota} (pago anulado)'
+                )
+        
+        # --- REVERTIR CUOTAS ESPECIALES ---
+        cuotas_especiales = HistorialModificacionPago.objects.filter(
+            cuota=self,
+            tipo_modificacion='CE',
+            cuota_relacionada__isnull=False
+        ).select_related('cuota_relacionada')
+        
+        for ce in cuotas_especiales:
+            cuota_esp = ce.cuota_relacionada
+            if cuota_esp and cuota_esp.estado == 'PE' and cuota_esp.monto_pagado == 0:
+                notas_anulacion += f'. Eliminada cuota especial #{cuota_esp.numero_cuota}'
+                cuota_esp.delete()
         
         # Registrar en historial antes de revertir
         HistorialModificacionPago.objects.create(
@@ -1321,7 +1367,7 @@ class Cuota(models.Model):
             monto_restante_transferido=Decimal('0.00'),
             interes_mora=self.interes_mora_cobrado,
             metodo_pago=self.metodo_pago or '',
-            notas=f'Pago anulado. Estado anterior: {self.get_estado_display()}. Monto revertido: ${monto_pagado_anterior:,.0f}'
+            notas=notas_anulacion
         )
         
         # Revertir la cuota
