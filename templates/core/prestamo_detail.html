@@ -675,7 +675,16 @@ const cuotasData = [
         estado: "{{ cuota.estado }}",
         monto: {{ cuota.monto_cuota|numero_raw }},
         pagado: {{ cuota.monto_pagado|default:0|numero_raw }},
-        restante: {{ cuota.monto_restante|default:0|numero_raw }}
+        restante: {{ cuota.monto_restante|default:0|numero_raw }},
+        moraCobrada: {{ cuota.interes_mora_cobrado|default:0|numero_raw }},
+        moraPendiente: {{ cuota.interes_mora_pendiente|default:0|numero_raw }},
+        fechaPagoReal: "{{ cuota.fecha_pago_real|date:'d/m/Y'|default:'' }}",
+        historial: [{% for h in cuota.historial_list %}{
+            tipo: "{{ h.tipo_modificacion }}",
+            tipoDisplay: "{{ h.get_tipo_modificacion_display }}",
+            resumen: "{{ h.resumen|escapejs }}",
+            fecha: "{{ h.fecha_modificacion|date:'d/m/Y H:i' }}"
+        }{% if not forloop.last %},{% endif %}{% endfor %}]
     }{% if not forloop.last %},{% endif %}
     {% endfor %}
 ];
@@ -1048,7 +1057,42 @@ function enviarResumenCredito(cuotaDestacada) {
         if (c.estado === 'PA') { icono = '✅'; estadoTxt = 'Pagada'; }
         else if (c.estado === 'PC') { icono = '🔶'; estadoTxt = `Parcial (resta $${fmtMoney(c.restante)})`; }
 
-        const linea = `Cuota ${String(c.numero).padStart(2,'0')} - ${c.fecha} - ${icono} ${estadoTxt} - $${fmtMoney(c.monto)}`;
+        let linea = `Cuota ${String(c.numero).padStart(2,'0')} - ${c.fecha} - ${icono} ${estadoTxt} - $${fmtMoney(c.monto)}`;
+
+        // Agregar fecha real de pago si existe
+        if (c.fechaPagoReal) {
+            linea += ` (pagó ${c.fechaPagoReal})`;
+        }
+
+        // Agregar mora cobrada
+        if (c.moraCobrada > 0) {
+            linea += `\n   💰 Mora cobrada: $${fmtMoney(c.moraCobrada)}`;
+        }
+
+        // Agregar mora pendiente para cuotas no pagadas
+        if (c.moraPendiente > 0 && c.estado !== 'PA') {
+            linea += `\n   ⚠️ Mora pendiente: $${fmtMoney(c.moraPendiente)}`;
+        }
+
+        // Agregar historial relevante (transferencias, cuotas especiales, anulaciones, ediciones)
+        if (c.historial && c.historial.length > 0) {
+            c.historial.forEach(h => {
+                if (h.tipo === 'TR') {
+                    linea += `\n   ↗️ ${h.resumen}`;
+                } else if (h.tipo === 'MR') {
+                    linea += `\n   ↙️ ${h.resumen}`;
+                } else if (h.tipo === 'CE') {
+                    linea += `\n   📌 ${h.resumen}`;
+                } else if (h.tipo === 'AN') {
+                    linea += `\n   ❌ ${h.resumen}`;
+                } else if (h.tipo === 'ED') {
+                    linea += `\n   ✏️ ${h.resumen}`;
+                } else if (h.tipo === 'RM') {
+                    linea += `\n   📝 ${h.resumen}`;
+                }
+            });
+        }
+
         if (cuotaDestacada > 0 && c.numero === cuotaDestacada) {
             listaCuotas += `\n*▶ ${linea} ◀*\n`;
         } else {
