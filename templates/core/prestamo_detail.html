@@ -678,6 +678,7 @@ const cuotasData = [
         restante: {{ cuota.monto_restante|default:0|numero_raw }},
         moraCobrada: {{ cuota.interes_mora_cobrado|default:0|numero_raw }},
         moraPendiente: {{ cuota.interes_mora_pendiente|default:0|numero_raw }},
+        vencida: {{ cuota.esta_vencida|yesno:"true,false" }},
         fechaPagoReal: "{{ cuota.fecha_pago_real|date:'d/m/Y'|default:'' }}",
         historial: [{% for h in cuota.historial_list %}{
             tipo: "{{ h.tipo_modificacion }}",
@@ -1032,69 +1033,115 @@ document.addEventListener('click', function(e) {
 // ============ ENVIAR RESUMEN DE CRÉDITO POR WHATSAPP ============
 function enviarResumenCredito(cuotaDestacada) {
     const d = prestamoData;
-    const montoCuota = cuotasData.length > 0 ? cuotasData[0].monto : 0;
 
+    // Valor de cuota base (buscar cuota 1 sin modificaciones, o la primera disponible)
+    const cuotaBase = cuotasData.find(c => c.numero === 1) || cuotasData[0];
+    const montoCuota = cuotaBase ? cuotaBase.monto : 0;
+
+    // ── Resumen del crédito ──
     let detalle = '';
-    detalle += `\`CAPITAL:         $ ${fmtMoney(d.capital)}\`\n`;
-    detalle += `\`INTERÉS:         ${d.tasa}%\`\n`;
-    detalle += `\`TOTAL A PAGAR:   $ ${fmtMoney(d.total)}\`\n`;
-    detalle += `\`CUOTAS:          ${d.totalCuotas} (${d.frecuencia})\`\n`;
-    detalle += `\`VALOR CUOTA:     $ ${fmtMoney(montoCuota)}\`\n`;
-    detalle += `\`INICIO:          ${d.fechaInicio}\`\n`;
-    if (d.fechaFin) {
-        detalle += `\`VENCIMIENTO:     ${d.fechaFin}\`\n`;
-    }
+    detalle += `Capital:         $${fmtMoney(d.capital)}\n`;
+    detalle += `Interés:         ${d.tasa}%\n`;
+    detalle += `Total a pagar:   $${fmtMoney(d.total)}\n`;
+    detalle += `Cuotas:          ${d.totalCuotas} (${d.frecuencia})\n`;
+    detalle += `Valor cuota:     $${fmtMoney(montoCuota)}\n`;
+    detalle += `Inicio:          ${d.fechaInicio}\n`;
+    if (d.fechaFin) detalle += `Vencimiento:     ${d.fechaFin}\n`;
     if (d.pagadas > 0) {
-        detalle += `\n\`CUOTAS PAGADAS:  ${d.pagadas} / ${d.totalCuotas}\`\n`;
-        detalle += `\`SALDO PENDIENTE: $ ${fmtMoney(d.pendiente)}\`\n`;
+        detalle += `\nPagadas:         ${d.pagadas} / ${d.totalCuotas}\n`;
+        detalle += `Saldo pendiente: $${fmtMoney(d.pendiente)}\n`;
     }
 
-    // Detalle de cada cuota
-    let listaCuotas = '\n📋 *DETALLE DE CUOTAS:*\n';
-    cuotasData.forEach(c => {
-        let icono = '⏳';
-        let estadoTxt = 'Pendiente';
-        if (c.estado === 'PA') { icono = '✅'; estadoTxt = 'Pagada'; }
-        else if (c.estado === 'PC') { icono = '🔶'; estadoTxt = `Parcial (resta $${fmtMoney(c.restante)})`; }
+    // ── Clasificar cuotas ──
+    const pagadas    = cuotasData.filter(c => c.estado === 'PA');
+    const vencidas   = cuotasData.filter(c => c.vencida && c.estado !== 'PA');
+    const pendientes = cuotasData.filter(c => !c.vencida && c.estado !== 'PA');
 
-        let linea = `Cuota ${String(c.numero).padStart(2,'0')} - ${c.fecha} - ${icono} ${estadoTxt} - $${fmtMoney(c.monto)}`;
-
-        // Agregar fecha real de pago si existe
-        if (c.fechaPagoReal) {
-            linea += ` (pagó ${c.fechaPagoReal})`;
-        }
-
-        // Agregar mora cobrada
-        if (c.moraCobrada > 0) {
-            linea += `\n   💰 Mora cobrada: $${fmtMoney(c.moraCobrada)}`;
-        }
-
-        // Agregar mora pendiente para cuotas no pagadas
-        if (c.moraPendiente > 0 && c.estado !== 'PA') {
-            linea += `\n   ⚠️ Mora pendiente: $${fmtMoney(c.moraPendiente)}`;
-        }
-
-        // Agregar historial relevante para el cliente (sin anulaciones ni ediciones internas)
+    // Helper: construye las sub-líneas de mora e historial de una cuota
+    function subLineasCuota(c) {
+        let sub = '';
+        if (c.moraCobrada > 0)
+            sub += `\n   💰 Mora cobrada: $${fmtMoney(c.moraCobrada)}`;
+        if (c.moraPendiente > 0 && c.estado !== 'PA')
+            sub += `\n   ⚠️ Mora pendiente: $${fmtMoney(c.moraPendiente)}`;
         if (c.historial && c.historial.length > 0) {
             c.historial.forEach(h => {
-                if (h.tipo === 'TR') {
-                    linea += `\n   ↗️ ${h.resumen}`;
-                } else if (h.tipo === 'MR') {
-                    linea += `\n   ↙️ ${h.resumen}`;
-                } else if (h.tipo === 'CE') {
-                    linea += `\n   📌 ${h.resumen}`;
-                }
+                if (h.tipo === 'TR') sub += `\n   ↗️ ${h.resumen}`;
+                else if (h.tipo === 'MR') sub += `\n   ↙️ ${h.resumen}`;
+                else if (h.tipo === 'CE') sub += `\n   📌 ${h.resumen}`;
             });
         }
+        return sub;
+    }
 
-        if (cuotaDestacada > 0 && c.numero === cuotaDestacada) {
-            listaCuotas += `\n*▶ ${linea} ◀*\n`;
-        } else {
-            listaCuotas += `${linea}\n`;
+    // Helper: agrega una cuota a la lista (con o sin destacado)
+    function agregarCuota(lista, lineaPrincipal, sub, numero) {
+        if (cuotaDestacada > 0 && numero === cuotaDestacada) {
+            // Bold solo la línea principal (WhatsApp no soporta bold multi-línea)
+            return lista + `\n*▶ ${lineaPrincipal} ◀*${sub}\n`;
         }
-    });
+        return lista + `${lineaPrincipal}${sub}\n`;
+    }
 
-    const mensaje = `━━━━━━━━━━━━━━━━━━━━━━\n\n*CLIENTE:* ${d.cliente.toUpperCase()}\n*FECHA:* ${new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}\n\n📊 *RESUMEN DE CRÉDITO:*\n--------------------------------------\n${detalle}--------------------------------------\n${listaCuotas}\n⚠️ *Aclaración:* La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota, y del 100% si la cuota se acumula.\n\n⚠️ *Aclaración:* Es responsabilidad del cliente realizar los pagos en tiempo y forma y enviarnos los comprobantes correspondientes los días de pago.\n\n*CONTACTO:*\n📞 11 3271-6516\n\n_¡Gracias por confiar en nosotros!_\n━━━━━━━━━━━━━━━━━━━━━━`;
+    let listaCuotas = '\n📋 *DETALLE DE CUOTAS:*\n';
+
+    // ── Cuotas pagadas: mostrar comprimidas ──
+    if (pagadas.length === 1) {
+        const c = pagadas[0];
+        let linea = `✅ Cuota 01 - ${c.fecha} - Pagada`;
+        if (c.fechaPagoReal) linea += ` el ${c.fechaPagoReal}`;
+        listaCuotas = agregarCuota(listaCuotas, linea, subLineasCuota(c), c.numero);
+    } else if (pagadas.length > 1) {
+        const ult = pagadas[pagadas.length - 1];
+        let linea = `✅ Cuotas 01 a ${String(ult.numero).padStart(2,'0')} - Pagadas`;
+        if (ult.fechaPagoReal) linea += ` (últ. ${ult.fechaPagoReal})`;
+        listaCuotas += linea + '\n';
+    }
+
+    // ── Cuotas vencidas: mostrar todas con detalle ──
+    if (vencidas.length > 0) {
+        listaCuotas += '\n';
+        vencidas.forEach(c => {
+            let linea = `❌ Cuota ${String(c.numero).padStart(2,'0')} - ${c.fecha} - VENCIDA - $${fmtMoney(c.monto)}`;
+            if (c.estado === 'PC') linea += ` (resta $${fmtMoney(c.restante)})`;
+            listaCuotas = agregarCuota(listaCuotas, linea, subLineasCuota(c), c.numero);
+        });
+    }
+
+    // ── Cuotas pendientes próximas: mostrar las primeras 5 + resumir el resto ──
+    if (pendientes.length > 0) {
+        listaCuotas += '\n';
+        const MAX = 5;
+        // Siempre incluir la cuota destacada aunque esté más allá del límite
+        const amostrar = pendientes.filter((c, i) => i < MAX || c.numero === cuotaDestacada);
+        const resumir  = pendientes.filter((c, i) => i >= MAX && c.numero !== cuotaDestacada);
+
+        amostrar.forEach(c => {
+            let linea = `⏳ Cuota ${String(c.numero).padStart(2,'0')} - ${c.fecha} - $${fmtMoney(c.monto)}`;
+            listaCuotas = agregarCuota(listaCuotas, linea, subLineasCuota(c), c.numero);
+        });
+
+        if (resumir.length > 0) {
+            const ultima = resumir[resumir.length - 1];
+            listaCuotas += `   ... y ${resumir.length} cuota${resumir.length > 1 ? 's' : ''} más hasta ${ultima.fecha}\n`;
+        }
+    }
+
+    const mensaje =
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `*CLIENTE:* ${d.cliente.toUpperCase()}\n` +
+        `*FECHA:* ${new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })}\n\n` +
+        `📊 *RESUMEN DE CRÉDITO:*\n` +
+        `--------------------------------------\n` +
+        `${detalle}` +
+        `--------------------------------------\n` +
+        `${listaCuotas}\n` +
+        `⚠️ *Aclaración:* La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota, y del 100% si la cuota se acumula.\n\n` +
+        `⚠️ *Aclaración:* Es responsabilidad del cliente realizar los pagos en tiempo y forma y enviarnos los comprobantes correspondientes los días de pago.\n\n` +
+        `*CONTACTO:*\n` +
+        `📞 11 3271-6516\n\n` +
+        `_¡Gracias por confiar en nosotros!_\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━`;
 
     let tel = d.telefono.replace(/[^0-9]/g, '');
     if (tel.startsWith('0')) tel = tel.substring(1);

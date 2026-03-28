@@ -1088,11 +1088,16 @@ class Cuota(models.Model):
         """Calcula el interés por mora pendiente de esta cuota"""
         if not self.esta_vencida:
             return Decimal('0.00')
-        
+
+        # Si ya se cobró mora (cuota acumulada), el pendiente es hasta completar el 100% del valor
+        if self.interes_mora_cobrado > 0:
+            pendiente = self.monto_cuota - self.interes_mora_cobrado
+            return max(Decimal('0.00'), pendiente)
+
         config = ConfiguracionMora.obtener_config_activa()
         if not config:
             return Decimal('0.00')
-        
+
         return config.calcular_interes(self.monto_restante, self.dias_vencida)
     
     @property
@@ -1505,34 +1510,38 @@ class HistorialModificacionPago(models.Model):
     @property
     def resumen(self):
         """Resumen legible de la modificación"""
-        mora_texto = f' (Mora: ${self.interes_mora:,.0f})' if self.interes_mora and self.interes_mora > 0 else ''
+        def m(val):
+            """Formato argentino: punto como separador de miles"""
+            return f"${int(val):,}".replace(',', '.')
+
+        mora_texto = f' (Mora: {m(self.interes_mora)})' if self.interes_mora and self.interes_mora > 0 else ''
         if self.tipo_modificacion == 'PP':
             restante_cuota = self.monto_cuota_anterior - self.monto_pagado
-            return f'Pago parcial ${self.monto_pagado:,.0f} de ${self.monto_cuota_anterior:,.0f}. Restante cuota: ${restante_cuota:,.0f}{mora_texto}'
+            return f'Pago parcial {m(self.monto_pagado)} de {m(self.monto_cuota_anterior)}. Restante: {m(restante_cuota)}{mora_texto}'
         elif self.tipo_modificacion == 'PA':
-            return f'Pago completo ${self.monto_pagado:,.0f}{mora_texto}'
+            return f'Pago completo {m(self.monto_pagado)}{mora_texto}'
         elif self.tipo_modificacion == 'TR':
             if self.interes_mora and self.interes_mora > 0:
                 capital_transferido = self.monto_restante_transferido - self.interes_mora
-                return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota (Capital: ${capital_transferido:,.0f} + Mora: ${self.interes_mora:,.0f})'
-            return f'Se transfirió ${self.monto_restante_transferido:,.0f} a próxima cuota'
+                return f'Transferido {m(self.monto_restante_transferido)} a próxima cuota (Capital: {m(capital_transferido)} + Mora: {m(self.interes_mora)})'
+            return f'Transferido {m(self.monto_restante_transferido)} a próxima cuota'
         elif self.tipo_modificacion == 'CE':
             if self.interes_mora and self.interes_mora > 0:
                 capital_transferido = self.monto_restante_transferido - self.interes_mora
-                return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f} (Capital: ${capital_transferido:,.0f} + Mora: ${self.interes_mora:,.0f})'
-            return f'Se creó cuota especial por ${self.monto_restante_transferido:,.0f}'
+                return f'Cuota especial por {m(self.monto_restante_transferido)} (Capital: {m(capital_transferido)} + Mora: {m(self.interes_mora)})'
+            return f'Cuota especial por {m(self.monto_restante_transferido)}'
         elif self.tipo_modificacion == 'MR':
             origen = f'cuota #{self.cuota_relacionada.numero_cuota}' if self.cuota_relacionada else '?'
             if self.interes_mora and self.interes_mora > 0:
                 capital_recibido = self.monto_restante_transferido - self.interes_mora
-                return f'Recibió ${self.monto_restante_transferido:,.0f} de {origen} (Capital: ${capital_recibido:,.0f} + Mora: ${self.interes_mora:,.0f})'
-            return f'Recibió ${self.monto_restante_transferido:,.0f} de {origen}'
+                return f'Recibido {m(self.monto_restante_transferido)} de {origen} (Capital: {m(capital_recibido)} + Mora: {m(self.interes_mora)})'
+            return f'Recibido {m(self.monto_restante_transferido)} de {origen}'
         elif self.tipo_modificacion == 'AN':
-            return f'Pago anulado. Se revirtieron ${self.monto_pagado:,.0f}{mora_texto}'
+            return f'Pago anulado. Se revirtieron {m(self.monto_pagado)}{mora_texto}'
         elif self.tipo_modificacion == 'ED':
-            return f'Cobro editado. Nuevo monto: ${self.monto_pagado:,.0f}{mora_texto}'
+            return f'Cobro editado. Nuevo monto: {m(self.monto_pagado)}{mora_texto}'
         elif self.tipo_modificacion == 'RM':
-            return f'Mora registrada: ${self.interes_mora:,.0f}'
+            return f'Mora registrada: {m(self.interes_mora)}'
         return self.notas or str(self)
 
 
