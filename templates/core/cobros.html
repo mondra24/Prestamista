@@ -133,13 +133,15 @@
                                     data-cuota-id="{{ cuota.pk }}"
                                     data-monto="{{ cuota.monto_restante|numero_raw }}"
                                     data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
+                                    data-mora-cobrada="{{ cuota.interes_mora_cobrado|numero_raw }}"
+                                    data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
                                     data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                                     data-dias-vencida="{{ cuota.dias_vencida }}"
                                     data-fecha="{{ cuota.fecha_vencimiento|date:'Y-m-d' }}"
                                     title="Cobro parcial">
                                 <i class="bi bi-pencil-square"></i>
                             </button>
-                            <button type="button" class="action-btn-mini primary btn-cobrar" 
+                            <button type="button" class="action-btn-mini primary btn-cobrar"
                                     data-cuota-id="{{ cuota.pk }}"
                                     data-monto="{{ cuota.monto_restante|numero_raw }}"
                                     data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
@@ -154,7 +156,7 @@
             </div>
         </div>
         {% endif %}
-        
+
         <!-- Cobros del día -->
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -224,6 +226,8 @@
                                         data-cuota-id="{{ cuota.pk }}"
                                         data-monto="{{ cuota.monto_restante|numero_raw }}"
                                         data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
+                                        data-mora-cobrada="{{ cuota.interes_mora_cobrado|numero_raw }}"
+                                        data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
                                         data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                                         data-dias-vencida="{% if cuota.esta_vencida %}{{ cuota.dias_vencida }}{% else %}0{% endif %}"
                                         data-fecha="{{ cuota.fecha_vencimiento|date:'Y-m-d' }}"
@@ -441,7 +445,9 @@
             <div class="modal-body">
                 <input type="hidden" id="pago-cuota-id">
                 <input type="hidden" id="pago-monto-max">
-                
+                <input type="hidden" id="pago-mora-cobrada" value="0">
+                <input type="hidden" id="pago-monto-cuota-base" value="0">
+
                 <!-- Info del cliente -->
                 <div class="text-center mb-3 pb-2 border-bottom">
                     <h6 class="mb-1" id="pago-cliente-nombre">Cliente</h6>
@@ -462,7 +468,23 @@
                            oninput="formatearInputMonto(this); calcularResumenPago(); calcularInteresDesdeporcentaje(); validarMontosMixtos()">
                 </div>
                 
-                <!-- Calculador de Interés -->
+                <!-- Recargo por mora (regla 50% / 100%) -->
+                <div id="mora-rapida-container" class="mb-3" style="display: none;">
+                    <label class="form-label fw-semibold small mb-1">
+                        <i class="bi bi-percent me-1"></i>Recargo por mora:
+                    </label>
+                    <div class="d-flex gap-2 mb-1">
+                        <button type="button" id="btn-mora-50" class="btn btn-warning btn-sm flex-fill fw-bold" onclick="aplicarMora50()">
+                            50% — <span id="label-mora-50">$0</span>
+                        </button>
+                        <button type="button" id="btn-mora-100" class="btn btn-danger btn-sm flex-fill fw-bold" onclick="aplicarMora100()">
+                            Completar 100% — <span id="label-mora-100">$0</span>
+                        </button>
+                    </div>
+                    <small class="text-muted" id="mora-rapida-hint"></small>
+                </div>
+
+                <!-- Calculador de Interés (manual) -->
                 <div class="card bg-light mb-3">
                     <div class="card-body py-2">
                         <label class="form-label fw-semibold small mb-2">
@@ -682,13 +704,15 @@ let diasVencidaActual = 0;
 let montoMaxActual = 0;
 let fechaCuotaActual = '';
 
-function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0, fechaCuota = '') {
+function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0, fechaCuota = '', moraCobrada = 0, montoCuotaBase = 0) {
     diasVencidaActual = diasVencida;
     montoMaxActual = monto;
     fechaCuotaActual = fechaCuota;
-    
+
     document.getElementById('pago-cuota-id').value = cuotaId;
     document.getElementById('pago-monto-max').value = monto;
+    document.getElementById('pago-mora-cobrada').value = moraCobrada;
+    document.getElementById('pago-monto-cuota-base').value = montoCuotaBase || monto;
     document.getElementById('pago-cliente-nombre').textContent = cliente;
     document.getElementById('pago-monto-max-label').textContent = formatearMoneda(monto);
     document.getElementById('pago-monto').value = formatearNumero(monto);
@@ -698,7 +722,7 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     document.getElementById('pago-monto-transferencia').value = '';
     document.getElementById('pago-referencia').value = '';
     document.getElementById('pago-interes-mora').value = '0';
-    
+
     // Mostrar fecha de la cuota
     if (fechaCuota) {
         const fecha = new Date(fechaCuota + 'T00:00:00');
@@ -707,12 +731,12 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     } else {
         document.getElementById('pago-fecha-cuota').textContent = 'Hoy';
     }
-    
-    // Configurar calculador de interés
+
+    // Configurar calculador de interés diario
     document.getElementById('pago-dias-mora-input').value = diasVencida;
     calcularInteresDesdeporcentaje();
-    
-    // Mostrar días vencidos si aplica
+
+    // Mostrar días vencidos
     const infoMoraContainer = document.getElementById('info-mora-container');
     if (diasVencida > 0) {
         infoMoraContainer.style.display = 'block';
@@ -720,13 +744,63 @@ function showPagoParcialModal(cuotaId, monto, cliente, mora = 0, diasVencida = 0
     } else {
         infoMoraContainer.style.display = 'none';
     }
-    
+
+    // Configurar botones de recargo rápido (50%/100%)
+    actualizarMoraRapida(moraCobrada, montoCuotaBase || monto, diasVencida);
+
     toggleFechaEspecial();
     toggleMetodoPago();
     calcularResumenPago();
-    
+
     const modal = new bootstrap.Modal(document.getElementById('modal-pago-parcial'));
     modal.show();
+}
+
+function actualizarMoraRapida(moraCobrada, montoCuotaBase, diasVencida) {
+    const container = document.getElementById('mora-rapida-container');
+    if (diasVencida <= 0 || montoCuotaBase <= 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    const mora50 = Math.round(montoCuotaBase * 0.5);
+    const mora100Restante = Math.max(0, Math.round(montoCuotaBase - moraCobrada));
+    const btn50  = document.getElementById('btn-mora-50');
+    const btn100 = document.getElementById('btn-mora-100');
+    const hint   = document.getElementById('mora-rapida-hint');
+
+    document.getElementById('label-mora-50').textContent  = formatearMoneda(mora50);
+    document.getElementById('label-mora-100').textContent = formatearMoneda(mora100Restante);
+
+    if (moraCobrada <= 0) {
+        // Sin mora previa: ofrecer 50%
+        btn50.style.display  = '';
+        btn100.style.display = 'none';
+        hint.textContent = 'Primera mora: 50% del valor de la cuota.';
+    } else if (mora100Restante > 0) {
+        // Ya cobrada mora parcial: completar al 100%
+        btn50.style.display  = 'none';
+        btn100.style.display = '';
+        hint.textContent = `Mora ya cobrada: ${formatearMoneda(moraCobrada)}. Completar al 100%:`;
+    } else {
+        // Mora ya al 100%, no mostrar
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'block';
+}
+
+function aplicarMora50() {
+    const base = parseFloat(document.getElementById('pago-monto-cuota-base').value) || 0;
+    document.getElementById('pago-interes-mora').value = formatearNumero(Math.round(base * 0.5));
+    calcularResumenPago();
+}
+
+function aplicarMora100() {
+    const base        = parseFloat(document.getElementById('pago-monto-cuota-base').value) || 0;
+    const moraCobrada = parseFloat(document.getElementById('pago-mora-cobrada').value) || 0;
+    document.getElementById('pago-interes-mora').value = formatearNumero(Math.max(0, Math.round(base - moraCobrada)));
+    calcularResumenPago();
 }
 
 // Calcula el interés en base al % y días ingresados - sobre el RESTANTE
@@ -1035,7 +1109,9 @@ document.addEventListener('click', function(e) {
         const mora = parseFloat(btn.dataset.mora || 0);
         const diasVencida = parseInt(btn.dataset.diasVencida || 0);
         const fecha = btn.dataset.fecha || '';
-        showPagoParcialModal(cuotaId, monto, cliente, mora, diasVencida, fecha);
+        const moraCobrada = parseFloat(btn.dataset.moraCobrada || 0);
+        const montoCuota = parseFloat(btn.dataset.montoCuota || 0);
+        showPagoParcialModal(cuotaId, monto, cliente, mora, diasVencida, fecha, moraCobrada, montoCuota);
     }
 });
 
