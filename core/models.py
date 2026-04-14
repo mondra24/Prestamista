@@ -1,7 +1,7 @@
 """
 Modelos del Sistema de Gestión de Préstamos
 """
-from django.db import models
+from django.db import models, transaction
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -9,6 +9,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from datetime import timedelta
 from decimal import Decimal
+import uuid
 
 
 def fecha_local_hoy():
@@ -360,7 +361,8 @@ class Cliente(models.Model):
         max_length=2,
         choices=Estado.choices,
         default=Estado.ACTIVO,
-        verbose_name='Estado'
+        verbose_name='Estado',
+        db_index=True
     )
     # Nuevos campos
     tipo_comercio = models.CharField(
@@ -411,7 +413,8 @@ class Cliente(models.Model):
         verbose_name='Usuario/Cobrador',
         help_text='Usuario que gestiona este cliente',
         null=True,
-        blank=True
+        blank=True,
+        db_index=True
     )
     
     class Meta:
@@ -654,7 +657,8 @@ class Prestamo(models.Model):
         max_length=2,
         choices=Estado.choices,
         default=Estado.ACTIVO,
-        verbose_name='Estado'
+        verbose_name='Estado',
+        db_index=True
     )
     es_renovacion = models.BooleanField(
         default=False,
@@ -676,11 +680,23 @@ class Prestamo(models.Model):
         blank=True,
         related_name='prestamos_creados',
         verbose_name='Cobrador',
-        help_text='Usuario/cobrador que creó y gestiona este préstamo'
+        help_text='Usuario/cobrador que creó y gestiona este préstamo',
+        db_index=True
     )
     fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
     notas = models.TextField(blank=True, null=True, verbose_name='Notas')
-    
+    token_publico = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        verbose_name='Token Público'
+    )
+    token_activo = models.BooleanField(
+        default=True,
+        verbose_name='Link Público Activo'
+    )
+
     class Meta:
         verbose_name = 'Préstamo'
         verbose_name_plural = 'Préstamos'
@@ -917,6 +933,7 @@ class Prestamo(models.Model):
         return self.monto_pendiente
     
     @classmethod
+    @transaction.atomic
     def renovar_prestamo(cls, prestamo_anterior, nuevo_monto, nueva_tasa, nuevas_cuotas, nueva_frecuencia, cobrador=None, fecha_finalizacion=None):
         """
         Renueva un préstamo existente.
@@ -994,12 +1011,13 @@ class Cuota(models.Model):
         default=Decimal('0.00'),
         verbose_name='Monto Pagado'
     )
-    fecha_vencimiento = models.DateField(verbose_name='Fecha de Vencimiento')
+    fecha_vencimiento = models.DateField(verbose_name='Fecha de Vencimiento', db_index=True)
     estado = models.CharField(
         max_length=2,
         choices=Estado.choices,
         default=Estado.PENDIENTE,
-        verbose_name='Estado'
+        verbose_name='Estado',
+        db_index=True
     )
     fecha_pago_real = models.DateField(
         null=True,
@@ -1105,25 +1123,26 @@ class Cuota(models.Model):
         """Monto total a pagar incluyendo interés por mora"""
         return self.monto_restante + self.interes_mora_pendiente
     
+    @transaction.atomic
     def registrar_pago(self, monto=None, accion_restante='ignorar', fecha_especial=None,
                        metodo_pago='EF', monto_efectivo=None, monto_transferencia=None,
                        referencia_transferencia=None, interes_mora=None, cobrador=None):
         """
         Registra un pago en la cuota.
         Si no se especifica monto, se paga el total.
-        
+
         accion_restante puede ser:
         - 'ignorar': El monto restante queda pendiente en esta cuota
         - 'proxima': Suma el restante a la próxima cuota
         - 'especial': Crea una cuota especial en fecha_especial con el monto restante
-        
+
         metodo_pago puede ser:
         - 'EF': Efectivo
         - 'TR': Transferencia
         - 'MX': Mixto
         """
         from core.models import HistorialModificacionPago
-        
+
         if monto is None:
             monto = self.monto_restante
         
@@ -1302,6 +1321,7 @@ class Cuota(models.Model):
         
         return self
     
+    @transaction.atomic
     def cancelar_pago(self, usuario=None):
         """
         Cancela/revierte el pago de esta cuota.

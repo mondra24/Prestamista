@@ -18,21 +18,36 @@
         </a>
     </div>
     
+    <!-- Búsqueda -->
+    <form method="get" class="d-flex gap-2 mb-3">
+        <div class="flex-grow-1">
+            <input type="search" name="q" class="form-control form-control-lg"
+                   placeholder="Buscar por cliente..." value="{{ request.GET.q }}"
+                   autocomplete="off">
+        </div>
+        {% if request.GET.estado %}
+        <input type="hidden" name="estado" value="{{ request.GET.estado }}">
+        {% endif %}
+        <button type="submit" class="btn btn-primary btn-lg px-3">
+            <i class="bi bi-search"></i>
+        </button>
+    </form>
+
     <!-- Filtros -->
     <div class="d-flex gap-2 mb-3 overflow-auto pb-2">
-        <a href="{% url 'core:prestamo_list' %}" 
+        <a href="{% url 'core:prestamo_list' %}{% if request.GET.q %}?q={{ request.GET.q }}{% endif %}"
            class="btn btn-sm {% if not request.GET.estado %}btn-dark{% else %}btn-outline-dark{% endif %} rounded-pill">
             Todos
         </a>
-        <a href="?estado=AC" 
+        <a href="?estado=AC{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
            class="btn btn-sm rounded-pill {% if request.GET.estado == 'AC' %}btn-success{% else %}btn-outline-success{% endif %}">
             Activos
         </a>
-        <a href="?estado=FI" 
+        <a href="?estado=FI{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
            class="btn btn-sm rounded-pill {% if request.GET.estado == 'FI' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
             Finalizados
         </a>
-        <a href="?estado=RE" 
+        <a href="?estado=RE{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
            class="btn btn-sm rounded-pill {% if request.GET.estado == 'RE' %}btn-warning{% else %}btn-outline-warning{% endif %}">
             Renovados
         </a>
@@ -84,8 +99,32 @@
                 <p>No hay préstamos con los filtros seleccionados.</p>
             </div>
         {% endif %}
+
+        {% if is_paginated %}
+        <nav aria-label="Navegación de préstamos" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.estado %}&estado={{ request.GET.estado }}{% endif %}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                <li class="page-item disabled">
+                    <span class="page-link">{{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.estado %}&estado={{ request.GET.estado }}{% endif %}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
     </section>
-    
+
 </div>
 
 <!-- FAB para nuevo préstamo -->

@@ -4,6 +4,7 @@ Ejecutar: python manage.py test core -v 2
 """
 from decimal import Decimal
 from datetime import date, timedelta
+import json
 from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 from django.contrib.auth.models import User
@@ -1195,3 +1196,662 @@ class ClienteDNIReferenciasTest(TestCase):
         )
         self.assertEqual(cliente.referencia1_nombre, 'Pedro García - Padre')
         self.assertIsNone(cliente.referencia2_nombre)
+
+
+# ============== TESTS DE MANTENIMIENTO (AUDITORÍA) ==============
+
+
+class TransactionAtomicTest(TestCase):
+    """Tests para verificar que las operaciones financieras son atómicas"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='cobrador_atomic', password='test123',
+            first_name='Test', last_name='Cobrador'
+        )
+        self.cliente = Cliente.objects.create(
+            nombre='Atomico', apellido='Test',
+            telefono='1111111111', direccion='Dir Atomic',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=5, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.user
+        )
+
+    def test_registrar_pago_atomico(self):
+        """Test que registrar_pago es atómico - pago completo"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cobrador=self.user)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PA')
+        self.assertEqual(cuota.monto_pagado, cuota.monto_cuota)
+
+    def test_registrar_pago_parcial_con_transferencia(self):
+        """Test pago parcial con transferencia a próxima cuota"""
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        monto_parcial = cuota.monto_cuota / 2
+        cuota.registrar_pago(
+            monto=monto_parcial, accion_restante='proxima',
+            cobrador=self.user
+        )
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PA')  # Se marca pagada al transferir
+        # Verificar que la próxima cuota recibió el restante
+        proxima = self.prestamo.cuotas.filter(numero_cuota=2).first()
+        self.assertGreater(proxima.monto_cuota, monto_parcial)
+
+    def test_cancelar_pago_atomico(self):
+        """Test que cancelar_pago revierte todo correctamente"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cobrador=self.user)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PA')
+        # Cancelar
+        cuota.cancelar_pago(usuario=self.user)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PE')
+        self.assertEqual(cuota.monto_pagado, Decimal('0.00'))
+
+    def test_cancelar_pago_revierte_transferencia(self):
+        """Test que cancelar pago revierte transferencias a próxima cuota"""
+        cuota1 = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota2 = self.prestamo.cuotas.filter(numero_cuota=2).first()
+        monto_original_cuota2 = cuota2.monto_cuota
+        monto_parcial = cuota1.monto_cuota / 2
+        cuota1.registrar_pago(
+            monto=monto_parcial, accion_restante='proxima',
+            cobrador=self.user
+        )
+        # Ahora cancelar
+        cuota1.refresh_from_db()
+        cuota1.cancelar_pago(usuario=self.user)
+        cuota2.refresh_from_db()
+        self.assertEqual(cuota2.monto_cuota, monto_original_cuota2)
+
+    def test_renovar_prestamo_atomico(self):
+        """Test que la renovación es atómica"""
+        nuevo = Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('20'),
+            nuevas_cuotas=5,
+            nueva_frecuencia='DI',
+            cobrador=self.user
+        )
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'RE')
+        self.assertTrue(nuevo.es_renovacion)
+        self.assertEqual(nuevo.prestamo_anterior, self.prestamo)
+
+
+class AdminPuedeCobrarTest(TestCase):
+    """Tests para verificar que el admin puede cobrar cuotas"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin_cobro', password='test123'
+        )
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+
+        self.cobrador = User.objects.create_user(
+            username='cobrador_cobro', password='test123'
+        )
+
+        self.cliente = Cliente.objects.create(
+            nombre='TestAdmin', apellido='Cobro',
+            telefono='1234567890', direccion='Dir',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.client = TestClient()
+
+    def test_admin_puede_cobrar(self):
+        """Test que admin puede cobrar cuotas de cualquier cobrador"""
+        self.client.login(username='admin_cobro', password='test123')
+        cuota = self.prestamo.cuotas.first()
+        response = self.client.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({'monto': float(cuota.monto_cuota)}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+
+    def test_cobrador_puede_cobrar_suyo(self):
+        """Test que cobrador puede cobrar sus propias cuotas"""
+        self.client.login(username='cobrador_cobro', password='test123')
+        cuota = self.prestamo.cuotas.first()
+        response = self.client.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({'monto': float(cuota.monto_cuota)}),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+
+    def test_otro_cobrador_no_puede_cobrar(self):
+        """Test que un cobrador no puede cobrar cuotas de otro"""
+        otro = User.objects.create_user(
+            username='otro_cobrador', password='test123'
+        )
+        self.client.login(username='otro_cobrador', password='test123')
+        cuota = self.prestamo.cuotas.first()
+        response = self.client.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({'monto': float(cuota.monto_cuota)}),
+            content_type='application/json'
+        )
+        # 404 (no encontrado para este cobrador) o 400 (error de permiso)
+        self.assertIn(response.status_code, [400, 404])
+
+
+class ProteccionEliminacionPrestamoTest(TestCase):
+    """Tests para verificar que no se puede eliminar un préstamo con pagos"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_del', password='test123'
+        )
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='DelTest', apellido='Prestamo',
+            telefono='1234567890', direccion='Dir',
+            usuario=self.user
+        )
+        self.client = TestClient()
+        self.client.login(username='user_del', password='test123')
+
+    def test_eliminar_prestamo_sin_pagos(self):
+        """Test que se puede eliminar un préstamo sin pagos"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.user
+        )
+        pk = prestamo.pk
+        response = self.client.post(
+            reverse('core:prestamo_delete', kwargs={'pk': pk})
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Prestamo.objects.filter(pk=pk).exists())
+
+    def test_no_eliminar_prestamo_con_pagos(self):
+        """Test que NO se puede eliminar un préstamo con pagos realizados"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.user
+        )
+        cuota = prestamo.cuotas.first()
+        cuota.registrar_pago(cobrador=self.user)
+        pk = prestamo.pk
+        response = self.client.post(
+            reverse('core:prestamo_delete', kwargs={'pk': pk})
+        )
+        # Debe redirigir al detalle, no eliminar
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Prestamo.objects.filter(pk=pk).exists())
+
+
+class NotificacionPermisoTest(TestCase):
+    """Tests para verificar permisos en notificaciones"""
+
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            username='user_notif1', password='test123'
+        )
+        self.user2 = User.objects.create_user(
+            username='user_notif2', password='test123'
+        )
+        self.client = TestClient()
+
+    def test_usuario_marca_su_notificacion(self):
+        """Test que un usuario puede marcar su propia notificación"""
+        from .models import Notificacion
+        notif = Notificacion.crear_notificacion(
+            tipo='IN', titulo='Test', mensaje='Mensaje',
+            usuario=self.user1
+        )
+        self.client.login(username='user_notif1', password='test123')
+        response = self.client.get(
+            reverse('core:notificacion_leida', kwargs={'pk': notif.pk})
+        )
+        notif.refresh_from_db()
+        self.assertTrue(notif.leida)
+
+    def test_usuario_no_marca_notificacion_ajena(self):
+        """Test que un usuario NO puede marcar la notificación de otro"""
+        from .models import Notificacion
+        notif = Notificacion.crear_notificacion(
+            tipo='IN', titulo='Test', mensaje='Privada',
+            usuario=self.user1
+        )
+        self.client.login(username='user_notif2', password='test123')
+        response = self.client.get(
+            reverse('core:notificacion_leida', kwargs={'pk': notif.pk})
+        )
+        self.assertEqual(response.status_code, 403)
+        notif.refresh_from_db()
+        self.assertFalse(notif.leida)
+
+    def test_notificacion_global_cualquiera_marca(self):
+        """Test que notificaciones globales (sin usuario) cualquiera las marca"""
+        from .models import Notificacion
+        notif = Notificacion.crear_notificacion(
+            tipo='AS', titulo='Global', mensaje='Para todos',
+            usuario=None
+        )
+        self.client.login(username='user_notif2', password='test123')
+        response = self.client.get(
+            reverse('core:notificacion_leida', kwargs={'pk': notif.pk})
+        )
+        self.assertIn(response.status_code, [200, 302])
+
+
+class PaginacionTest(TestCase):
+    """Tests para verificar la paginación en listados"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_pag', password='test123'
+        )
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client = TestClient()
+        self.client.login(username='user_pag', password='test123')
+
+    def test_cliente_list_pagina(self):
+        """Test que la lista de clientes se pagina"""
+        # Crear más de 50 clientes
+        for i in range(55):
+            Cliente.objects.create(
+                nombre=f'Cliente{i}', apellido=f'Test{i}',
+                telefono=f'111{i:04d}', direccion='Dir',
+                usuario=self.user
+            )
+        response = self.client.get(reverse('core:cliente_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['is_paginated'])
+        self.assertEqual(len(response.context['clientes']), 50)
+        # Página 2
+        response = self.client.get(reverse('core:cliente_list') + '?page=2')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['clientes']), 5)
+
+    def test_prestamo_list_pagina(self):
+        """Test que la lista de préstamos se pagina"""
+        for i in range(55):
+            cliente = Cliente.objects.create(
+                nombre=f'Cli{i}', apellido=f'Pag{i}',
+                telefono=f'222{i:04d}', direccion='Dir',
+                usuario=self.user
+            )
+            Prestamo.objects.create(
+                cliente=cliente, monto_solicitado=Decimal('1000'),
+                tasa_interes_porcentaje=Decimal('10'),
+                cuotas_pactadas=1, frecuencia='PU',
+                fecha_inicio=date.today(), cobrador=self.user
+            )
+        response = self.client.get(reverse('core:prestamo_list'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['is_paginated'])
+        self.assertEqual(len(response.context['prestamos']), 50)
+
+
+class BusquedaPrestamosTest(TestCase):
+    """Tests para la búsqueda de préstamos por cliente"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_busq', password='test123'
+        )
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client_http = TestClient()
+        self.client_http.login(username='user_busq', password='test123')
+
+        self.cli_juan = Cliente.objects.create(
+            nombre='Juan', apellido='Pérez',
+            telefono='1234567890', direccion='Dir',
+            usuario=self.user
+        )
+        self.cli_maria = Cliente.objects.create(
+            nombre='María', apellido='González',
+            telefono='9876543210', direccion='Dir',
+            usuario=self.user
+        )
+        Prestamo.objects.create(
+            cliente=self.cli_juan, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.user
+        )
+        Prestamo.objects.create(
+            cliente=self.cli_maria, monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('15'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.user
+        )
+
+    def test_buscar_por_nombre(self):
+        """Test buscar préstamos por nombre de cliente"""
+        response = self.client_http.get(
+            reverse('core:prestamo_list') + '?q=Juan'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['prestamos']), 1)
+
+    def test_buscar_por_apellido(self):
+        """Test buscar préstamos por apellido de cliente"""
+        response = self.client_http.get(
+            reverse('core:prestamo_list') + '?q=González'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['prestamos']), 1)
+
+    def test_buscar_sin_resultados(self):
+        """Test buscar préstamos sin resultados"""
+        response = self.client_http.get(
+            reverse('core:prestamo_list') + '?q=Inexistente'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['prestamos']), 0)
+
+
+class DashboardMoraTest(TestCase):
+    """Tests para verificar que la mora se muestra en el dashboard"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_mora', password='test123'
+        )
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client = TestClient()
+        self.client.login(username='user_mora', password='test123')
+
+    def test_dashboard_incluye_mora(self):
+        """Test que el dashboard incluye mora_total_pendiente en el contexto"""
+        response = self.client.get(reverse('core:dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('mora_total_pendiente', response.context)
+
+    def test_reporte_incluye_mora(self):
+        """Test que el reporte general incluye mora_total_pendiente"""
+        response = self.client.get(reverse('core:reporte_general'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('mora_total_pendiente', response.context)
+
+
+class CierreCajaDesglose(TestCase):
+    """Tests para el desglose del cierre de caja"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='admin_cierre', password='test123'
+        )
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+        self.client = TestClient()
+        self.client.login(username='admin_cierre', password='test123')
+
+    def test_cierre_caja_incluye_totales_metodo(self):
+        """Test que el cierre de caja incluye desglose efectivo/transferencia"""
+        response = self.client.get(reverse('core:cierre_caja'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('total_efectivo', response.context)
+        self.assertIn('total_transferencia', response.context)
+
+    def test_cierre_caja_incluye_totales_cobrador(self):
+        """Test que admin ve los totales por cobrador"""
+        response = self.client.get(reverse('core:cierre_caja'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('totales_por_cobrador', response.context)
+
+    def test_cierre_caja_fecha_invalida(self):
+        """Test que una fecha inválida no crashea"""
+        response = self.client.get(
+            reverse('core:cierre_caja') + '?fecha=invalid-date'
+        )
+        self.assertEqual(response.status_code, 200)
+
+
+class FiltroExportacionTest(TestCase):
+    """Tests para verificar que las exportaciones filtran correctamente"""
+
+    def setUp(self):
+        self.cobrador = User.objects.create_user(
+            username='cobrador_exp', password='test123'
+        )
+        self.otro = User.objects.create_user(
+            username='otro_exp', password='test123'
+        )
+        self.cliente = Cliente.objects.create(
+            nombre='Export', apellido='Test',
+            telefono='1234567890', direccion='Dir',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=3, frecuencia='DI',
+            fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.client_http = TestClient()
+
+    def test_exportar_prestamos_filtra_por_cobrador(self):
+        """Test que la exportación filtra por cobrador, no por usuario del cliente"""
+        self.client_http.login(username='cobrador_exp', password='test123')
+        response = self.client_http.get(reverse('core:exportar_prestamos_excel'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+
+    def test_otro_cobrador_no_ve_prestamos(self):
+        """Test que otro cobrador no exporta préstamos que no son suyos"""
+        self.client_http.login(username='otro_exp', password='test123')
+        response = self.client_http.get(reverse('core:exportar_prestamos_excel'))
+        self.assertEqual(response.status_code, 200)
+        # El Excel se genera pero vacío (sin datos del otro cobrador)
+
+
+# ============== TESTS DE ESTADO PÚBLICO DE PRÉSTAMO ==============
+
+class EstadoPublicoPrestamoTest(TestCase):
+    """Tests para el link público de estado de préstamo"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.admin = User.objects.create_superuser(
+            username='admin_token', password='test123', email='a@test.com'
+        )
+        self.cobrador = User.objects.create_user(
+            username='cob_token', password='test123'
+        )
+        self.otro_cobrador = User.objects.create_user(
+            username='otro_cob_token', password='test123'
+        )
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Pérez',
+            telefono='1122334455', direccion='Calle 1',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=10,
+            frecuencia='DI',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_prestamo_tiene_token_publico_automatico(self):
+        """Un préstamo nuevo debe tener un token_publico generado"""
+        self.assertIsNotNone(self.prestamo.token_publico)
+        self.assertTrue(self.prestamo.token_activo)
+
+    def test_tokens_son_unicos_entre_prestamos(self):
+        """Dos préstamos distintos deben tener tokens distintos"""
+        prestamo2 = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=5,
+            frecuencia='DI',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+        self.assertNotEqual(self.prestamo.token_publico, prestamo2.token_publico)
+
+    def test_vista_publica_accesible_sin_login(self):
+        """El link público debe ser accesible sin autenticación"""
+        url = reverse('core:estado_publico', kwargs={'token': self.prestamo.token_publico})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 200)
+        # Debe mostrar estado del préstamo
+        self.assertContains(response, 'Estado de Crédito')
+
+    def test_vista_publica_muestra_saldo_pendiente(self):
+        """La vista pública debe mostrar el saldo pendiente"""
+        url = reverse('core:estado_publico', kwargs={'token': self.prestamo.token_publico})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 200)
+        # Debe haber algún monto en pesos
+        self.assertContains(response, 'Saldo pendiente')
+
+    def test_vista_publica_no_muestra_datos_sensibles(self):
+        """La vista pública NO debe mostrar teléfono, dirección, tasa ni DNI"""
+        url = reverse('core:estado_publico', kwargs={'token': self.prestamo.token_publico})
+        response = self.client_http.get(url)
+        content = response.content.decode('utf-8')
+        # No debe aparecer el teléfono completo
+        self.assertNotIn('1122334455', content)
+        # No debe aparecer la dirección
+        self.assertNotIn('Calle 1', content)
+        # No debe aparecer la tasa con su etiqueta
+        self.assertNotIn('Tasa de Interés', content)
+        self.assertNotIn('tasa_interes', content)
+        # No debe aparecer el apellido completo (solo inicial)
+        self.assertNotIn('Pérez</', content)
+        # No debe aparecer el monto solicitado original (solo el total)
+        # Capital = 10000, se muestra en otra parte? Verifiquemos que no aparece el label
+        self.assertNotIn('Capital', content)
+        self.assertNotIn('Monto Solicitado', content)
+
+    def test_vista_publica_token_inexistente_404(self):
+        """Un token que no existe debe devolver 404"""
+        import uuid
+        url = reverse('core:estado_publico', kwargs={'token': uuid.uuid4()})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_vista_publica_token_desactivado_404(self):
+        """Un token desactivado no debe ser accesible públicamente"""
+        self.prestamo.token_activo = False
+        self.prestamo.save()
+        url = reverse('core:estado_publico', kwargs={'token': self.prestamo.token_publico})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_regenerar_token_cambia_valor(self):
+        """Regenerar debe cambiar el token y mantenerlo activo"""
+        self.client_http.login(username='cob_token', password='test123')
+        token_original = self.prestamo.token_publico
+        url = reverse('core:regenerar_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.prestamo.refresh_from_db()
+        self.assertNotEqual(self.prestamo.token_publico, token_original)
+        self.assertTrue(self.prestamo.token_activo)
+
+    def test_regenerar_token_invalida_el_anterior(self):
+        """Después de regenerar, el token anterior debe dar 404"""
+        self.client_http.login(username='cob_token', password='test123')
+        token_anterior = self.prestamo.token_publico
+        url = reverse('core:regenerar_token', kwargs={'pk': self.prestamo.pk})
+        self.client_http.post(url)
+        # Probar con el token viejo (cerrar sesión primero para probar acceso público)
+        self.client_http.logout()
+        url_publica = reverse('core:estado_publico', kwargs={'token': token_anterior})
+        response = self.client_http.get(url_publica)
+        self.assertEqual(response.status_code, 404)
+
+    def test_toggle_token_desactiva_y_reactiva(self):
+        """Toggle debe alternar token_activo"""
+        self.client_http.login(username='cob_token', password='test123')
+        url = reverse('core:toggle_token', kwargs={'pk': self.prestamo.pk})
+
+        # Primer toggle: desactiva
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.prestamo.refresh_from_db()
+        self.assertFalse(self.prestamo.token_activo)
+
+        # Segundo toggle: reactiva
+        response = self.client_http.post(url)
+        self.prestamo.refresh_from_db()
+        self.assertTrue(self.prestamo.token_activo)
+
+    def test_otro_cobrador_no_puede_regenerar_token(self):
+        """Un cobrador no debe poder regenerar token de préstamo ajeno"""
+        self.client_http.login(username='otro_cob_token', password='test123')
+        url = reverse('core:regenerar_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_otro_cobrador_no_puede_toggle_token(self):
+        """Un cobrador no debe poder desactivar token de préstamo ajeno"""
+        self.client_http.login(username='otro_cob_token', password='test123')
+        url = reverse('core:toggle_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_puede_regenerar_cualquier_token(self):
+        """Admin puede regenerar token de cualquier préstamo"""
+        self.client_http.login(username='admin_token', password='test123')
+        url = reverse('core:regenerar_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+
+    def test_regenerar_requiere_post(self):
+        """Regenerar solo debe aceptar POST"""
+        self.client_http.login(username='cob_token', password='test123')
+        url = reverse('core:regenerar_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 405)
+
+    def test_toggle_requiere_post(self):
+        """Toggle solo debe aceptar POST"""
+        self.client_http.login(username='cob_token', password='test123')
+        url = reverse('core:toggle_token', kwargs={'pk': self.prestamo.pk})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 405)
+
+    def test_vista_publica_token_invalido_404(self):
+        """Un string que no es UUID válido debe dar 404"""
+        # Django URL resolver ya filtra por <uuid:token>, así que un string inválido
+        # no va a matchear el patrón; esto probaría más bien el resolver
+        response = self.client_http.get('/estado/no-es-uuid/')
+        self.assertEqual(response.status_code, 404)

@@ -42,7 +42,7 @@
     
     <!-- Resumen -->
     <div class="row g-3 mb-4">
-        <div class="col-6">
+        <div class="col-6 col-lg-3">
             <div class="stat-card">
                 <div class="stat-icon bg-success bg-opacity-10 text-success">
                     <i class="bi bi-cash-stack"></i>
@@ -51,7 +51,7 @@
                 <div class="stat-label">Total Cobrado</div>
             </div>
         </div>
-        <div class="col-6">
+        <div class="col-6 col-lg-3">
             <div class="stat-card">
                 <div class="stat-icon bg-primary bg-opacity-10 text-primary">
                     <i class="bi bi-receipt"></i>
@@ -60,7 +60,60 @@
                 <div class="stat-label">Pagos</div>
             </div>
         </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                    <i class="bi bi-cash"></i>
+                </div>
+                <div class="stat-value text-warning">{{ total_efectivo|dinero }}</div>
+                <div class="stat-label">Efectivo</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-info bg-opacity-10 text-info">
+                    <i class="bi bi-bank"></i>
+                </div>
+                <div class="stat-value text-info">{{ total_transferencia|dinero }}</div>
+                <div class="stat-label">Transferencia</div>
+            </div>
+        </div>
     </div>
+
+    {% if totales_por_cobrador %}
+    <!-- Desglose por cobrador -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-transparent">
+            <h5 class="mb-0"><i class="bi bi-people me-2"></i>Desglose por Cobrador</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Cobrador</th>
+                            <th class="text-end">Pagos</th>
+                            <th class="text-end">Efectivo</th>
+                            <th class="text-end">Transferencia</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in totales_por_cobrador %}
+                        <tr>
+                            <td>{{ item.cobrador }}</td>
+                            <td class="text-end">{{ item.cantidad }}</td>
+                            <td class="text-end">{{ item.efectivo|dinero }}</td>
+                            <td class="text-end">{{ item.transferencia|dinero }}</td>
+                            <td class="text-end fw-bold">{{ item.total|dinero }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     
     <!-- Lista de pagos -->
     <section>

@@ -63,6 +63,13 @@ urlpatterns = [
     path('api/notificaciones/', views.obtener_notificaciones, name='api_notificaciones'),
     path('api/generar-notificaciones/', views.generar_notificaciones, name='generar_notificaciones'),
     
+    # Estado público de préstamo (sin auth)
+    path('estado/<uuid:token>/', views.estado_prestamo_publico, name='estado_publico'),
+
+    # Gestión de token público (AJAX)
+    path('api/prestamo/<int:pk>/regenerar-token/', views.regenerar_token_prestamo, name='regenerar_token'),
+    path('api/prestamo/<int:pk>/toggle-token/', views.toggle_token_prestamo, name='toggle_token'),
+
     # Auditoría
     path('auditoria/', views.AuditoriaListView.as_view(), name='auditoria_list'),
     

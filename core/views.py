@@ -7,6 +7,7 @@ from django.views.generic import ListView, CreateView, UpdateView, DeleteView, D
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
+from django.db import transaction
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.decorators import login_required
@@ -14,13 +15,8 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago, fecha_local_hoy
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
-
-
-def fecha_local_hoy():
-    """Retorna la fecha local (Argentina) en vez de UTC"""
-    return timezone.localtime(timezone.now()).date()
 
 
 def es_usuario_admin(user):
@@ -106,6 +102,21 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 prestamo__estado='AC'
             ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
         
+        # Mora total pendiente
+        cuotas_vencidas_qs = Cuota.objects.filter(
+            fecha_vencimiento__lt=hoy,
+            estado__in=['PE', 'PC'],
+            prestamo__estado='AC',
+            **cliente_filter
+        )
+        mora_total = Decimal('0.00')
+        config_mora = ConfiguracionMora.obtener_config_activa()
+        if config_mora:
+            for cuota in cuotas_vencidas_qs.only('monto_cuota', 'monto_pagado', 'fecha_vencimiento', 'interes_mora_cobrado'):
+                dias = (hoy - cuota.fecha_vencimiento).days
+                mora = config_mora.calcular_interes(cuota.monto_restante, dias)
+                mora_total += mora
+
         context.update({
             'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
@@ -115,6 +126,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             'prestamos_activos': prestamos_activos,
             'clientes_activos': clientes_activos,
             'total_cartera': total_cartera,
+            'mora_total_pendiente': mora_total,
             'fecha_hoy': hoy,
         })
         return context
@@ -257,6 +269,7 @@ class ClienteListView(LoginRequiredMixin, ListView):
     model = Cliente
     template_name = 'core/cliente_list.html'
     context_object_name = 'clientes'
+    paginate_by = 50
     
     def get_queryset(self):
         queryset = super().get_queryset().select_related('usuario')
@@ -376,19 +389,28 @@ class PrestamoListView(LoginRequiredMixin, ListView):
     model = Prestamo
     template_name = 'core/prestamo_list.html'
     context_object_name = 'prestamos'
-    
+    paginate_by = 50
+
     def get_queryset(self):
         queryset = super().get_queryset()
-        
+
         # Filtrar por clientes del usuario (admin ve todos)
         if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(cobrador=self.request.user)
-        
+
         estado = self.request.GET.get('estado', '')
-        
+        busqueda = self.request.GET.get('q', '')
+
         if estado:
             queryset = queryset.filter(estado=estado)
-        
+
+        if busqueda:
+            queryset = queryset.filter(
+                Q(cliente__nombre__icontains=busqueda) |
+                Q(cliente__apellido__icontains=busqueda) |
+                Q(cliente__telefono__icontains=busqueda)
+            )
+
         return queryset.select_related('cliente', 'cliente__usuario', 'cobrador')
 
 
@@ -550,17 +572,25 @@ class PrestamoDeleteView(LoginRequiredMixin, DeleteView):
     """Eliminar un préstamo y todas sus cuotas"""
     model = Prestamo
     success_url = reverse_lazy('core:prestamo_list')
-    
+
     def get_queryset(self):
         queryset = super().get_queryset()
         if not es_usuario_admin(self.request.user):
             queryset = queryset.filter(cobrador=self.request.user)
         return queryset
-    
+
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
         prestamo_pk = self.object.pk
         cliente_nombre = self.object.cliente.nombre_completo
+        # No permitir eliminar préstamos que ya tienen pagos realizados
+        if self.object.cuotas.filter(estado__in=['PA', 'PC']).exists():
+            messages.error(
+                request,
+                f'No se puede eliminar el préstamo #{prestamo_pk} porque ya tiene pagos registrados. '
+                f'Puede cancelarlo en vez de eliminarlo.'
+            )
+            return redirect('core:prestamo_detail', pk=prestamo_pk)
         # Eliminar cuotas asociadas y el préstamo
         self.object.cuotas.all().delete()
         self.object.delete()
@@ -702,8 +732,11 @@ def cobrar_cuota(request, pk):
     """Registrar pago de cuota via AJAX"""
     if request.method == 'POST':
         try:
-            # Solo el cobrador asignado puede cobrar
-            cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
+            # Admin puede cobrar cualquier cuota, cobrador solo las suyas
+            if es_usuario_admin(request.user):
+                cuota = get_object_or_404(Cuota, pk=pk)
+            else:
+                cuota = get_object_or_404(Cuota, pk=pk, prestamo__cobrador=request.user)
             
             # Obtener datos del body
             try:
@@ -1033,10 +1066,13 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         fecha_str = self.request.GET.get('fecha')
         if fecha_str:
             from datetime import datetime
-            fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            try:
+                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                fecha = fecha_local_hoy()
         else:
             fecha = fecha_local_hoy()
-        
+
         # Pagos del día (incluye pagos completos y parciales)
         pagos_del_dia = Cuota.objects.filter(
             fecha_pago_real=fecha,
@@ -1053,12 +1089,47 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         total_cobrado = pagos_del_dia.aggregate(
             total=Sum('monto_pagado')
         )['total'] or Decimal('0.00')
-        
+
+        # Totales desglosados por efectivo y transferencia
+        totales_metodo = pagos_del_dia.aggregate(
+            total_efectivo=Sum('monto_efectivo'),
+            total_transferencia=Sum('monto_transferencia'),
+        )
+
+        # Totales por cobrador (visible para admins)
+        totales_por_cobrador = []
+        if es_usuario_admin(self.request.user):
+            from django.contrib.auth.models import User
+            cobradores_ids = pagos_del_dia.values_list('cobrado_por', flat=True).distinct()
+            for cobrador_id in cobradores_ids:
+                if cobrador_id is None:
+                    continue
+                cobrador = User.objects.filter(pk=cobrador_id).first()
+                if not cobrador:
+                    continue
+                pagos_cobrador = pagos_del_dia.filter(cobrado_por=cobrador)
+                agg = pagos_cobrador.aggregate(
+                    total=Sum('monto_pagado'),
+                    cantidad=Count('id'),
+                    efectivo=Sum('monto_efectivo'),
+                    transferencia=Sum('monto_transferencia'),
+                )
+                totales_por_cobrador.append({
+                    'cobrador': cobrador.get_full_name() or cobrador.username,
+                    'total': agg['total'] or Decimal('0.00'),
+                    'cantidad': agg['cantidad'] or 0,
+                    'efectivo': agg['efectivo'] or Decimal('0.00'),
+                    'transferencia': agg['transferencia'] or Decimal('0.00'),
+                })
+
         context.update({
             'fecha': fecha,
             'pagos': pagos_del_dia,
             'total_cobrado': total_cobrado,
             'cantidad_pagos': pagos_del_dia.count(),
+            'total_efectivo': totales_metodo['total_efectivo'] or Decimal('0.00'),
+            'total_transferencia': totales_metodo['total_transferencia'] or Decimal('0.00'),
+            'totales_por_cobrador': totales_por_cobrador,
         })
         
         # Anotar historial de modificaciones en cada pago
@@ -1137,10 +1208,13 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         fecha_str = self.request.GET.get('fecha')
         if fecha_str:
             from datetime import datetime
-            fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            try:
+                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                fecha = fecha_local_hoy()
         else:
             fecha = fecha_local_hoy()
-        
+
         ruta_id = self.request.GET.get('ruta')
         if not ruta_id and config and hasattr(config, 'filtrar_por_ruta') and config.filtrar_por_ruta:
             ruta_id = config.filtrar_por_ruta_id
@@ -1311,23 +1385,42 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
         
         context['total_clientes'] = clientes_qs.count()
         context['prestamos_activos'] = prestamos_qs.count()
-        
-        # Capital en la calle (monto pendiente de todos los préstamos activos)
-        capital_calle = sum(p.monto_pendiente for p in prestamos_qs)
-        context['capital_en_calle'] = capital_calle
-        
+
+        # Capital en la calle - calculado a nivel DB para evitar N+1 queries
+        capital_pendiente = cuotas_qs.filter(
+            estado__in=['PE', 'PC']
+        ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
+        capital_pagado_parcial = cuotas_qs.filter(
+            estado='PC'
+        ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+        context['capital_en_calle'] = capital_pendiente - capital_pagado_parcial
+
         # Cuotas vencidas
         hoy = fecha_local_hoy()
         context['cuotas_vencidas'] = cuotas_qs.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
         ).count()
-        
+
+        # Mora total pendiente
+        cuotas_vencidas_qs = cuotas_qs.filter(
+            fecha_vencimiento__lt=hoy,
+            estado__in=['PE', 'PC'],
+        )
+        mora_total = Decimal('0.00')
+        config_mora = ConfiguracionMora.obtener_config_activa()
+        if config_mora:
+            for cuota in cuotas_vencidas_qs.only('monto_cuota', 'monto_pagado', 'fecha_vencimiento', 'interes_mora_cobrado'):
+                dias = (hoy - cuota.fecha_vencimiento).days
+                mora = config_mora.calcular_interes(cuota.monto_restante, dias)
+                mora_total += mora
+        context['mora_total_pendiente'] = mora_total
+
         # Distribución por categoría de clientes
         context['clientes_por_categoria'] = clientes_qs.values('categoria').annotate(
             cantidad=Count('id')
         )
-        
+
         return context
 
 
@@ -1537,10 +1630,13 @@ def exportar_planilla_excel(request):
     # Obtener fecha del filtro
     fecha_str = request.GET.get('fecha')
     if fecha_str:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        try:
+            fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            fecha = fecha_local_hoy()
     else:
         fecha = fecha_local_hoy()
-    
+
     # Obtener ruta de filtro
     ruta_id = request.GET.get('ruta')
     incluir_vencidas = request.GET.get('incluir_vencidas', '1').lower() in ('true', '1', 'si')
@@ -1728,7 +1824,10 @@ def exportar_cierre_excel(request):
     # Obtener fecha
     fecha_str = request.GET.get('fecha')
     if fecha_str:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        try:
+            fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            fecha = fecha_local_hoy()
     else:
         fecha = fecha_local_hoy()
     
@@ -2052,7 +2151,7 @@ def exportar_prestamos_excel(request):
     estado = request.GET.get('estado', '')
     prestamos = Prestamo.objects.select_related('cliente')
     if not es_usuario_admin(request.user):
-        prestamos = prestamos.filter(cliente__usuario=request.user)
+        prestamos = prestamos.filter(cobrador=request.user)
     if estado:
         prestamos = prestamos.filter(estado=estado)
     
@@ -2151,7 +2250,13 @@ class NotificacionListView(LoginRequiredMixin, ListView):
 @login_required
 def marcar_notificacion_leida(request, pk):
     """Marcar notificación como leída via AJAX"""
-    notificacion = get_object_or_404(Notificacion, pk=pk)
+    notificacion = get_object_or_404(
+        Notificacion,
+        pk=pk,
+    )
+    # Solo el destinatario o notificaciones globales (usuario=null)
+    if notificacion.usuario is not None and notificacion.usuario != request.user:
+        return JsonResponse({'success': False, 'message': 'Sin permiso'}, status=403)
     notificacion.marcar_como_leida()
     
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2417,5 +2522,114 @@ def generar_notificaciones(request):
     
     Notificacion.notificar_cuotas_vencidas()
     Notificacion.notificar_cuotas_por_vencer()
-    
+
     return JsonResponse({'success': True, 'message': 'Notificaciones generadas'})
+
+
+# ==================== ESTADO PÚBLICO DE PRÉSTAMO ====================
+
+import uuid
+
+def estado_prestamo_publico(request, token):
+    """Vista pública (sin auth) que muestra el estado de un préstamo vía token UUID"""
+    try:
+        token_uuid = uuid.UUID(str(token))
+    except (ValueError, AttributeError):
+        from django.http import Http404
+        raise Http404
+
+    prestamo = get_object_or_404(Prestamo, token_publico=token_uuid, token_activo=True)
+
+    cuotas = prestamo.cuotas.all()
+    hoy = fecha_local_hoy()
+
+    # Próxima cuota pendiente
+    proxima_cuota = cuotas.filter(
+        estado__in=['PE', 'PC'],
+        fecha_vencimiento__gte=hoy
+    ).order_by('fecha_vencimiento').first()
+
+    # Si no hay futuras, buscar la primera vencida sin pagar
+    if not proxima_cuota:
+        proxima_cuota = cuotas.filter(
+            estado__in=['PE', 'PC']
+        ).order_by('fecha_vencimiento').first()
+
+    # Último pago realizado
+    ultimo_pago = cuotas.filter(
+        estado='PA',
+        fecha_pago_real__isnull=False
+    ).order_by('-fecha_pago_real').first()
+
+    # Mora pendiente total
+    mora_pendiente = sum(
+        c.interes_mora_pendiente for c in cuotas
+        if hasattr(c, 'interes_mora_pendiente') and c.interes_mora_pendiente and c.interes_mora_pendiente > 0
+    )
+
+    # Cuotas vencidas sin pagar
+    cuotas_vencidas = cuotas.filter(
+        estado__in=['PE', 'PC'],
+        fecha_vencimiento__lt=hoy
+    ).count()
+
+    context = {
+        'prestamo': prestamo,
+        'proxima_cuota': proxima_cuota,
+        'ultimo_pago': ultimo_pago,
+        'mora_pendiente': mora_pendiente,
+        'cuotas_vencidas': cuotas_vencidas,
+        'hoy': hoy,
+    }
+
+    return render(request, 'core/estado_publico.html', context)
+
+
+@login_required
+def regenerar_token_prestamo(request, pk):
+    """Regenerar el token público de un préstamo (solo admin/cobrador dueño)"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        if es_usuario_admin(request.user):
+            prestamo = Prestamo.objects.get(pk=pk)
+        else:
+            prestamo = Prestamo.objects.get(pk=pk, cobrador=request.user)
+
+        prestamo.token_publico = uuid.uuid4()
+        prestamo.token_activo = True
+        prestamo.save(update_fields=['token_publico', 'token_activo'])
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Link regenerado correctamente',
+            'data': {'token': str(prestamo.token_publico)}
+        })
+    except Prestamo.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
+
+
+@login_required
+def toggle_token_prestamo(request, pk):
+    """Activar/desactivar el link público de un préstamo"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        if es_usuario_admin(request.user):
+            prestamo = Prestamo.objects.get(pk=pk)
+        else:
+            prestamo = Prestamo.objects.get(pk=pk, cobrador=request.user)
+
+        prestamo.token_activo = not prestamo.token_activo
+        prestamo.save(update_fields=['token_activo'])
+
+        estado = 'activado' if prestamo.token_activo else 'desactivado'
+        return JsonResponse({
+            'success': True,
+            'message': f'Link {estado} correctamente',
+            'data': {'activo': prestamo.token_activo}
+        })
+    except Prestamo.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)

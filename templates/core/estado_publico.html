@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#198754">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Estado de Crédito</title>
+
+    <!-- Bootstrap 5.3 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --ep-bg: #f0fdf4;
+            --ep-card: #ffffff;
+            --ep-text: #1a1a2e;
+            --ep-text-muted: #6b7280;
+            --ep-border: #e5e7eb;
+            --ep-green: #198754;
+            --ep-green-light: #d1f5e0;
+            --ep-red: #dc3545;
+            --ep-red-light: #fde8e8;
+            --ep-orange: #f59e0b;
+            --ep-orange-light: #fef3c7;
+            --ep-blue: #3b82f6;
+            --ep-blue-light: #dbeafe;
+            --ep-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            --ep-shadow-lg: 0 4px 16px rgba(0,0,0,0.1), 0 8px 32px rgba(0,0,0,0.06);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ep-bg: #0f1117;
+                --ep-card: #1a1d27;
+                --ep-text: #e5e7eb;
+                --ep-text-muted: #9ca3af;
+                --ep-border: #2d3142;
+                --ep-green-light: #052e16;
+                --ep-red-light: #450a0a;
+                --ep-orange-light: #451a03;
+                --ep-blue-light: #172554;
+                --ep-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+                --ep-shadow-lg: 0 4px 16px rgba(0,0,0,0.4), 0 8px 32px rgba(0,0,0,0.3);
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--ep-bg);
+            color: var(--ep-text);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .ep-container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 16px;
+            padding-bottom: 40px;
+        }
+
+        /* Header con gradiente */
+        .ep-header {
+            background: linear-gradient(135deg, #198754, #157347);
+            border-radius: 20px;
+            padding: 28px 24px;
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(25, 135, 84, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        .ep-header::before {
+            content: '';
+            position: absolute;
+            top: -40%;
+            right: -20%;
+            width: 200px;
+            height: 200px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 50%;
+        }
+        .ep-header::after {
+            content: '';
+            position: absolute;
+            bottom: -30%;
+            left: -15%;
+            width: 150px;
+            height: 150px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 50%;
+        }
+        .ep-header-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            margin-bottom: 12px;
+            backdrop-filter: blur(4px);
+        }
+        .ep-header h1 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+            position: relative;
+        }
+        .ep-header p {
+            font-size: 0.85rem;
+            margin: 0;
+            opacity: 0.85;
+            position: relative;
+        }
+
+        /* Badge de estado */
+        .ep-estado-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            margin-top: 12px;
+            position: relative;
+        }
+        .ep-estado-activo {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+        .ep-estado-finalizado {
+            background: rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.9);
+        }
+
+        /* Cards */
+        .ep-card {
+            background: var(--ep-card);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 14px;
+            box-shadow: var(--ep-shadow);
+            border: 1px solid var(--ep-border);
+        }
+        .ep-card-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--ep-text-muted);
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ep-card-title i {
+            font-size: 1rem;
+        }
+
+        /* Stat grid */
+        .ep-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .ep-stat {
+            background: var(--ep-bg);
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+        }
+        .ep-stat-label {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--ep-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        .ep-stat-value {
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+        .ep-stat-full {
+            grid-column: 1 / -1;
+        }
+
+        /* Progress bar */
+        .ep-progress-wrap {
+            margin-top: 4px;
+        }
+        .ep-progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 8px;
+        }
+        .ep-progress-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .ep-progress-pct {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--ep-green);
+        }
+        .ep-progress-bar {
+            height: 10px;
+            background: var(--ep-border);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+        .ep-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #198754, #20c997);
+            border-radius: 99px;
+            transition: width 1s ease;
+        }
+        .ep-progress-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 0.78rem;
+            color: var(--ep-text-muted);
+        }
+
+        /* Info row */
+        .ep-info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--ep-border);
+        }
+        .ep-info-row:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .ep-info-row:first-child {
+            padding-top: 0;
+        }
+        .ep-info-label {
+            font-size: 0.85rem;
+            color: var(--ep-text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ep-info-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        /* Alert cards */
+        .ep-alert {
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .ep-alert-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+        .ep-alert-success {
+            background: var(--ep-green-light);
+            border: 1px solid rgba(25,135,84,0.15);
+        }
+        .ep-alert-success .ep-alert-icon {
+            background: rgba(25,135,84,0.15);
+            color: var(--ep-green);
+        }
+        .ep-alert-danger {
+            background: var(--ep-red-light);
+            border: 1px solid rgba(220,53,69,0.15);
+        }
+        .ep-alert-danger .ep-alert-icon {
+            background: rgba(220,53,69,0.15);
+            color: var(--ep-red);
+        }
+        .ep-alert-warning {
+            background: var(--ep-orange-light);
+            border: 1px solid rgba(245,158,11,0.15);
+        }
+        .ep-alert-warning .ep-alert-icon {
+            background: rgba(245,158,11,0.15);
+            color: var(--ep-orange);
+        }
+        .ep-alert-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        .ep-alert-text {
+            font-size: 0.78rem;
+            color: var(--ep-text-muted);
+        }
+        .ep-alert-value {
+            font-size: 1rem;
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .ep-footer {
+            text-align: center;
+            padding: 20px 0 8px;
+            font-size: 0.72rem;
+            color: var(--ep-text-muted);
+        }
+        .ep-footer i {
+            font-size: 0.8rem;
+        }
+
+        /* Animaciones */
+        .ep-card, .ep-alert {
+            animation: fadeUp 0.4s ease both;
+        }
+        .ep-card:nth-child(2) { animation-delay: 0.05s; }
+        .ep-card:nth-child(3) { animation-delay: 0.1s; }
+        .ep-card:nth-child(4) { animation-delay: 0.15s; }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+{% load currency_filters %}
+
+<div class="ep-container">
+
+    <!-- Header -->
+    <div class="ep-header">
+        <div class="ep-header-icon">
+            <i class="bi bi-wallet2"></i>
+        </div>
+        <h1>Estado de Crédito</h1>
+        <p>{{ prestamo.cliente.nombre }} {{ prestamo.cliente.apellido|slice:":1" }}.</p>
+        <div class="ep-estado-badge {% if prestamo.estado == 'AC' %}ep-estado-activo{% else %}ep-estado-finalizado{% endif %}">
+            {% if prestamo.estado == 'AC' %}
+                <i class="bi bi-circle-fill" style="font-size:0.5rem;"></i> Activo
+            {% elif prestamo.estado == 'FI' %}
+                <i class="bi bi-check-circle-fill"></i> Finalizado
+            {% else %}
+                <i class="bi bi-info-circle-fill"></i> {{ prestamo.get_estado_display }}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Progreso -->
+    <div class="ep-card">
+        <div class="ep-progress-wrap">
+            <div class="ep-progress-header">
+                <span class="ep-progress-label">Progreso de pago</span>
+                <span class="ep-progress-pct">{{ prestamo.progreso_porcentaje }}%</span>
+            </div>
+            <div class="ep-progress-bar">
+                <div class="ep-progress-fill" style="width: {{ prestamo.progreso_porcentaje }}%;"></div>
+            </div>
+            <div class="ep-progress-detail">
+                <span>{{ prestamo.cuotas_pagadas }} de {{ prestamo.cuotas_pactadas }} cuotas</span>
+                <span>{{ prestamo.get_frecuencia_display }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Montos -->
+    <div class="ep-card">
+        <div class="ep-card-title">
+            <i class="bi bi-cash-coin"></i> Resumen
+        </div>
+        <div class="ep-stats">
+            <div class="ep-stat">
+                <div class="ep-stat-label">Total del crédito</div>
+                <div class="ep-stat-value" style="color: var(--ep-blue);">{{ prestamo.monto_total_a_pagar|dinero }}</div>
+            </div>
+            <div class="ep-stat">
+                <div class="ep-stat-label">Ya pagado</div>
+                <div class="ep-stat-value" style="color: var(--ep-green);">{{ prestamo.monto_pagado|dinero }}</div>
+            </div>
+            <div class="ep-stat ep-stat-full">
+                <div class="ep-stat-label">Saldo pendiente</div>
+                <div class="ep-stat-value" style="color: var(--ep-orange); font-size: 1.4rem;">{{ prestamo.monto_pendiente|dinero }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Próxima cuota -->
+    {% if proxima_cuota %}
+    <div class="ep-card">
+        <div class="ep-card-title">
+            <i class="bi bi-calendar-event"></i> Próxima cuota
+        </div>
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-hash"></i> Número
+            </span>
+            <span class="ep-info-value">{{ proxima_cuota.numero_cuota }} / {{ prestamo.cuotas_pactadas }}</span>
+        </div>
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-calendar3"></i> Vencimiento
+            </span>
+            <span class="ep-info-value">{{ proxima_cuota.fecha_vencimiento|date:"d/m/Y" }}</span>
+        </div>
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-cash"></i> Monto
+            </span>
+            <span class="ep-info-value" style="font-size: 1.1rem; color: var(--ep-green);">
+                {% if proxima_cuota.estado == 'PC' %}
+                    {{ proxima_cuota.monto_restante|dinero }}
+                    <small style="font-size:0.7rem; color:var(--ep-text-muted); display:block;">resta por pagar</small>
+                {% else %}
+                    {{ proxima_cuota.monto_cuota|dinero }}
+                {% endif %}
+            </span>
+        </div>
+        {% if proxima_cuota.esta_vencida %}
+        <div style="margin-top: 10px;">
+            <span class="badge bg-danger rounded-pill px-3 py-2" style="font-size:0.78rem;">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i> Vencida
+            </span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Cuotas vencidas -->
+    {% if cuotas_vencidas > 0 %}
+    <div class="ep-alert ep-alert-danger">
+        <div class="ep-alert-icon">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+        </div>
+        <div>
+            <div class="ep-alert-title">Cuotas vencidas</div>
+            <div class="ep-alert-value" style="color: var(--ep-red);">{{ cuotas_vencidas }}</div>
+            <div class="ep-alert-text">cuota{{ cuotas_vencidas|pluralize:"s" }} sin pagar fuera de término</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Mora pendiente -->
+    {% if mora_pendiente > 0 %}
+    <div class="ep-alert ep-alert-warning">
+        <div class="ep-alert-icon">
+            <i class="bi bi-percent"></i>
+        </div>
+        <div>
+            <div class="ep-alert-title">Mora pendiente</div>
+            <div class="ep-alert-value" style="color: var(--ep-orange);">{{ mora_pendiente|dinero }}</div>
+            <div class="ep-alert-text">Interés por mora acumulado</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Último pago -->
+    {% if ultimo_pago %}
+    <div class="ep-alert ep-alert-success">
+        <div class="ep-alert-icon">
+            <i class="bi bi-check-circle-fill"></i>
+        </div>
+        <div>
+            <div class="ep-alert-title">Último pago registrado</div>
+            <div class="ep-alert-value" style="color: var(--ep-green);">{{ ultimo_pago.monto_pagado|dinero }}</div>
+            <div class="ep-alert-text">
+                Cuota {{ ultimo_pago.numero_cuota }} &middot; {{ ultimo_pago.fecha_pago_real|date:"d/m/Y" }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Fechas -->
+    <div class="ep-card">
+        <div class="ep-card-title">
+            <i class="bi bi-calendar3"></i> Fechas
+        </div>
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-play-circle"></i> Inicio
+            </span>
+            <span class="ep-info-value">{{ prestamo.fecha_inicio|date:"d/m/Y" }}</span>
+        </div>
+        {% if prestamo.fecha_finalizacion %}
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-flag"></i> Vencimiento
+            </span>
+            <span class="ep-info-value">{{ prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+        </div>
+        {% endif %}
+        <div class="ep-info-row">
+            <span class="ep-info-label">
+                <i class="bi bi-arrow-repeat"></i> Frecuencia
+            </span>
+            <span class="ep-info-value">{{ prestamo.get_frecuencia_display }}</span>
+        </div>
+    </div>
+
+    <!-- Préstamo finalizado -->
+    {% if prestamo.estado == 'FI' %}
+    <div class="ep-alert ep-alert-success" style="text-align: center; flex-direction: column; align-items: center; padding: 24px;">
+        <div class="ep-alert-icon" style="width: 48px; height: 48px; font-size: 1.4rem; margin-bottom: 8px;">
+            <i class="bi bi-trophy-fill"></i>
+        </div>
+        <div class="ep-alert-title" style="font-size: 1rem;">Crédito Finalizado</div>
+        <div class="ep-alert-text">Todas las cuotas fueron abonadas correctamente.</div>
+    </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="ep-footer">
+        <i class="bi bi-shield-lock me-1"></i>
+        Información actualizada al {{ hoy|date:"d/m/Y" }}
+        <br>
+        <small>Este enlace es personal e intransferible.</small>
+    </div>
+
+</div>
+
+</body>
+</html>

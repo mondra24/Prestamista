@@ -51,6 +51,20 @@
             </div>
         </div>
     </div>
+
+    {% if mora_total_pendiente and mora_total_pendiente > 0 %}
+    <div class="row g-3 mb-4">
+        <div class="col-12">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-percent"></i>
+                </div>
+                <div class="stat-value text-danger">{{ mora_total_pendiente|dinero }}</div>
+                <div class="stat-label">Mora Total Pendiente</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     
     <!-- Distribución por categoría -->
     <section class="mb-4">

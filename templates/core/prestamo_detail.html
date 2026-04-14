@@ -162,10 +162,51 @@
     </div>
 
     <!-- Botón enviar resumen de crédito por WhatsApp -->
-    <div class="d-grid mb-4">
+    <div class="d-grid mb-3">
         <button class="btn btn-success btn-lg btn-resumen-credito-wp" data-cuota-destacada="0">
             <i class="bi bi-whatsapp me-2"></i>Enviar Resumen de Crédito por WhatsApp
         </button>
+    </div>
+
+    <!-- Link público compartible -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="mb-0">
+                    <i class="bi bi-link-45deg me-1 text-primary"></i>Link Público del Crédito
+                </h6>
+                <span class="badge {% if prestamo.token_activo %}bg-success{% else %}bg-secondary{% endif %}" id="token-estado-badge">
+                    <i class="bi {% if prestamo.token_activo %}bi-check-circle-fill{% else %}bi-x-circle-fill{% endif %} me-1"></i>
+                    <span id="token-estado-texto">{% if prestamo.token_activo %}Activo{% else %}Inactivo{% endif %}</span>
+                </span>
+            </div>
+            <small class="text-muted d-block mb-2">
+                Link de solo lectura para compartir con el cliente. Muestra estado, saldo y próxima cuota (sin datos sensibles).
+            </small>
+            <div class="input-group input-group-sm mb-2">
+                <input type="text" class="form-control" id="token-link-input"
+                       value="{{ request.scheme }}://{{ request.get_host }}{% url 'core:estado_publico' token=prestamo.token_publico %}"
+                       readonly>
+                <button class="btn btn-outline-primary" type="button" id="btn-copiar-link" title="Copiar link">
+                    <i class="bi bi-clipboard"></i>
+                </button>
+                <a class="btn btn-outline-secondary" id="btn-ver-link"
+                   href="{% url 'core:estado_publico' token=prestamo.token_publico %}" target="_blank" title="Ver link">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-warning flex-grow-1" id="btn-regenerar-token"
+                        data-prestamo-id="{{ prestamo.pk }}">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Regenerar
+                </button>
+                <button class="btn btn-sm flex-grow-1 {% if prestamo.token_activo %}btn-outline-danger{% else %}btn-outline-success{% endif %}"
+                        id="btn-toggle-token" data-prestamo-id="{{ prestamo.pk }}">
+                    <i class="bi {% if prestamo.token_activo %}bi-pause-circle{% else %}bi-play-circle{% endif %} me-1"></i>
+                    <span id="btn-toggle-texto">{% if prestamo.token_activo %}Desactivar{% else %}Activar{% endif %}</span>
+                </button>
+            </div>
+        </div>
     </div>
     
     <!-- Lista de cuotas -->
@@ -686,7 +727,9 @@ const prestamoData = {
     fechaInicio: "{{ prestamo.fecha_inicio|date:'d/m/Y' }}",
     fechaFin: "{{ prestamo.fecha_finalizacion|date:'d/m/Y' }}",
     pendiente: {{ prestamo.monto_pendiente|numero_raw }},
-    pagadas: {{ prestamo.cuotas_pagadas }}
+    pagadas: {{ prestamo.cuotas_pagadas }},
+    tokenPublico: "{{ prestamo.token_publico }}",
+    tokenActivo: {{ prestamo.token_activo|yesno:"true,false" }}
 };
 const cuotasData = [
     {% for cuota in cuotas %}{
@@ -1201,6 +1244,13 @@ function enviarResumenCredito(cuotaDestacada) {
         }
     }
 
+    // Link público del crédito (si está activo)
+    let linkPublico = '';
+    if (d.tokenActivo && d.tokenPublico) {
+        const urlEstado = `${window.location.origin}/estado/${d.tokenPublico}/`;
+        linkPublico = `🔗 *Consultá el estado de tu crédito online:*\n${urlEstado}\n\n`;
+    }
+
     const mensaje =
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `*CLIENTE:* ${d.cliente.toUpperCase()}\n` +
@@ -1210,6 +1260,7 @@ function enviarResumenCredito(cuotaDestacada) {
         `${detalle}` +
         `--------------------------------------\n` +
         `${listaCuotas}\n` +
+        `${linkPublico}` +
         `⚠️ *Aclaración:* La cuota no abonada en fecha sufrirá un recargo del 50% del valor de la cuota, y del 100% si la cuota se acumula.\n\n` +
         `⚠️ *Aclaración:* Es responsabilidad del cliente realizar los pagos en tiempo y forma y enviarnos los comprobantes correspondientes los días de pago.\n\n` +
         `*CONTACTO:*\n` +
@@ -1376,5 +1427,123 @@ async function confirmarEditarCobro() {
         showToast('Error de conexión', 'danger');
     }
 }
+
+// ============ GESTIÓN DE LINK PÚBLICO ============
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+        || document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('csrftoken='))?.split('=')[1]
+        || '';
+
+    // Copiar link
+    const btnCopiar = document.getElementById('btn-copiar-link');
+    if (btnCopiar) {
+        btnCopiar.addEventListener('click', async function() {
+            const input = document.getElementById('token-link-input');
+            if (!input) return;
+            try {
+                await navigator.clipboard.writeText(input.value);
+                const icon = btnCopiar.querySelector('i');
+                icon.className = 'bi bi-check-lg';
+                btnCopiar.classList.remove('btn-outline-primary');
+                btnCopiar.classList.add('btn-success');
+                showToast('Link copiado al portapapeles', 'success');
+                setTimeout(() => {
+                    icon.className = 'bi bi-clipboard';
+                    btnCopiar.classList.add('btn-outline-primary');
+                    btnCopiar.classList.remove('btn-success');
+                }, 1500);
+            } catch (e) {
+                // Fallback para navegadores viejos
+                input.select();
+                document.execCommand('copy');
+                showToast('Link copiado', 'success');
+            }
+        });
+    }
+
+    // Regenerar token
+    const btnRegenerar = document.getElementById('btn-regenerar-token');
+    if (btnRegenerar) {
+        btnRegenerar.addEventListener('click', async function() {
+            if (!confirm('¿Regenerar el link? El link actual dejará de funcionar.')) return;
+            const pk = this.dataset.prestamoId;
+            this.disabled = true;
+            try {
+                const resp = await fetch(`/api/prestamo/${pk}/regenerar-token/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await resp.json();
+                if (data.success && data.data && data.data.token) {
+                    const base = window.location.origin;
+                    const nuevoLink = `${base}/estado/${data.data.token}/`;
+                    document.getElementById('token-link-input').value = nuevoLink;
+                    const btnVer = document.getElementById('btn-ver-link');
+                    if (btnVer) btnVer.href = `/estado/${data.data.token}/`;
+                    // Si estaba inactivo, actualizar estado visual
+                    actualizarEstadoToken(true);
+                    showToast('Link regenerado correctamente', 'success');
+                } else {
+                    showToast(data.message || 'Error al regenerar', 'danger');
+                }
+            } catch (e) {
+                showToast('Error de conexión', 'danger');
+            } finally {
+                this.disabled = false;
+            }
+        });
+    }
+
+    // Toggle activar/desactivar
+    const btnToggle = document.getElementById('btn-toggle-token');
+    if (btnToggle) {
+        btnToggle.addEventListener('click', async function() {
+            const pk = this.dataset.prestamoId;
+            this.disabled = true;
+            try {
+                const resp = await fetch(`/api/prestamo/${pk}/toggle-token/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    actualizarEstadoToken(data.data.activo);
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.message || 'Error', 'danger');
+                }
+            } catch (e) {
+                showToast('Error de conexión', 'danger');
+            } finally {
+                this.disabled = false;
+            }
+        });
+    }
+
+    function actualizarEstadoToken(activo) {
+        const badge = document.getElementById('token-estado-badge');
+        const texto = document.getElementById('token-estado-texto');
+        const btnToggleTexto = document.getElementById('btn-toggle-texto');
+        const btnToggle = document.getElementById('btn-toggle-token');
+        if (badge) {
+            badge.className = 'badge ' + (activo ? 'bg-success' : 'bg-secondary');
+            const icon = badge.querySelector('i');
+            if (icon) icon.className = 'bi ' + (activo ? 'bi-check-circle-fill' : 'bi-x-circle-fill') + ' me-1';
+        }
+        if (texto) texto.textContent = activo ? 'Activo' : 'Inactivo';
+        if (btnToggleTexto) btnToggleTexto.textContent = activo ? 'Desactivar' : 'Activar';
+        if (btnToggle) {
+            btnToggle.className = 'btn btn-sm flex-grow-1 ' + (activo ? 'btn-outline-danger' : 'btn-outline-success');
+            const icon = btnToggle.querySelector('i');
+            if (icon) icon.className = 'bi ' + (activo ? 'bi-pause-circle' : 'bi-play-circle') + ' me-1';
+        }
+    }
+})();
 </script>
 {% endblock %}
