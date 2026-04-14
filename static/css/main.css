@@ -525,7 +525,7 @@ body {
 
 .loan-progress {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: var(--text-secondary);
 }
 
 .partial-dot {
@@ -1020,7 +1020,7 @@ body {
 }
 
 .pago-resumen-row .label {
-    color: #6c757d;
+    color: var(--text-secondary);
 }
 
 .pago-resumen-row .valor {
@@ -2155,24 +2155,17 @@ body {
     display: inline-block;
     font-size: 3.5rem;
     margin-bottom: 12px;
-    opacity: 0.85;
-    background: linear-gradient(135deg, var(--color-pagado), #4ade80);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
+    opacity: 0.9;
+    color: var(--color-pagado);
     animation: pf-emptyFloat 3s ease-in-out infinite;
 }
 
-/* Empty states con íconos "negativos" (sin cobros, etc.) - ícono más cálido */
+/* Empty states con íconos "positivos" (sin cobros pendientes, etc.) - cálido */
 .empty-state .bi-emoji-smile,
+.empty-state .bi-emoji-sunglasses,
 .empty-state .bi-check-circle,
-.empty-state .bi-check-circle-fill,
-.empty-state .bi-emoji-sunglasses {
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+.empty-state .bi-check-circle-fill {
+    color: #f59e0b;
 }
 
 @keyframes pf-emptyFloat {
@@ -2202,4 +2195,220 @@ body {
     outline: 2px solid rgba(25,135,84,0.4);
     outline-offset: 2px;
 }
+
+/* =========================================================================
+   ============== CONTRAST FIXES - LIGHT & DARK MODE =======================
+   Correcciones de contraste: asegurar que todo texto sea legible en ambos
+   modos. Especial foco en elementos con fondo hardcodeado que heredaban
+   texto del tema.
+   ========================================================================= */
+
+/* Bloque de mora pendiente dentro del modal: fondo amarillo claro fijo.
+   Forzar texto oscuro siempre para que se vea en dark mode también. */
+.pago-pendiente-bloque {
+    color: #6b4800;
+}
+
+.pago-pendiente-bloque .pago-resumen-row,
+.pago-pendiente-bloque .pago-resumen-row .label,
+.pago-pendiente-bloque .pago-resumen-row .valor,
+.pago-pendiente-bloque * {
+    color: #6b4800 !important;
+}
+
+.pago-pendiente-bloque .pago-resumen-row .valor.text-danger {
+    color: #b42318 !important;
+}
+
+/* Chips y badges con fondo fijo: garantizar que su texto se vea en cualquier modo */
+[data-theme="dark"] .chip.mora,
+[data-theme="dark"] .overdue-badge,
+[data-theme="dark"] .date-badge {
+    filter: brightness(1.05);
+}
+
+/* Alerts Bootstrap en light mode - asegurar texto oscuro legible sobre fondo claro */
+.alert-success {
+    color: #0f5132;
+}
+.alert-warning {
+    color: #664d03;
+}
+.alert-danger {
+    color: #842029;
+}
+.alert-info {
+    color: #055160;
+}
+
+/* Los alerts en dark mode ya tienen overrides más arriba (líneas 122-144) */
+
+/* Texto muted dentro de cards en dark mode - evitar gris demasiado oscuro */
+[data-theme="dark"] .text-muted,
+[data-theme="dark"] small.text-muted,
+[data-theme="dark"] .small.text-muted {
+    color: #adb5bd !important;
+}
+
+/* Accordion en dark mode - texto del botón debe verse */
+[data-theme="dark"] .accordion-button {
+    color: var(--text-primary) !important;
+}
+
+/* List-group dentro de cards en dark mode */
+[data-theme="dark"] .list-group-item strong,
+[data-theme="dark"] .list-group-item b {
+    color: var(--text-primary);
+}
+
+/* Tablas en dark mode - headers */
+[data-theme="dark"] .table thead th {
+    color: var(--text-primary);
+    background-color: var(--bg-card-hover);
+}
+
+/* Form labels en dark mode */
+[data-theme="dark"] label,
+[data-theme="dark"] .form-label {
+    color: var(--text-primary);
+}
+
+/* Asegurar que text-primary y text-secondary funcionen en dark mode */
+[data-theme="dark"] .text-primary {
+    color: #60a5fa !important;
+}
+
+[data-theme="dark"] .text-secondary {
+    color: #9ca3af !important;
+}
+
+[data-theme="dark"] .text-success {
+    color: #4ade80 !important;
+}
+
+[data-theme="dark"] .text-danger {
+    color: #fca5a5 !important;
+}
+
+[data-theme="dark"] .text-warning {
+    color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .text-info {
+    color: #7dd3fc !important;
+}
+
+[data-theme="dark"] .text-dark {
+    color: var(--text-primary) !important;
+}
+
+/* Cards con clases bg-light-* (si las hubiera) - contraste asegurado */
+[data-theme="dark"] .bg-warning-subtle,
+[data-theme="dark"] .bg-success-subtle,
+[data-theme="dark"] .bg-danger-subtle,
+[data-theme="dark"] .bg-info-subtle,
+[data-theme="dark"] .bg-primary-subtle {
+    color: var(--text-primary);
+}
+
+/* Amount color en contexto de card con fondo claro - forzar oscuro */
+.payment-card.vencida .amount-section .amount,
+.payment-card.pendiente .amount-section .amount,
+.payment-card.proxima .amount-section .amount {
+    /* Ya usan colores específicos por clase, esto asegura legibilidad en dark */
+}
+
+/* En dark mode, las cards .payment-card.pendiente, .vencida, .proxima tienen
+   gradiente que va del color claro al bg-card. En dark ese color claro es
+   en realidad oscuro (--color-moroso-light: #450a0a), así que el texto
+   claro se ve bien. Pero si el gradiente va al revés, forzamos: */
+[data-theme="dark"] .payment-card.vencida,
+[data-theme="dark"] .payment-card.pendiente,
+[data-theme="dark"] .payment-card.proxima {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .payment-card.vencida .client-name,
+[data-theme="dark"] .payment-card.pendiente .client-name,
+[data-theme="dark"] .payment-card.proxima .client-name {
+    color: var(--text-primary);
+}
+
+/* Números de cuotas y montos en cards de cobro - contraste fuerte */
+.cobro-card.estado-pagado {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .cobro-card.estado-pagado .cliente-nombre,
+[data-theme="dark"] .cobro-card.estado-pagado .cuota-info,
+[data-theme="dark"] .cobro-card.estado-pagado .monto-valor {
+    color: var(--text-primary) !important;
+}
+
+/* Navbar/sidebar brand - asegurar texto legible siempre */
+.sidebar-brand {
+    color: white !important;
+}
+
+.mobile-header h1,
+.mobile-header .h5 {
+    color: white !important;
+}
+
+/* Botones outline en dark mode - evitar texto invisible */
+[data-theme="dark"] .btn-outline-primary:not(:hover) {
+    background: transparent;
+}
+
+[data-theme="dark"] .btn-outline-danger {
+    color: #fca5a5;
+    border-color: #7f1d1d;
+}
+
+[data-theme="dark"] .btn-outline-success {
+    color: #4ade80;
+    border-color: #14532d;
+}
+
+[data-theme="dark"] .btn-outline-warning {
+    color: #fbbf24;
+    border-color: #713f12;
+}
+
+[data-theme="dark"] .btn-outline-info {
+    color: #7dd3fc;
+    border-color: #0c4a6e;
+}
+
+/* Inputs en formularios - placeholder legible */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+[data-theme="dark"] select::placeholder {
+    color: #6c757d !important;
+    opacity: 1;
+}
+
+/* Dropdown items activos */
+[data-theme="dark"] .dropdown-item.active,
+[data-theme="dark"] .dropdown-item:active {
+    background-color: var(--color-pagado);
+    color: white;
+}
+
+/* Accordion - fondos en dark evitan que se confundan con el resto */
+[data-theme="dark"] .accordion-body {
+    color: var(--text-primary);
+}
+
+/* Progress bar text sobre fondo */
+.progress-bar {
+    color: white;
+    font-weight: 600;
+}
+
+/* Ensuring close buttons are visible on both modes */
+[data-theme="dark"] .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
+}
+
 
