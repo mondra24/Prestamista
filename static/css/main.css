@@ -1713,3 +1713,493 @@ body {
     border-color: var(--color-pagado);
     box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.15);
 }
+
+/* =========================================================================
+   ============== UI POLISH v2 - ADDITIVE, NON-BREAKING ====================
+   Todo lo que viene a partir de aquí son mejoras visuales aditivas.
+   No modifica ninguna clase existente: solo suma estilos nuevos o overrides
+   muy suaves. Si algo se deshabilita por prefers-reduced-motion, la app
+   queda exactamente igual que antes.
+   ========================================================================= */
+
+/* Respeto a usuarios con reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}
+
+/* ============== 1. MICRO-ANIMACIONES ============== */
+
+/* Fade-in suave al cargar la página en el contenido principal */
+@keyframes pf-fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.main-content {
+    animation: pf-fadeInUp 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover más vivo en payment-card y cuota-item */
+.payment-card {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (hover: hover) {
+    .payment-card:hover {
+        transform: translateY(-2px);
+    }
+    .cuota-item {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .cuota-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px var(--shadow-card-hover);
+    }
+    .stat-card {
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(0,0,0,0.08);
+    }
+}
+
+/* Bounce discreto en el botón flotante de cobros (cada tanto llama la atención) */
+@keyframes pf-softBounce {
+    0%, 88%, 100% { transform: translateY(0); }
+    92% { transform: translateY(-4px); }
+    96% { transform: translateY(-1px); }
+}
+
+.bottom-nav .nav-item-main .nav-main-btn {
+    animation: pf-softBounce 6s ease-in-out infinite;
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.bottom-nav .nav-item-main:active .nav-main-btn {
+    transform: scale(0.92);
+    animation: none;
+}
+
+/* Bottom nav items - pequeño lift al activo */
+.bottom-nav .nav-item.active i {
+    animation: pf-fadeInUp 0.3s ease;
+}
+
+/* Sidebar - indicador activo más visible */
+.sidebar-nav a {
+    position: relative;
+}
+
+.sidebar-nav a.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #4ade80, var(--color-pagado));
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.5);
+}
+
+/* ============== 2. SOMBRAS MÁS MODERNAS ============== */
+
+.payment-card {
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04),
+                0 4px 12px rgba(0,0,0,0.05);
+}
+
+.payment-card:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05),
+                0 12px 28px rgba(0,0,0,0.10);
+}
+
+[data-theme="dark"] .payment-card {
+    box-shadow: 0 1px 2px rgba(0,0,0,0.25),
+                0 6px 16px rgba(0,0,0,0.35);
+}
+
+[data-theme="dark"] .payment-card:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3),
+                0 14px 32px rgba(0,0,0,0.5);
+}
+
+.bottom-nav {
+    box-shadow: 0 -1px 2px rgba(0,0,0,0.03),
+                0 -8px 24px rgba(0,0,0,0.08);
+}
+
+.bottom-nav .nav-main-btn {
+    box-shadow: 0 4px 12px rgba(25, 135, 84, 0.35),
+                0 8px 24px rgba(25, 135, 84, 0.20);
+}
+
+/* ============== 3. SKELETON LOADERS ============== */
+
+@keyframes pf-skeletonShimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+.skeleton,
+.pf-skeleton {
+    display: block;
+    background: linear-gradient(
+        90deg,
+        var(--bg-chip) 0%,
+        var(--bg-card-hover) 50%,
+        var(--bg-chip) 100%
+    );
+    background-size: 200% 100%;
+    animation: pf-skeletonShimmer 1.4s ease-in-out infinite;
+    border-radius: 8px;
+    color: transparent !important;
+    user-select: none;
+    pointer-events: none;
+}
+
+.pf-skeleton-text {
+    height: 0.9em;
+    margin: 0.35em 0;
+    border-radius: 4px;
+}
+
+.pf-skeleton-line-sm { width: 40%; }
+.pf-skeleton-line-md { width: 70%; }
+.pf-skeleton-line-lg { width: 90%; }
+
+.pf-skeleton-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+}
+
+.pf-skeleton-card {
+    padding: 16px;
+    border-radius: 16px;
+    background: var(--bg-card);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.pf-skeleton-card .pf-skeleton-body {
+    flex: 1;
+}
+
+/* ============== 4. TOASTS FLOTANTES ============== */
+
+.pf-toast-container {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10500;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+    padding: 0 12px;
+    width: 100%;
+    max-width: 420px;
+}
+
+@media (min-width: 992px) {
+    .pf-toast-container {
+        left: auto;
+        right: 20px;
+        top: 20px;
+        transform: none;
+    }
+}
+
+.pf-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 14px 16px;
+    border-radius: 14px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08),
+                0 12px 32px rgba(0,0,0,0.15);
+    border-left: 4px solid var(--color-nuevo);
+    min-height: 54px;
+    font-size: 0.92rem;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pf-toast.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.pf-toast.hide {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+}
+
+.pf-toast-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    color: white;
+}
+
+.pf-toast-message {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.pf-toast-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 1rem;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+}
+
+.pf-toast-close:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.pf-toast.success {
+    border-left-color: var(--color-pagado);
+}
+.pf-toast.success .pf-toast-icon {
+    background: linear-gradient(135deg, #43a047, #2e7d32);
+}
+
+.pf-toast.danger,
+.pf-toast.error {
+    border-left-color: var(--color-moroso);
+}
+.pf-toast.danger .pf-toast-icon,
+.pf-toast.error .pf-toast-icon {
+    background: linear-gradient(135deg, #e53935, #c62828);
+}
+
+.pf-toast.warning {
+    border-left-color: var(--color-pendiente);
+}
+.pf-toast.warning .pf-toast-icon {
+    background: linear-gradient(135deg, #fb923c, #ea580c);
+}
+
+.pf-toast.info {
+    border-left-color: var(--color-nuevo);
+}
+.pf-toast.info .pf-toast-icon {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+}
+
+/* ============== 5. GRADIENTES SUTILES ============== */
+
+/* Header móvil con gradiente más vivo */
+.mobile-header {
+    background: linear-gradient(135deg, #198754 0%, #157347 50%, #0f5132 100%);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 4px 12px rgba(25,135,84,0.18);
+}
+
+[data-theme="dark"] .mobile-header {
+    background: linear-gradient(135deg, #166534 0%, #14532d 50%, #0a3820 100%);
+}
+
+/* Brand del sidebar con toque */
+.sidebar-brand {
+    background: linear-gradient(135deg, rgba(25,135,84,0.18), rgba(25,135,84,0));
+}
+
+/* Stat cards con acento superior sutil */
+.stat-card {
+    position: relative;
+}
+
+.stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12%;
+    right: 12%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(25,135,84,0.5), transparent);
+    border-radius: 2px;
+    opacity: 0.7;
+}
+
+/* Botones principales con gradiente y glow */
+.btn-success {
+    background: linear-gradient(135deg, #198754 0%, #157347 100%);
+    border: none;
+    box-shadow: 0 2px 8px rgba(25,135,84,0.25);
+}
+
+.btn-success:hover,
+.btn-success:active,
+.btn-success:focus {
+    background: linear-gradient(135deg, #157347 0%, #0f5132 100%) !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(25,135,84,0.38);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
+    border: none;
+    box-shadow: 0 2px 8px rgba(13,110,253,0.25);
+}
+
+.btn-primary:hover,
+.btn-primary:active,
+.btn-primary:focus {
+    background: linear-gradient(135deg, #0a58ca 0%, #084298 100%) !important;
+    border: none !important;
+    box-shadow: 0 4px 14px rgba(13,110,253,0.38);
+}
+
+/* Badges de estado más lindos */
+.badge-pagado,
+.badge.bg-success {
+    background: linear-gradient(135deg, #198754, #157347) !important;
+    box-shadow: 0 1px 3px rgba(25,135,84,0.3);
+}
+
+.badge-pendiente,
+.badge.bg-warning {
+    background: linear-gradient(135deg, #fd7e14, #ea580c) !important;
+    box-shadow: 0 1px 3px rgba(253,126,20,0.3);
+}
+
+.badge-moroso,
+.badge.bg-danger {
+    background: linear-gradient(135deg, #dc3545, #b02a37) !important;
+    box-shadow: 0 1px 3px rgba(220,53,69,0.3);
+}
+
+.badge-nuevo,
+.badge.bg-primary {
+    background: linear-gradient(135deg, #0d6efd, #0a58ca) !important;
+    box-shadow: 0 1px 3px rgba(13,110,253,0.3);
+}
+
+/* ============== 6. EFECTO RIPPLE ============== */
+
+.pf-ripple-host {
+    position: relative;
+    overflow: hidden;
+}
+
+.pf-ripple {
+    position: absolute;
+    border-radius: 50%;
+    transform: scale(0);
+    animation: pf-rippleExpand 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+    background: rgba(255,255,255,0.4);
+    pointer-events: none;
+    z-index: 1;
+}
+
+@keyframes pf-rippleExpand {
+    to {
+        transform: scale(3);
+        opacity: 0;
+    }
+}
+
+/* En botones oscuros/outline usamos ripple más oscuro */
+.btn-outline-secondary .pf-ripple,
+.btn-light .pf-ripple,
+.action-btn.secondary .pf-ripple,
+.action-btn-mini:not(.primary) .pf-ripple {
+    background: rgba(25,135,84,0.18);
+}
+
+/* ============== 7. EMPTY STATES MEJORADOS ============== */
+
+.empty-state {
+    padding: 48px 24px;
+    animation: pf-fadeInUp 0.4s ease;
+}
+
+.empty-state i,
+.empty-state .bi {
+    display: inline-block;
+    font-size: 3.5rem;
+    margin-bottom: 12px;
+    opacity: 0.85;
+    background: linear-gradient(135deg, var(--color-pagado), #4ade80);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: pf-emptyFloat 3s ease-in-out infinite;
+}
+
+/* Empty states con íconos "negativos" (sin cobros, etc.) - ícono más cálido */
+.empty-state .bi-emoji-smile,
+.empty-state .bi-check-circle,
+.empty-state .bi-check-circle-fill,
+.empty-state .bi-emoji-sunglasses {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+@keyframes pf-emptyFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+}
+
+.empty-state h3,
+.empty-state h4,
+.empty-state h5 {
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 4px;
+}
+
+.empty-state p {
+    max-width: 320px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.5;
+}
+
+/* ============== EXTRA: Focus rings accesibles ============== */
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible {
+    outline: 2px solid rgba(25,135,84,0.4);
+    outline-offset: 2px;
+}
+

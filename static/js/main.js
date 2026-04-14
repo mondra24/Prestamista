@@ -1051,3 +1051,190 @@ function initSelectAutocomplete() {
         }
     });
 }
+
+/* =========================================================================
+   ============== UI POLISH v2 - TOASTS, RIPPLE, ENHANCEMENTS ==============
+   Todo aditivo. Si alguna pieza falla, la app sigue funcionando.
+   ========================================================================= */
+
+(function() {
+    'use strict';
+
+    /* ---------- Sistema de toasts flotantes ---------- */
+    const TOAST_ICONS = {
+        success: 'bi-check-circle-fill',
+        danger: 'bi-exclamation-triangle-fill',
+        error: 'bi-exclamation-triangle-fill',
+        warning: 'bi-exclamation-circle-fill',
+        info: 'bi-info-circle-fill'
+    };
+
+    const DJANGO_TAG_MAP = {
+        'success': 'success',
+        'error': 'danger',
+        'danger': 'danger',
+        'warning': 'warning',
+        'info': 'info',
+        'debug': 'info'
+    };
+
+    function getToastContainer() {
+        let container = document.querySelector('.pf-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'pf-toast-container';
+            document.body.appendChild(container);
+        }
+        return container;
+    }
+
+    function showToast(message, type = 'info', duration = 4000) {
+        if (!message) return null;
+        const container = getToastContainer();
+        const toast = document.createElement('div');
+        toast.className = 'pf-toast ' + type;
+        toast.setAttribute('role', 'status');
+
+        const iconClass = TOAST_ICONS[type] || TOAST_ICONS.info;
+        toast.innerHTML = `
+            <div class="pf-toast-icon"><i class="bi ${iconClass}"></i></div>
+            <div class="pf-toast-message"></div>
+            <button type="button" class="pf-toast-close" aria-label="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        `;
+        toast.querySelector('.pf-toast-message').textContent = message;
+
+        container.appendChild(toast);
+        // forzar reflow para que la transición se dispare
+        void toast.offsetWidth;
+        requestAnimationFrame(() => toast.classList.add('show'));
+
+        let timeoutId = null;
+        const dismiss = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            toast.classList.remove('show');
+            toast.classList.add('hide');
+            setTimeout(() => toast.remove(), 300);
+        };
+
+        toast.querySelector('.pf-toast-close').addEventListener('click', dismiss);
+        if (duration > 0) {
+            timeoutId = setTimeout(dismiss, duration);
+        }
+        return { dismiss };
+    }
+
+    // API global accesible desde templates y AJAX
+    window.PF = window.PF || {};
+    window.PF.toast = showToast;
+    window.PF.success = (msg, d) => showToast(msg, 'success', d);
+    window.PF.error = (msg, d) => showToast(msg, 'danger', d);
+    window.PF.warning = (msg, d) => showToast(msg, 'warning', d);
+    window.PF.info = (msg, d) => showToast(msg, 'info', d);
+
+    /**
+     * Convierte los mensajes flash de Django (.alert) en toasts flotantes.
+     * Solo si aún están visibles al cargar la página.
+     */
+    function migrarAlertsATOasts() {
+        // Evitar tocar alerts que están dentro de containers específicos de contenido
+        const alerts = document.querySelectorAll('main > .container-fluid > .alert, main > .container > .alert');
+        alerts.forEach(alert => {
+            // Determinar el tipo desde las clases de Bootstrap
+            let type = 'info';
+            for (const [django, toastType] of Object.entries(DJANGO_TAG_MAP)) {
+                if (alert.classList.contains('alert-' + django)) {
+                    type = toastType;
+                    break;
+                }
+            }
+            // Texto sin el botón de cerrar
+            const clone = alert.cloneNode(true);
+            const btn = clone.querySelector('.btn-close');
+            if (btn) btn.remove();
+            const message = clone.textContent.trim();
+            if (message) {
+                showToast(message, type, 5000);
+                alert.remove();
+            }
+        });
+    }
+
+    /* ---------- Efecto ripple en botones ---------- */
+    function crearRipple(e) {
+        const target = e.currentTarget;
+        if (target.disabled) return;
+
+        // Asegurar clase host (overflow hidden + position relative)
+        if (!target.classList.contains('pf-ripple-host')) {
+            target.classList.add('pf-ripple-host');
+        }
+
+        const rect = target.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        // Soportar tanto eventos mouse como touch
+        let clientX, clientY;
+        if (e.touches && e.touches[0]) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+        const x = clientX - rect.left - size / 2;
+        const y = clientY - rect.top - size / 2;
+
+        const ripple = document.createElement('span');
+        ripple.className = 'pf-ripple';
+        ripple.style.width = ripple.style.height = size + 'px';
+        ripple.style.left = x + 'px';
+        ripple.style.top = y + 'px';
+
+        target.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+    }
+
+    function initRipple() {
+        // Selector amplio. Excluimos .nav-item-main porque su hijo sobresale
+        // (margin-top negativo) y overflow:hidden lo cortaría.
+        const selector = [
+            '.btn',
+            '.action-btn',
+            '.action-btn-mini',
+            '.btn-cobrar',
+            '.bottom-nav .nav-main-btn',
+            '.confirm-modal-actions button'
+        ].join(', ');
+
+        document.addEventListener('click', function(e) {
+            const target = e.target.closest(selector);
+            if (!target) return;
+            // Evitar doble ripple o forzar a saltar
+            if (target.hasAttribute('data-no-ripple')) return;
+            // Nav main btn: ripple en el botón redondo, no en el <a>
+            crearRipple({ currentTarget: target, clientX: e.clientX, clientY: e.clientY });
+        });
+    }
+
+    /* ---------- Auto-dismiss de Bootstrap alerts que no migramos ---------- */
+    function autoDismissAlerts() {
+        document.querySelectorAll('.alert.fade.show').forEach(alert => {
+            // Si sigue vivo después de migrar (puede haber alerts dentro de formularios), auto-ocultar
+            setTimeout(() => {
+                if (alert.isConnected) {
+                    alert.classList.remove('show');
+                    setTimeout(() => alert.remove(), 200);
+                }
+            }, 5000);
+        });
+    }
+
+    /* ---------- Init ---------- */
+    document.addEventListener('DOMContentLoaded', function() {
+        try { migrarAlertsATOasts(); } catch (e) { console.warn('toast migrate:', e); }
+        try { initRipple(); } catch (e) { console.warn('ripple:', e); }
+        try { autoDismissAlerts(); } catch (e) { console.warn('alerts:', e); }
+    });
+})();
+
