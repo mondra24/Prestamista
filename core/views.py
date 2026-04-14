@@ -1100,7 +1100,7 @@ class CierreCajaView(LoginRequiredMixin, TemplateView):
         totales_por_cobrador = []
         if es_usuario_admin(self.request.user):
             from django.contrib.auth.models import User
-            cobradores_ids = pagos_del_dia.values_list('cobrado_por', flat=True).distinct()
+            cobradores_ids = pagos_del_dia.order_by().values_list('cobrado_por', flat=True).distinct()
             for cobrador_id in cobradores_ids:
                 if cobrador_id is None:
                     continue
