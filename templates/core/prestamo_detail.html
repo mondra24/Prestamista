@@ -104,6 +104,32 @@
                     </div>
                 </div>
             </div>
+
+            {% if prestamo.mora_pendiente_total > 0 %}
+            <div class="row g-2 mt-2">
+                <div class="col-12">
+                    <div class="p-3 rounded border border-danger border-opacity-25 bg-danger bg-opacity-10">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div class="text-start">
+                                <small class="text-muted d-block">
+                                    <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+                                    Mora acumulada
+                                </small>
+                                <strong class="text-danger">+ {{ prestamo.mora_pendiente_total|dinero }}</strong>
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted d-block">Total a cobrar hoy</small>
+                                <strong class="fs-5 text-danger">{{ prestamo.monto_pendiente_con_mora|dinero }}</strong>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-2" style="font-size: 0.72rem;">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Capital pendiente ({{ prestamo.monto_pendiente|dinero }}) + mora por cuotas vencidas.
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             
             {% if prestamo.estado == 'AC' %}
             

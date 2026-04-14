@@ -900,7 +900,20 @@ class Prestamo(models.Model):
     def monto_pendiente(self):
         """Monto pendiente por pagar"""
         return self.monto_total_a_pagar - self.monto_pagado
-    
+
+    @property
+    def mora_pendiente_total(self):
+        """Suma de mora pendiente de todas las cuotas vencidas y no pagadas completamente"""
+        total = Decimal('0.00')
+        for cuota in self.cuotas.filter(estado__in=['PE', 'PA']):
+            total += cuota.interes_mora_pendiente
+        return total
+
+    @property
+    def monto_pendiente_con_mora(self):
+        """Monto pendiente incluyendo mora acumulada de cuotas vencidas"""
+        return self.monto_pendiente + self.mora_pendiente_total
+
     @property
     def cuotas_pagadas(self):
         """Número de cuotas completamente pagadas"""
