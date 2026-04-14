@@ -90,6 +90,17 @@
                                 <span class="overdue-badge">{{ cuota.dias_vencida }} días</span>
                             </div>
                         </div>
+                        {% if cuota.interes_mora_pendiente > 0 %}
+                        <div class="mora-total-banner">
+                            <span class="mora-total-label">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Cobrar con mora:
+                            </span>
+                            <span class="mora-total-value">{{ cuota.monto_total_con_mora|dinero }}</span>
+                            <span class="mora-total-desglose">
+                                <small>= {{ cuota.monto_restante|dinero }} + {{ cuota.interes_mora_pendiente|dinero }} mora</small>
+                            </span>
+                        </div>
+                        {% endif %}
                         <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                             <div class="info-chips">
                                 {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
