@@ -80,30 +80,28 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             **cliente_filter
         ).count()
         
-        # Total por cobrar hoy
+        # Total por cobrar hoy (capital pendiente real)
         total_por_cobrar = Cuota.objects.filter(
             fecha_vencimiento=hoy,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **cliente_filter
-        ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
-        
+        ).aggregate(total=Sum(F('monto_cuota') - F('monto_pagado')))['total'] or Decimal('0.00')
+
         # Estadísticas generales (filtradas por usuario)
+        pendiente_expr = F('monto_cuota') - F('monto_pagado')
+        cartera_filter = {'estado__in': ['PE', 'PC'], 'prestamo__estado': 'AC'}
         if not es_usuario_admin(self.request.user):
             prestamos_activos = Prestamo.objects.filter(estado='AC', cobrador=self.request.user).count()
             clientes_activos = Cliente.objects.filter(estado='AC', usuario=self.request.user).count()
-            total_cartera = Cuota.objects.filter(
-                estado__in=['PE', 'PC'],
-                prestamo__estado='AC',
-                prestamo__cobrador=self.request.user
-            ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
+            cartera_filter['prestamo__cobrador'] = self.request.user
         else:
             prestamos_activos = Prestamo.objects.filter(estado='AC').count()
             clientes_activos = Cliente.objects.filter(estado='AC').count()
-            total_cartera = Cuota.objects.filter(
-                estado__in=['PE', 'PC'],
-                prestamo__estado='AC'
-            ).aggregate(total=Sum('monto_cuota'))['total'] or Decimal('0.00')
+
+        total_cartera = Cuota.objects.filter(
+            **cartera_filter
+        ).aggregate(total=Sum(pendiente_expr))['total'] or Decimal('0.00')
         
         # Mora total pendiente
         cuotas_vencidas_qs = Cuota.objects.filter(
