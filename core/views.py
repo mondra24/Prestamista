@@ -126,7 +126,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             'total_por_cobrar': total_por_cobrar,
             'prestamos_activos': prestamos_activos,
             'clientes_activos': clientes_activos,
-            'total_cartera': total_cartera,
+            'total_cartera': total_cartera + mora_total,
             'mora_total_pendiente': mora_total,
             'fecha_hoy': hoy,
         })
