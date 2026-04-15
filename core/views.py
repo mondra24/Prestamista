@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy
 from django.utils import timezone
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count, Q, F
 from django.db import transaction
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -57,10 +57,13 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             estado__in=['PA', 'PC'],
             **cliente_filter
         ).aggregate(
-            total=Sum('monto_pagado'),
+            total_capital=Sum('monto_pagado'),
+            total_mora=Sum('interes_mora_cobrado'),
             cantidad=Count('id')
         )
-        
+        total_cobrado_hoy_dash = (cobros_realizados_hoy['total_capital'] or Decimal('0.00')) + \
+                                 (cobros_realizados_hoy['total_mora'] or Decimal('0.00'))
+
         # Cuotas pendientes hoy
         cuotas_pendientes_hoy = Cuota.objects.filter(
             fecha_vencimiento=hoy,
@@ -118,7 +121,7 @@ class DashboardView(LoginRequiredMixin, TemplateView):
                 mora_total += mora
 
         context.update({
-            'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
+            'total_cobrado_hoy': total_cobrado_hoy_dash,
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'cuotas_pendientes_hoy': cuotas_pendientes_hoy,
             'cuotas_vencidas': cuotas_vencidas,
@@ -198,28 +201,38 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
         if not es_usuario_admin(self.request.user):
             cobros_filter['prestamo__cobrador'] = self.request.user
-        
+
         cobros_realizados_hoy = Cuota.objects.filter(
             **cobros_filter
         ).aggregate(
-            total=Sum('monto_pagado'),
+            total_capital=Sum('monto_pagado'),
+            total_mora=Sum('interes_mora_cobrado'),
             cantidad=Count('id')
         )
-        
-        # Total por cobrar hoy
+        total_cobrado_hoy = (cobros_realizados_hoy['total_capital'] or Decimal('0.00')) + \
+                            (cobros_realizados_hoy['total_mora'] or Decimal('0.00'))
+
+        pendiente_expr = F('monto_cuota') - F('monto_pagado')
+
+        # Total por cobrar hoy (capital pendiente real)
         total_por_cobrar = cuotas_hoy.aggregate(
-            total=Sum('monto_cuota')
+            total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
-        
-        # Total próximos
+
+        # Total próximos (capital pendiente real)
         total_proximas = cuotas_proximas.aggregate(
-            total=Sum('monto_cuota')
+            total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
-        
-        # Total vencidas
-        total_vencidas = cuotas_vencidas.aggregate(
-            total=Sum('monto_cuota')
+
+        # Total vencidas: capital pendiente + mora pendiente (mora es property, iteramos)
+        total_vencidas_capital = cuotas_vencidas.aggregate(
+            total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
+        total_vencidas_mora = sum(
+            (c.interes_mora_pendiente for c in cuotas_vencidas),
+            Decimal('0.00')
+        )
+        total_vencidas = total_vencidas_capital + total_vencidas_mora
         
         # Obtener rutas activas para filtrado
         rutas = RutaCobro.objects.filter(activa=True).order_by('orden', 'nombre')
@@ -233,7 +246,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'cuotas_proximas': cuotas_proximas,
             'cuotas_semana': cuotas_semana,
             'cuotas_mes': cuotas_mes,
-            'total_cobrado_hoy': cobros_realizados_hoy['total'] or Decimal('0.00'),
+            'total_cobrado_hoy': total_cobrado_hoy,
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'total_por_cobrar': total_por_cobrar,
             'total_proximas': total_proximas,
@@ -680,8 +693,8 @@ def anular_pago_cuota(request, pk):
                 }, status=400)
             
             cuota.cancelar_pago(usuario=request.user)
-            
-            # Recalcular estadísticas
+
+            # Recalcular estadísticas (capital + mora)
             hoy = fecha_local_hoy()
             stats_filter = {
                 'fecha_pago_real': hoy,
@@ -689,11 +702,12 @@ def anular_pago_cuota(request, pk):
             }
             if not es_usuario_admin(request.user):
                 stats_filter['prestamo__cobrador'] = request.user
-            
-            total_cobrado_hoy = Cuota.objects.filter(
-                **stats_filter
-            ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
-            
+
+            agg = Cuota.objects.filter(**stats_filter).aggregate(
+                cap=Sum('monto_pagado'), mora=Sum('interes_mora_cobrado')
+            )
+            total_cobrado_hoy = (agg['cap'] or Decimal('0.00')) + (agg['mora'] or Decimal('0.00'))
+
             cantidad_cobros_hoy = Cuota.objects.filter(
                 **stats_filter
             ).count()
@@ -800,7 +814,7 @@ def cobrar_cuota(request, pk):
             elif metodo_pago == 'MX':
                 mensaje += ' (Mixto)'
             
-            # Calcular total cobrado hoy (incluye pagos parciales)
+            # Calcular total cobrado hoy (capital + mora)
             hoy = fecha_local_hoy()
             stats_filter = {
                 'fecha_pago_real': hoy,
@@ -808,15 +822,16 @@ def cobrar_cuota(request, pk):
             }
             if not es_usuario_admin(request.user):
                 stats_filter['prestamo__cobrador'] = request.user
-            
-            total_cobrado_hoy = Cuota.objects.filter(
-                **stats_filter
-            ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
-            
+
+            agg = Cuota.objects.filter(**stats_filter).aggregate(
+                cap=Sum('monto_pagado'), mora=Sum('interes_mora_cobrado')
+            )
+            total_cobrado_hoy = (agg['cap'] or Decimal('0.00')) + (agg['mora'] or Decimal('0.00'))
+
             cantidad_cobros_hoy = Cuota.objects.filter(
                 **stats_filter
             ).count()
-            
+
             return JsonResponse({
                 'success': True,
                 'message': mensaje,

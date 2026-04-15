@@ -68,7 +68,7 @@ else:
 
 | Modelo    | Códigos                                                        |
 |-----------|----------------------------------------------------------------|
-| Cuota     | `PE` (Pendiente), `PA` (Parcial), `PC` (Pagada Completa)      |
+| Cuota     | `PE` (Pendiente), `PC` (Parcial), `PA` (Pagada Completa)      |
 | Préstamo  | `AC` (Activo), `FI` (Finalizado), `CA` (Cancelado), `RE` (Renovado) |
 | Cliente   | Categorías: `EX`, `RE`, `MO`, `NU`. Estado: `AC`, `IN`        |
 | Frecuencia| `DI`, `SE`, `QU`, `ME`, `PU` (Pago Único)                     |

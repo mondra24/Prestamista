@@ -155,6 +155,7 @@
                             <button type="button" class="action-btn-mini primary btn-cobrar"
                                     data-cuota-id="{{ cuota.pk }}"
                                     data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                    data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
                                     data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                                     title="Cobrar completo">
                                 <i class="bi bi-check-lg"></i>
@@ -245,9 +246,10 @@
                                         title="Cobro parcial">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
-                                <button type="button" class="action-btn-mini primary btn-cobrar" 
+                                <button type="button" class="action-btn-mini primary btn-cobrar"
                                         data-cuota-id="{{ cuota.pk }}"
                                         data-monto="{{ cuota.monto_restante|numero_raw }}"
+                                        data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
                                         data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
                                         title="Cobrar completo">
                                     <i class="bi bi-check-lg"></i>
@@ -913,11 +915,11 @@ function formatearMoneda(num) {
 }
 
 // ============ CONFIRMACIÓN DE COBRO RÁPIDO ============
-function mostrarConfirmacion(cuotaId, monto, cliente) {
+function mostrarConfirmacion(cuotaId, monto, cliente, mora) {
+    mora = mora || 0;
     const modal = document.getElementById('confirm-cobro-modal');
     const modalInner = modal.querySelector('.confirm-modal');
-    
-    // Resetear estado
+
     modalInner.classList.remove('success');
     const headerStrip = modalInner.querySelector('.confirm-modal-header-strip');
     headerStrip.innerHTML = `
@@ -926,17 +928,25 @@ function mostrarConfirmacion(cuotaId, monto, cliente) {
     `;
     modal.querySelector('.confirm-modal-body').style.display = '';
     modal.querySelector('.confirm-modal-actions').style.display = '';
-    
+
     document.getElementById('confirm-cuota-id').value = cuotaId;
-    document.getElementById('confirm-monto').textContent = formatearMoneda(monto);
-    document.getElementById('confirm-cliente').innerHTML = 
+    document.getElementById('confirm-cuota-id').dataset.mora = mora;
+
+    if (mora > 0) {
+        document.getElementById('confirm-monto').innerHTML =
+            `${formatearMoneda(monto + mora)}` +
+            `<div style="font-size:0.55em;margin-top:4px;color:#666;">` +
+            `Capital: ${formatearMoneda(monto)} + Mora: ${formatearMoneda(mora)}</div>`;
+    } else {
+        document.getElementById('confirm-monto').textContent = formatearMoneda(monto);
+    }
+    document.getElementById('confirm-cliente').innerHTML =
         `<i class="bi bi-person-fill"></i> ${cliente}`;
-    
-    // Resetear botón
+
     const btnConfirmar = modal.querySelector('.btn-confirmar');
     btnConfirmar.disabled = false;
     btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
-    
+
     modal.classList.add('show');
 }
 
@@ -945,12 +955,19 @@ function cerrarConfirmacion() {
 }
 
 async function ejecutarCobro() {
-    const cuotaId = document.getElementById('confirm-cuota-id').value;
+    const cuotaIdEl = document.getElementById('confirm-cuota-id');
+    const cuotaId = cuotaIdEl.value;
+    const mora = parseFloat(cuotaIdEl.dataset.mora) || 0;
     const modal = document.getElementById('confirm-cobro-modal');
     const btnConfirmar = modal.querySelector('.btn-confirmar');
     btnConfirmar.disabled = true;
     btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
-    
+
+    const payload = {};
+    if (mora > 0) {
+        payload.interes_mora = mora;
+    }
+
     try {
         const response = await fetch(`/api/cobrar/${cuotaId}/`, {
             method: 'POST',
@@ -958,7 +975,7 @@ async function ejecutarCobro() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
             },
-            body: JSON.stringify({})
+            body: JSON.stringify(payload)
         });
         
         const result = await response.json();
@@ -1130,15 +1147,16 @@ document.addEventListener('click', function(e) {
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-cobrar');
     if (!btn) return;
-    
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     const cuotaId = btn.dataset.cuotaId;
     const monto = parseFloat(btn.dataset.monto) || 0;
+    const mora = parseFloat(btn.dataset.mora) || 0;
     const cliente = btn.dataset.cliente || 'Cliente';
-    
-    mostrarConfirmacion(cuotaId, monto, cliente);
+
+    mostrarConfirmacion(cuotaId, monto, cliente, mora);
 });
 
 // Context menu y long press para abrir modal desde botón cobrar

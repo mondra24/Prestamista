@@ -1946,3 +1946,283 @@ class EstadoPublicoPrestamoTest(TestCase):
         # no va a matchear el patrón; esto probaría más bien el resolver
         response = self.client_http.get('/estado/no-es-uuid/')
         self.assertEqual(response.status_code, 404)
+
+
+class BugFixMoraPendienteTest(TestCase):
+    """Tests que cubren BUG 1 (mora inflada) y BUG 2 (filtro de estados)"""
+
+    def setUp(self):
+        from core.models import ConfiguracionMora
+        self.user = User.objects.create_user(username='bugfix_test', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='BugFix', apellido='Test',
+            telefono='9999999999', direccion='Dir Test'
+        )
+        ConfiguracionMora.objects.all().update(activo=False)
+        self.config_mora = ConfiguracionMora.objects.create(
+            nombre='TestBugFix', porcentaje_diario=Decimal('1.0'), activo=True,
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('100000'),
+            tasa_interes_porcentaje=Decimal('0'),
+            cuotas_pactadas=5,
+            frecuencia='DI',
+            fecha_inicio=date.today() - timedelta(days=30),
+            cobrador=self.user,
+        )
+
+    def test_bug1_mora_pendiente_no_usa_monto_cuota(self):
+        """BUG 1: interes_mora_pendiente no debe devolver monto_cuota - mora_cobrada"""
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+        cuota.save()
+        mora_sin_cobro = cuota.interes_mora_pendiente
+        self.assertGreater(mora_sin_cobro, Decimal('0'))
+
+        cuota.interes_mora_cobrado = Decimal('500')
+        cuota.save()
+        cuota.refresh_from_db()
+        mora_con_cobro = cuota.interes_mora_pendiente
+
+        self.assertLess(mora_con_cobro, cuota.monto_cuota)
+        self.assertEqual(mora_con_cobro, mora_sin_cobro,
+                         "Mora pendiente no debe cambiar por haber cobrado mora antes")
+
+    def test_bug1_mora_pendiente_cuota_pagada_total(self):
+        """Cuota pagada completa no tiene mora pendiente aunque tenga mora_cobrada"""
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota.registrar_pago(cobrador=self.user)
+        cuota.refresh_from_db()
+        cuota.interes_mora_cobrado = Decimal('5000')
+        cuota.save()
+        self.assertEqual(cuota.interes_mora_pendiente, Decimal('0.00'))
+
+    def test_bug2_mora_total_incluye_parciales(self):
+        """BUG 2: mora_pendiente_total debe incluir cuotas en estado PC (parcial)"""
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+        cuota.save()
+
+        monto_parcial = cuota.monto_cuota / 2
+        cuota.registrar_pago(monto=monto_parcial, cobrador=self.user)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PC')
+
+        mora_total = self.prestamo.mora_pendiente_total
+        self.assertGreater(mora_total, Decimal('0'),
+                           "Parciales vencidas deben contribuir a mora_pendiente_total")
+
+    def test_bug2_mora_total_excluye_pagadas(self):
+        """mora_pendiente_total no debe incluir cuotas pagadas (PA)"""
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+        cuota.save()
+        cuota.registrar_pago(cobrador=self.user)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.estado, 'PA')
+
+        mora_total = self.prestamo.mora_pendiente_total
+        mora_de_cuota_pagada = cuota.interes_mora_pendiente
+        self.assertEqual(mora_de_cuota_pagada, Decimal('0.00'))
+
+    def test_mora_pendiente_sin_config_mora(self):
+        """Sin configuración de mora activa, mora pendiente = 0"""
+        from core.models import ConfiguracionMora
+        ConfiguracionMora.objects.all().update(activo=False)
+        cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+        cuota.interes_mora_cobrado = Decimal('1000')
+        cuota.save()
+        self.assertEqual(cuota.interes_mora_pendiente, Decimal('0.00'))
+
+
+class BugFixCobrosViewTotalesTest(TestCase):
+    """Tests que cubren BUG 3 (totales con monto_restante) y BUG 5 (mora en cobrado hoy)"""
+
+    def setUp(self):
+        from core.models import ConfiguracionMora
+        self.user = User.objects.create_user(username='cobros_view_test', password='test123')
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client_http = TestClient()
+        self.client_http.login(username='cobros_view_test', password='test123')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Totales', apellido='Test',
+            telefono='1234561234', direccion='Dir',
+            usuario=self.user,
+        )
+        ConfiguracionMora.objects.all().update(activo=False)
+        ConfiguracionMora.objects.create(
+            nombre='TestTotales', porcentaje_diario=Decimal('1.0'), activo=True,
+        )
+
+    def test_bug3_total_vencidas_usa_monto_restante(self):
+        """BUG 3: total vencidas refleja monto pendiente, no monto_cuota original"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('100000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=2,
+            frecuencia='DI', fecha_inicio=date.today() - timedelta(days=10),
+            cobrador=self.user,
+        )
+        cuota1 = prestamo.cuotas.order_by('numero_cuota').first()
+        monto_parcial = cuota1.monto_cuota / 2
+        cuota1.registrar_pago(monto=monto_parcial, cobrador=self.user)
+        cuota1.refresh_from_db()
+        cuota1.fecha_pago_real = None
+        cuota1.save()
+
+        response = self.client_http.get(reverse('core:cobros'))
+        self.assertEqual(response.status_code, 200)
+        total_vencidas = response.context['total_vencidas']
+        suma_monto_cuota = sum(c.monto_cuota for c in prestamo.cuotas.filter(estado__in=['PE', 'PC']))
+        self.assertLessEqual(total_vencidas, suma_monto_cuota + Decimal('1'),
+                             "total_vencidas no debe ser la suma de monto_cuota cuando hay pagos parciales")
+
+    def test_bug5_cobrado_hoy_incluye_mora(self):
+        """BUG 5: cobrado hoy debe incluir interes_mora_cobrado"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=1,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota = prestamo.cuotas.first()
+        cuota.registrar_pago(
+            monto=cuota.monto_cuota, interes_mora=Decimal('5000'),
+            cobrador=self.user,
+        )
+
+        response = self.client_http.get(reverse('core:cobros'))
+        total_cobrado = response.context['total_cobrado_hoy']
+        self.assertGreaterEqual(total_cobrado, cuota.monto_cuota + Decimal('5000'),
+                                "Cobrado hoy debe incluir capital + mora")
+
+    def test_bug5_cobrado_hoy_ajax_incluye_mora(self):
+        """BUG 5: el JSON devuelto por cobrar_cuota incluye mora en estadisticas"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('30000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=1,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota = prestamo.cuotas.first()
+        response = self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({
+                'monto': float(cuota.monto_cuota),
+                'interes_mora': 3000,
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertGreaterEqual(
+            data['estadisticas']['total_cobrado_hoy'],
+            float(cuota.monto_cuota) + 3000,
+        )
+
+    def test_bug5_dashboard_incluye_mora(self):
+        """BUG 5: dashboard cobrado hoy incluye mora"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('20000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=1,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota = prestamo.cuotas.first()
+        cuota.registrar_pago(
+            monto=cuota.monto_cuota, interes_mora=Decimal('2000'),
+            cobrador=self.user,
+        )
+
+        response = self.client_http.get(reverse('core:dashboard'))
+        total_cobrado = response.context['total_cobrado_hoy']
+        self.assertGreaterEqual(total_cobrado, cuota.monto_cuota + Decimal('2000'))
+
+
+class BugFixBotonRapidoConMoraTest(TestCase):
+    """Tests que cubren FLUJO 1: botón rápido envía mora al backend"""
+
+    def setUp(self):
+        from core.models import ConfiguracionMora
+        self.user = User.objects.create_user(username='rapido_test', password='test123')
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client_http = TestClient()
+        self.client_http.login(username='rapido_test', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Rapido', apellido='Test',
+            telefono='5555555555', direccion='Dir',
+            usuario=self.user,
+        )
+        ConfiguracionMora.objects.all().update(activo=False)
+        ConfiguracionMora.objects.create(
+            nombre='TestRapido', porcentaje_diario=Decimal('1.0'), activo=True,
+        )
+
+    def test_cobro_con_mora_registra_interes(self):
+        """Cuando se envía interes_mora, se guarda en la cuota"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=1,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota = prestamo.cuotas.first()
+        response = self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({
+                'monto': float(cuota.monto_cuota),
+                'interes_mora': 7500,
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.interes_mora_cobrado, Decimal('7500'))
+        self.assertEqual(cuota.estado, 'PA')
+
+    def test_cobro_sin_mora_no_registra_interes(self):
+        """Cuando NO se envía interes_mora, queda en 0"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=1,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota = prestamo.cuotas.first()
+        response = self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota.pk}),
+            data=json.dumps({}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        cuota.refresh_from_db()
+        self.assertEqual(cuota.interes_mora_cobrado, Decimal('0'))
+
+    def test_cobro_mora_aparece_en_estadisticas(self):
+        """La mora cobrada se refleja en las estadísticas devueltas"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('0'), cuotas_pactadas=2,
+            frecuencia='DI', fecha_inicio=date.today(),
+            cobrador=self.user,
+        )
+        cuota1 = prestamo.cuotas.order_by('numero_cuota').first()
+        self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota1.pk}),
+            data=json.dumps({'monto': float(cuota1.monto_cuota), 'interes_mora': 1000}),
+            content_type='application/json',
+        )
+        cuota2 = prestamo.cuotas.filter(numero_cuota=2).first()
+        response = self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': cuota2.pk}),
+            data=json.dumps({'monto': float(cuota2.monto_cuota), 'interes_mora': 2000}),
+            content_type='application/json',
+        )
+        data = response.json()
+        expected_min = float(cuota1.monto_cuota + cuota2.monto_cuota) + 3000
+        self.assertGreaterEqual(data['estadisticas']['total_cobrado_hoy'], expected_min)

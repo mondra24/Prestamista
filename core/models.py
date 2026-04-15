@@ -905,7 +905,7 @@ class Prestamo(models.Model):
     def mora_pendiente_total(self):
         """Suma de mora pendiente de todas las cuotas vencidas y no pagadas completamente"""
         total = Decimal('0.00')
-        for cuota in self.cuotas.filter(estado__in=['PE', 'PA']):
+        for cuota in self.cuotas.filter(estado__in=['PE', 'PC']):
             total += cuota.interes_mora_pendiente
         return total
 
@@ -1119,11 +1119,6 @@ class Cuota(models.Model):
         """Calcula el interés por mora pendiente de esta cuota"""
         if not self.esta_vencida:
             return Decimal('0.00')
-
-        # Si ya se cobró mora (cuota acumulada), el pendiente es hasta completar el 100% del valor
-        if self.interes_mora_cobrado > 0:
-            pendiente = self.monto_cuota - self.interes_mora_cobrado
-            return max(Decimal('0.00'), pendiente)
 
         config = ConfiguracionMora.obtener_config_activa()
         if not config:
