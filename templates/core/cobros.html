@@ -93,11 +93,11 @@
                         {% if cuota.interes_mora_pendiente > 0 %}
                         <div class="mora-total-banner">
                             <span class="mora-total-label">
-                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Cobrar con mora:
+                                <i class="bi bi-info-circle me-1"></i>Mora calculada (cobrar aparte):
                             </span>
-                            <span class="mora-total-value">{{ cuota.monto_total_con_mora|dinero }}</span>
+                            <span class="mora-total-value">{{ cuota.interes_mora_pendiente|dinero }}</span>
                             <span class="mora-total-desglose">
-                                <small>= {{ cuota.monto_restante|dinero }} + {{ cuota.interes_mora_pendiente|dinero }} mora</small>
+                                <small>El botón rápido solo cobra el capital. Registrá la mora desde el modal de pago parcial si querés dejarla asentada.</small>
                             </span>
                         </div>
                         {% endif %}
@@ -930,13 +930,12 @@ function mostrarConfirmacion(cuotaId, monto, cliente, mora) {
     modal.querySelector('.confirm-modal-actions').style.display = '';
 
     document.getElementById('confirm-cuota-id').value = cuotaId;
-    document.getElementById('confirm-cuota-id').dataset.mora = mora;
 
     if (mora > 0) {
         document.getElementById('confirm-monto').innerHTML =
-            `${formatearMoneda(monto + mora)}` +
+            `${formatearMoneda(monto)}` +
             `<div style="font-size:0.55em;margin-top:4px;color:#666;">` +
-            `Capital: ${formatearMoneda(monto)} + Mora: ${formatearMoneda(mora)}</div>`;
+            `Solo capital. Mora de ${formatearMoneda(mora)} se cobra aparte.</div>`;
     } else {
         document.getElementById('confirm-monto').textContent = formatearMoneda(monto);
     }
@@ -957,16 +956,10 @@ function cerrarConfirmacion() {
 async function ejecutarCobro() {
     const cuotaIdEl = document.getElementById('confirm-cuota-id');
     const cuotaId = cuotaIdEl.value;
-    const mora = parseFloat(cuotaIdEl.dataset.mora) || 0;
     const modal = document.getElementById('confirm-cobro-modal');
     const btnConfirmar = modal.querySelector('.btn-confirmar');
     btnConfirmar.disabled = true;
     btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
-
-    const payload = {};
-    if (mora > 0) {
-        payload.interes_mora = mora;
-    }
 
     try {
         const response = await fetch(`/api/cobrar/${cuotaId}/`, {
@@ -975,7 +968,7 @@ async function ejecutarCobro() {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({})
         });
         
         const result = await response.json();
