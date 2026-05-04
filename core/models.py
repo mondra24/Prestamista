@@ -1116,15 +1116,9 @@ class Cuota(models.Model):
     
     @property
     def interes_mora_pendiente(self):
-        """Calcula el interés por mora pendiente de esta cuota"""
-        if not self.esta_vencida:
-            return Decimal('0.00')
-
-        config = ConfiguracionMora.obtener_config_activa()
-        if not config:
-            return Decimal('0.00')
-
-        return config.calcular_interes(self.monto_restante, self.dias_vencida)
+        """Mora calculada automáticamente. Desactivada por pedido del cliente:
+        la mora la registra el cobrador a mano desde el modal del lápiz."""
+        return Decimal('0.00')
     
     @property
     def monto_total_con_mora(self):

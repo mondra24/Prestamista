@@ -102,21 +102,6 @@ class DashboardView(LoginRequiredMixin, TemplateView):
         total_cartera = Cuota.objects.filter(
             **cartera_filter
         ).aggregate(total=Sum(pendiente_expr))['total'] or Decimal('0.00')
-        
-        # Mora total pendiente
-        cuotas_vencidas_qs = Cuota.objects.filter(
-            fecha_vencimiento__lt=hoy,
-            estado__in=['PE', 'PC'],
-            prestamo__estado='AC',
-            **cliente_filter
-        )
-        mora_total = Decimal('0.00')
-        config_mora = ConfiguracionMora.obtener_config_activa()
-        if config_mora:
-            for cuota in cuotas_vencidas_qs.only('monto_cuota', 'monto_pagado', 'fecha_vencimiento', 'interes_mora_cobrado'):
-                dias = (hoy - cuota.fecha_vencimiento).days
-                mora = config_mora.calcular_interes(cuota.monto_restante, dias)
-                mora_total += mora
 
         context.update({
             'total_cobrado_hoy': total_cobrado_hoy_dash,
@@ -126,8 +111,8 @@ class DashboardView(LoginRequiredMixin, TemplateView):
             'total_por_cobrar': total_por_cobrar,
             'prestamos_activos': prestamos_activos,
             'clientes_activos': clientes_activos,
-            'total_cartera': total_cartera + mora_total,
-            'mora_total_pendiente': mora_total,
+            'total_cartera': total_cartera,
+            'mora_total_pendiente': Decimal('0.00'),
             'fecha_hoy': hoy,
         })
         return context
@@ -222,15 +207,11 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
 
-        # Total vencidas: capital pendiente + mora pendiente (mora es property, iteramos)
-        total_vencidas_capital = cuotas_vencidas.aggregate(
+        # Total vencidas: solo capital pendiente. La mora la registra el cobrador
+        # a mano desde el modal del lápiz; no se suma automática.
+        total_vencidas = cuotas_vencidas.aggregate(
             total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
-        total_vencidas_mora = sum(
-            (c.interes_mora_pendiente for c in cuotas_vencidas),
-            Decimal('0.00')
-        )
-        total_vencidas = total_vencidas_capital + total_vencidas_mora
         
         # Obtener rutas activas para filtrado
         rutas = RutaCobro.objects.filter(activa=True).order_by('orden', 'nombre')
@@ -1415,19 +1396,8 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
             estado__in=['PE', 'PC'],
         ).count()
 
-        # Mora total pendiente
-        cuotas_vencidas_qs = cuotas_qs.filter(
-            fecha_vencimiento__lt=hoy,
-            estado__in=['PE', 'PC'],
-        )
-        mora_total = Decimal('0.00')
-        config_mora = ConfiguracionMora.obtener_config_activa()
-        if config_mora:
-            for cuota in cuotas_vencidas_qs.only('monto_cuota', 'monto_pagado', 'fecha_vencimiento', 'interes_mora_cobrado'):
-                dias = (hoy - cuota.fecha_vencimiento).days
-                mora = config_mora.calcular_interes(cuota.monto_restante, dias)
-                mora_total += mora
-        context['mora_total_pendiente'] = mora_total
+        # Mora automática desactivada: el cobrador la registra manualmente.
+        context['mora_total_pendiente'] = Decimal('0.00')
 
         # Distribución por categoría de clientes
         context['clientes_por_categoria'] = clientes_qs.values('categoria').annotate(
@@ -2574,11 +2544,8 @@ def estado_prestamo_publico(request, token):
         fecha_pago_real__isnull=False
     ).order_by('-fecha_pago_real').first()
 
-    # Mora pendiente total
-    mora_pendiente = sum(
-        c.interes_mora_pendiente for c in cuotas
-        if hasattr(c, 'interes_mora_pendiente') and c.interes_mora_pendiente and c.interes_mora_pendiente > 0
-    )
+    # Mora automática desactivada: el cobrador la registra manualmente desde el lápiz.
+    mora_pendiente = Decimal('0.00')
 
     # Cuotas vencidas sin pagar
     cuotas_vencidas = cuotas.filter(

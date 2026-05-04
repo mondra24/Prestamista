@@ -201,14 +201,14 @@ class MoraPendienteTotalTest(TestCase):
         self.assertEqual(nuevo.mora_pendiente_total, Decimal('0.00'))
         self.assertEqual(nuevo.monto_pendiente_con_mora, nuevo.monto_pendiente)
 
-    def test_prestamo_con_cuotas_vencidas_suma_mora(self):
-        """Préstamo con cuotas vencidas: mora > 0 y total_con_mora > pendiente"""
+    def test_prestamo_con_cuotas_vencidas_no_suma_mora_automatica(self):
+        """Mora automática desactivada: aunque haya cuotas vencidas, mora=0."""
         # El préstamo de setUp empezó hace 100 días → todas las cuotas vencidas
         mora = self.prestamo.mora_pendiente_total
-        self.assertGreater(mora, Decimal('0.00'))
+        self.assertEqual(mora, Decimal('0.00'))
         self.assertEqual(
             self.prestamo.monto_pendiente_con_mora,
-            self.prestamo.monto_pendiente + mora
+            self.prestamo.monto_pendiente,
         )
 
     def test_prestamo_finalizado_no_suma_mora(self):
@@ -1972,22 +1972,18 @@ class BugFixMoraPendienteTest(TestCase):
             cobrador=self.user,
         )
 
-    def test_bug1_mora_pendiente_no_usa_monto_cuota(self):
-        """BUG 1: interes_mora_pendiente no debe devolver monto_cuota - mora_cobrada"""
+    def test_mora_automatica_deshabilitada_aun_con_vencimiento(self):
+        """Mora automática desactivada por pedido del cliente: siempre 0."""
         cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
         cuota.fecha_vencimiento = date.today() - timedelta(days=10)
         cuota.save()
-        mora_sin_cobro = cuota.interes_mora_pendiente
-        self.assertGreater(mora_sin_cobro, Decimal('0'))
+        self.assertEqual(cuota.interes_mora_pendiente, Decimal('0.00'))
 
+        # Tampoco se reactiva al haber mora ya cobrada manualmente
         cuota.interes_mora_cobrado = Decimal('500')
         cuota.save()
         cuota.refresh_from_db()
-        mora_con_cobro = cuota.interes_mora_pendiente
-
-        self.assertLess(mora_con_cobro, cuota.monto_cuota)
-        self.assertEqual(mora_con_cobro, mora_sin_cobro,
-                         "Mora pendiente no debe cambiar por haber cobrado mora antes")
+        self.assertEqual(cuota.interes_mora_pendiente, Decimal('0.00'))
 
     def test_bug1_mora_pendiente_cuota_pagada_total(self):
         """Cuota pagada completa no tiene mora pendiente aunque tenga mora_cobrada"""
@@ -1998,8 +1994,8 @@ class BugFixMoraPendienteTest(TestCase):
         cuota.save()
         self.assertEqual(cuota.interes_mora_pendiente, Decimal('0.00'))
 
-    def test_bug2_mora_total_incluye_parciales(self):
-        """BUG 2: mora_pendiente_total debe incluir cuotas en estado PC (parcial)"""
+    def test_mora_total_es_cero_aun_con_parciales_vencidas(self):
+        """Mora automática deshabilitada: parciales vencidas no agregan mora."""
         cuota = self.prestamo.cuotas.order_by('numero_cuota').first()
         cuota.fecha_vencimiento = date.today() - timedelta(days=10)
         cuota.save()
@@ -2009,9 +2005,7 @@ class BugFixMoraPendienteTest(TestCase):
         cuota.refresh_from_db()
         self.assertEqual(cuota.estado, 'PC')
 
-        mora_total = self.prestamo.mora_pendiente_total
-        self.assertGreater(mora_total, Decimal('0'),
-                           "Parciales vencidas deben contribuir a mora_pendiente_total")
+        self.assertEqual(self.prestamo.mora_pendiente_total, Decimal('0.00'))
 
     def test_bug2_mora_total_excluye_pagadas(self):
         """mora_pendiente_total no debe incluir cuotas pagadas (PA)"""
