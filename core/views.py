@@ -1627,35 +1627,16 @@ def exportar_planilla_excel(request):
     return response
 
 
-@login_required
-def exportar_cierre_excel(request):
-    """Exportar cierre de caja a Excel con cobros realizados"""
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
-    except ImportError:
-        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
-        return redirect('core:cierre_caja')
-    
-    # Obtener fecha
-    fecha_str = request.GET.get('fecha')
-    if fecha_str:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-    else:
-        fecha = fecha_local_hoy()
-    
-    # Obtener cobros del día (completos y parciales)
-    pagos = Cuota.objects.filter(
-        fecha_pago_real=fecha,
-        estado__in=['PA', 'PC']
-    )
-    if not es_usuario_admin(request.user):
-        pagos = pagos.filter(prestamo__cobrador=request.user)
-    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
-        'prestamo__cliente__apellido'
-    )
-    
+def construir_excel_cierre_caja(fecha, pagos):
+    """
+    Arma el Workbook de cierre de caja para una fecha, a partir de un
+    queryset de Cuota ya filtrado (por cobrador o completo, según quién
+    lo pida). Reutilizado por la exportación manual y por el comando
+    programado cierre_caja_automatico (C1).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
     # Pre-cargar historial de modificaciones para las cuotas del día
     cuota_ids = list(pagos.values_list('id', flat=True))
     historial_por_cuota = {}
@@ -1866,8 +1847,39 @@ def exportar_cierre_excel(request):
     tr_total_cell = ws.cell(row=total_row, column=11, value=float(total_transferencia))
     tr_total_cell.font = Font(bold=True, size=11)
     tr_total_cell.number_format = '#,##0'
-    
-    # Registrar auditoría
+
+    return wb
+
+
+@login_required
+def exportar_cierre_excel(request):
+    """Exportar cierre de caja a Excel con cobros realizados"""
+    try:
+        import openpyxl  # noqa: F401 — valida que la dependencia esté instalada
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:cierre_caja')
+
+    # Obtener fecha
+    fecha_str = request.GET.get('fecha')
+    if fecha_str:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    else:
+        fecha = fecha_local_hoy()
+
+    # Obtener cobros del día (completos y parciales)
+    pagos = Cuota.objects.filter(
+        fecha_pago_real=fecha,
+        estado__in=['PA', 'PC']
+    )
+    if not es_usuario_admin(request.user):
+        pagos = pagos.filter(prestamo__cobrador=request.user)
+    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
+        'prestamo__cliente__apellido'
+    )
+
+    wb = construir_excel_cierre_caja(fecha, pagos)
+
     RegistroAuditoria.registrar(
         usuario=request.user,
         tipo_accion='OT',
@@ -1875,7 +1887,7 @@ def exportar_cierre_excel(request):
         descripcion=f'Exportación de cierre de caja a Excel - Fecha: {fecha}',
         ip_address=get_client_ip(request)
     )
-    
+
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
@@ -2198,10 +2210,11 @@ def descargar_respaldo(request, nombre):
         return redirect('core:dashboard')
     
     from django.conf import settings
-    
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
     backup_dir = os.path.join(settings.BASE_DIR, 'backups')
     backup_path = os.path.join(backup_dir, nombre)
-    
+
     if os.path.exists(backup_path) and nombre.startswith('backup_'):
         with open(backup_path, 'rb') as f:
             response = HttpResponse(f.read(), content_type='application/octet-stream')
@@ -2243,6 +2256,82 @@ class RespaldoListView(LoginRequiredMixin, TemplateView):
         context['backups'] = backups
         context['config'] = ConfiguracionRespaldo.objects.first()
         return context
+
+
+# ==================== REPORTES AUTOMÁTICOS (C1-C3) ====================
+
+class ReportesAutomaticosListView(LoginRequiredMixin, TemplateView):
+    """
+    Lista los reportes que generan solos los Cron Jobs (cierre de caja diario,
+    morosidad semanal, planillas de ruta por cobrador) para descargarlos desde
+    el panel. Por ahora es la única forma de acceder a ellos — todavía no se
+    envían por WhatsApp/email.
+    """
+    template_name = 'core/reportes_automaticos.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo los administradores pueden ver los reportes automáticos.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+
+        context = super().get_context_data(**kwargs)
+        reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+
+        reportes = []
+        if os.path.exists(reportes_dir):
+            for f in sorted(os.listdir(reportes_dir), reverse=True):
+                if not f.endswith('.xlsx'):
+                    continue
+                if f.startswith('cierre_'):
+                    tipo = 'Cierre de caja'
+                elif f.startswith('morosidad_'):
+                    tipo = 'Morosidad semanal'
+                elif f.startswith('planilla_'):
+                    tipo = 'Planilla de ruta'
+                else:
+                    tipo = 'Reporte'
+                path = os.path.join(reportes_dir, f)
+                size = os.path.getsize(path)
+                reportes.append({
+                    'nombre': f,
+                    'tipo': tipo,
+                    'tamano': f'{size / 1024:.0f} KB',
+                    'fecha': datetime.fromtimestamp(os.path.getctime(path)),
+                })
+
+        context['reportes'] = reportes
+        return context
+
+
+@login_required
+def descargar_reporte_automatico(request, nombre):
+    """Descargar un reporte automático específico (cierre, morosidad o planilla)"""
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'Solo los administradores pueden descargar reportes.')
+        return redirect('core:dashboard')
+
+    from django.conf import settings
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
+    reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+    reporte_path = os.path.join(reportes_dir, nombre)
+
+    nombre_valido = nombre.startswith(('cierre_', 'morosidad_', 'planilla_')) and nombre.endswith('.xlsx')
+    if nombre_valido and os.path.exists(reporte_path):
+        with open(reporte_path, 'rb') as f:
+            response = HttpResponse(
+                f.read(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename={nombre}'
+            return response
+
+    messages.error(request, 'El reporte no existe.')
+    return redirect('core:reportes_automaticos')
 
 
 # ==================== UTILIDADES ====================

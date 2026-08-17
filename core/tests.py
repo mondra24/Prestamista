@@ -2,9 +2,11 @@
 Tests rigurosos para el Sistema de Gestión de Préstamos
 Ejecutar: python manage.py test core -v 2
 """
+import tempfile
+from pathlib import Path
 from decimal import Decimal
 from datetime import date, timedelta
-from django.test import TestCase, Client as TestClient
+from django.test import TestCase, Client as TestClient, override_settings
 from django.urls import reverse
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -841,10 +843,34 @@ class ExportViewsTest(TestCase):
     def test_exportar_planilla_excel(self):
         """Test exportar planilla a Excel"""
         response = self.client.get(
-            reverse('core:exportar_planilla_excel') + 
+            reverse('core:exportar_planilla_excel') +
             f'?fecha={date.today().strftime("%Y-%m-%d")}'
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_exportar_cierre_excel(self):
+        """Test exportar cierre de caja a Excel (usa construir_excel_cierre_caja)"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+        cuota = prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(
+            reverse('core:exportar_cierre_excel') +
+            f'?fecha={date.today().strftime("%Y-%m-%d")}'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
 
 
 # ============== TESTS DE MODELOS ADICIONALES ==============
@@ -1008,6 +1034,83 @@ class RespaldoAutomaticoCommandTest(TestCase):
             call_command('respaldo_automatico')
             mock_ejecutar.assert_not_called()
         self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+
+class CierreCajaAutomaticoCommandTest(TestCase):
+    """Tests para C1: cierre de caja diario automático"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cobrador_c1', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Cierre', apellido='Auto', telefono='1', direccion='x', usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('8000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+
+    def test_genera_el_excel_del_dia_en_reportes(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('cierre_caja_automatico')
+            nombre = f'cierre_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertTrue((Path(tmp) / 'reportes' / nombre).exists())
+
+    def test_genera_el_excel_aunque_no_haya_cobros(self):
+        """Un día sin cobros igual arma el Excel (vacío), no debería reventar"""
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('cierre_caja_automatico')
+            nombre = f'cierre_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertTrue((Path(tmp) / 'reportes' / nombre).exists())
+
+
+class ReportesAutomaticosViewTest(TestCase):
+    """Tests para la pantalla de descarga de reportes automáticos (C1-C3)"""
+
+    def setUp(self):
+        self.client = TestClient()
+
+    def test_admin_ve_la_lista_de_reportes(self):
+        admin = User.objects.create_user(username='admin_reportes', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+        self.client.login(username='admin_reportes', password='x')
+
+        response = self.client.get(reverse('core:reportes_automaticos'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_cobrador_no_admin_no_puede_ver_reportes(self):
+        User.objects.create_user(username='cobrador_reportes', password='x')
+        self.client.login(username='cobrador_reportes', password='x')
+
+        response = self.client.get(reverse('core:reportes_automaticos'))
+        self.assertRedirects(response, reverse('core:dashboard'))
+
+    def test_descarga_rechaza_nombre_que_no_es_un_reporte_valido(self):
+        """
+        El converter <str:nombre> de Django ya bloquea cualquier '/' en la URL
+        (no se puede ni construir /descargar/../../etc/passwd/), así que el
+        vector real a cubrir es un nombre de archivo cualquiera que no
+        empiece con un prefijo de reporte conocido.
+        """
+        admin = User.objects.create_user(username='admin_reportes2', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+        self.client.login(username='admin_reportes2', password='x')
+
+        response = self.client.get(
+            reverse('core:descargar_reporte_automatico', args=['..'])
+        )
+        self.assertRedirects(response, reverse('core:reportes_automaticos'))
 
 
 class AlertarCobradoresSinActividadCommandTest(TestCase):
