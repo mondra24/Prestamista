@@ -775,6 +775,72 @@ class AlertarCobradoresSinActividadCommandTest(TestCase):
         self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.admin).count(), 1)
 
 
+class NotificarCandidatosRenovacionCommandTest(TestCase):
+    """Tests para D3: candidatos automáticos a renovación"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin2', password='x')
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+
+        self.cobrador = User.objects.create_user(username='cobrador2', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Luis', apellido='Pérez', telefono='222', direccion='x'
+        )
+
+    def _crear_y_pagar_prestamo(self, fecha_vencimiento_pasada=False, fecha_pago=None):
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('15000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+        for cuota in prestamo.cuotas.all():
+            if fecha_vencimiento_pasada:
+                cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+                cuota.save()
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+            if fecha_pago is not None:
+                cuota.fecha_pago_real = fecha_pago
+                cuota.save()
+        prestamo.refresh_from_db()
+        return prestamo
+
+    def test_candidato_con_buen_historial_es_notificado(self):
+        prestamo = self._crear_y_pagar_prestamo()
+        self.assertEqual(prestamo.estado, 'FI')
+
+        call_command('notificar_candidatos_renovacion')
+
+        notifs = Notificacion.objects.filter(tipo='RN', usuario=self.admin)
+        self.assertEqual(notifs.count(), 1)
+        self.assertIn(str(prestamo.pk), notifs.first().titulo)
+        # El cobrador no recibe la alerta interna de candidatos
+        self.assertEqual(Notificacion.objects.filter(tipo='RN', usuario=self.cobrador).count(), 0)
+
+    def test_mal_historial_no_es_candidato(self):
+        self._crear_y_pagar_prestamo(fecha_vencimiento_pasada=True)
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN').count(), 0)
+
+    def test_prestamo_finalizado_en_el_pasado_no_se_notifica_hoy(self):
+        self._crear_y_pagar_prestamo(fecha_pago=date.today() - timedelta(days=5))
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN').count(), 0)
+
+    def test_es_idempotente_en_el_mismo_dia(self):
+        self._crear_y_pagar_prestamo()
+        call_command('notificar_candidatos_renovacion')
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN', usuario=self.admin).count(), 1)
+
+
 class AuditoriaModelTest(TestCase):
     """Tests para RegistroAuditoria"""
     

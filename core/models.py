@@ -1699,6 +1699,61 @@ class Notificacion(models.Model):
             detectados += 1
         return detectados
 
+    @classmethod
+    def notificar_candidatos_renovacion(cls):
+        """
+        Detecta préstamos que terminaron de pagarse hoy con buen historial
+        (>=70% de cuotas a tiempo, mismo umbral que separa MOROSO del resto en
+        Cliente.actualizar_categoria) y notifica a los administradores como
+        candidatos a renovación. Retorna la cantidad de candidatos detectados.
+        """
+        hoy = fecha_local_hoy()
+
+        prestamos_finalizados_hoy = Prestamo.objects.filter(
+            estado=Prestamo.Estado.FINALIZADO
+        ).annotate(
+            ultimo_pago=models.Max('cuotas__fecha_pago_real')
+        ).filter(ultimo_pago=hoy).select_related('cliente')
+
+        administradores = User.objects.filter(
+            models.Q(is_superuser=True) | models.Q(perfil__rol=PerfilUsuario.Rol.ADMIN)
+        ).distinct()
+
+        detectados = 0
+        for prestamo in prestamos_finalizados_hoy:
+            cuotas = list(prestamo.cuotas.all())
+            if not cuotas:
+                continue
+
+            a_tiempo = sum(
+                1 for c in cuotas
+                if c.fecha_pago_real and c.fecha_pago_real <= c.fecha_vencimiento
+            )
+            porcentaje = (a_tiempo / len(cuotas)) * 100
+            if porcentaje < 70:
+                continue
+
+            cliente = prestamo.cliente
+            for admin in administradores:
+                existe = cls.objects.filter(
+                    tipo='RN',
+                    usuario=admin,
+                    titulo__contains=f'préstamo #{prestamo.pk})',
+                    fecha_creacion__date=hoy
+                ).exists()
+
+                if not existe:
+                    cls.crear_notificacion(
+                        tipo='RN',
+                        titulo=f'Candidato a renovación - {cliente.nombre_completo} (préstamo #{prestamo.pk})',
+                        mensaje=f'{cliente.nombre_completo} terminó de pagar su préstamo con {porcentaje:.0f}% de cuotas a tiempo. Buen candidato para ofrecerle una renovación.',
+                        usuario=admin,
+                        prioridad='BA',
+                        enlace=f'/clientes/{cliente.pk}/'
+                    )
+            detectados += 1
+        return detectados
+
 
 # ==================== CONFIGURACIÓN DE RESPALDOS ====================
 
