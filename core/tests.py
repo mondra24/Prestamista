@@ -17,9 +17,10 @@ from unittest.mock import patch
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
-    ConfiguracionCategorizacion
+    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
+from . import whatsapp as whatsapp_module
 
 
 # ============== TESTS DE FILTROS DE MONEDA ==============
@@ -1716,3 +1717,155 @@ class IntegridadDatosTest(TestCase):
         
         cuotas_count_after = Cuota.objects.filter(prestamo=prestamo).count()
         self.assertEqual(cuotas_count_after, 0)
+
+
+# ============== TESTS DE WHATSAPP (B1) ==============
+
+class WhatsAppServiceTest(TestCase):
+    """Tests para el cliente de la WhatsApp Cloud API (core/whatsapp.py)"""
+
+    def test_no_configurado_sin_variables_de_entorno(self):
+        with patch.dict('os.environ', {}, clear=True):
+            self.assertFalse(whatsapp_module.whatsapp_configurado())
+
+    def test_configurado_con_variables_de_entorno(self):
+        with patch.dict('os.environ', {
+            'WHATSAPP_ACCESS_TOKEN': 'token-x',
+            'WHATSAPP_PHONE_NUMBER_ID': '12345'
+        }):
+            self.assertTrue(whatsapp_module.whatsapp_configurado())
+
+    def test_normalizar_telefono_ya_con_codigo_de_pais(self):
+        self.assertEqual(whatsapp_module.normalizar_telefono_ar('5491122334455'), '5491122334455')
+
+    def test_normalizar_telefono_local_con_cero(self):
+        self.assertEqual(whatsapp_module.normalizar_telefono_ar('011-2233-4455'), '541122334455')
+
+    def test_enviar_sin_configurar_lanza_error(self):
+        with patch.dict('os.environ', {}, clear=True):
+            with self.assertRaises(whatsapp_module.WhatsAppError):
+                whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000', '18/08/2026'])
+
+    def test_enviar_exitoso_retorna_message_id(self):
+        mock_response = type('R', (), {
+            'status_code': 200,
+            'json': lambda self: {'messages': [{'id': 'wamid.ABC123'}]},
+            'text': ''
+        })()
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', return_value=mock_response) as mock_post:
+                message_id = whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000', '18/08/2026'])
+
+        self.assertEqual(message_id, 'wamid.ABC123')
+        mock_post.assert_called_once()
+
+    def test_meta_rechaza_el_mensaje(self):
+        mock_response = type('R', (), {
+            'status_code': 400,
+            'json': lambda self: {},
+            'text': '{"error": {"message": "Template not found"}}'
+        })()
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', return_value=mock_response):
+                with self.assertRaises(whatsapp_module.WhatsAppError):
+                    whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'plantilla_inexistente', ['1000'])
+
+    def test_error_de_red(self):
+        import requests
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', side_effect=requests.RequestException('timeout')):
+                with self.assertRaises(whatsapp_module.WhatsAppError):
+                    whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000'])
+
+
+class RecordatorioWhatsAppDiarioCommandTest(TestCase):
+    """Tests para B1: recordatorio diario de WhatsApp"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Whats', apellido='App', telefono='1122334455', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.cuota = self.prestamo.cuotas.first()
+        self.cuota.fecha_vencimiento = date.today()
+        self.cuota.save()
+
+    def test_no_envia_si_configuracion_inactiva(self):
+        """Por defecto ConfiguracionWhatsApp.activo=False: no debe ni intentar mandar nada"""
+        with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+            call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+        self.assertEqual(EnvioWhatsApp.objects.count(), 0)
+
+    def test_no_envia_si_faltan_variables_de_entorno(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+
+    def test_envia_recordatorio_y_registra_el_envio(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp', return_value='wamid.X') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+
+        mock_enviar.assert_called_once()
+        envio = EnvioWhatsApp.objects.get()
+        self.assertTrue(envio.exitoso)
+        self.assertEqual(envio.cliente, self.cliente)
+        self.assertEqual(envio.message_id, 'wamid.X')
+
+    def test_no_reenvia_si_ya_se_envio_hoy(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        EnvioWhatsApp.objects.create(
+            cliente=self.cliente, cuota=self.cuota, tipo=EnvioWhatsApp.Tipo.RECORDATORIO, exitoso=True
+        )
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+
+    def test_registra_fallo_y_notifica_a_los_admins(self):
+        admin = User.objects.create_user(username='admin_wa', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch(
+                'core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp',
+                side_effect=whatsapp_module.WhatsAppError('rechazado')
+            ):
+                call_command('recordatorio_whatsapp_diario')
+
+        envio = EnvioWhatsApp.objects.get()
+        self.assertFalse(envio.exitoso)
+        self.assertEqual(envio.error, 'rechazado')
+
+        notif = Notificacion.objects.filter(tipo='AS', usuario=admin)
+        self.assertEqual(notif.count(), 1)
+
+    def test_prestamo_renovado_no_recibe_recordatorio(self):
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()

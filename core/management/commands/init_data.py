@@ -14,7 +14,7 @@ class Command(BaseCommand):
         from core.models import (
             ConfiguracionCredito, ConfiguracionMora, ConfiguracionRespaldo,
             ConfiguracionPlanilla, ColumnaPlanilla, RutaCobro, TipoNegocio,
-            ConfiguracionCategorizacion
+            ConfiguracionCategorizacion, ConfiguracionWhatsApp
         )
 
         creados = []
@@ -67,6 +67,11 @@ class Command(BaseCommand):
         obj, created = ConfiguracionCategorizacion.objects.get_or_create(pk=1)
         if created:
             creados.append('ConfiguracionCategorizacion')
+
+        # --- Configuración de WhatsApp (por defecto: inactivo) ---
+        obj, created = ConfiguracionWhatsApp.objects.get_or_create(pk=1)
+        if created:
+            creados.append('ConfiguracionWhatsApp')
 
         # --- Configuración de Planilla ---
         obj, created = ConfiguracionPlanilla.objects.get_or_create(

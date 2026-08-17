@@ -9,7 +9,7 @@ from .models import (
     TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionMora, InteresMora, HistorialModificacionPago,
-    ConfiguracionCategorizacion
+    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp
 )
 
 User = get_user_model()
@@ -353,3 +353,30 @@ class HistorialModificacionPagoAdmin(admin.ModelAdmin):
     readonly_fields = ['fecha_modificacion']
     raw_id_fields = ['cuota', 'cuota_relacionada']
     date_hierarchy = 'fecha_modificacion'
+
+
+# ==================== WHATSAPP (B1) ====================
+
+@admin.register(ConfiguracionWhatsApp)
+class ConfiguracionWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ['activo', 'template_recordatorio', 'idioma_plantillas', 'hora_envio_recordatorio']
+    list_editable = ['template_recordatorio', 'idioma_plantillas', 'hora_envio_recordatorio']
+    list_display_links = None
+
+    def has_add_permission(self, request):
+        return not ConfiguracionWhatsApp.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EnvioWhatsApp)
+class EnvioWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ['cliente', 'tipo', 'exitoso', 'fecha_envio', 'message_id']
+    list_filter = ['tipo', 'exitoso', 'fecha_envio']
+    search_fields = ['cliente__nombre', 'cliente__apellido']
+    readonly_fields = ['cliente', 'cuota', 'tipo', 'fecha_envio', 'exitoso', 'error', 'message_id']
+    date_hierarchy = 'fecha_envio'
+
+    def has_add_permission(self, request):
+        return False
