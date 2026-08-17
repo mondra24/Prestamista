@@ -529,6 +529,73 @@ class PrestamoFormTest(TestCase):
         self.assertEqual(Prestamo.objects.filter(cliente=self.cliente).count(), 1)
 
 
+class RepasoSemanaCobrosViewTest(TestCase):
+    """Tests para A5: repaso semanal cobrado vs. no cobrado en la vista de Cobros"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='cobrador_semana', password='x')
+        self.client.login(username='cobrador_semana', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Repaso', apellido='Semanal', telefono='444', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('30000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=20),
+            cobrador=self.user
+        )
+
+    def test_separa_cobradas_y_pendientes_de_los_ultimos_7_dias(self):
+        cuotas = list(self.prestamo.cuotas.all())
+        # Cuota 1: venció hace 3 días y se cobró
+        cuotas[0].fecha_vencimiento = date.today() - timedelta(days=3)
+        cuotas[0].save()
+        cuotas[0].registrar_pago(cuotas[0].monto_cuota, cobrador=self.user)
+        # Cuota 2: venció hace 1 día y sigue pendiente
+        cuotas[1].fecha_vencimiento = date.today() - timedelta(days=1)
+        cuotas[1].save()
+        # Cuota 3: venció hace 20 días (fuera de la ventana de 7 días) y sigue pendiente
+        cuotas[2].fecha_vencimiento = date.today() - timedelta(days=20)
+        cuotas[2].save()
+
+        response = self.client.get(reverse('core:cobros'))
+
+        self.assertEqual(response.status_code, 200)
+        cobradas = response.context['repaso_semana_cobradas']
+        pendientes = response.context['repaso_semana_pendientes']
+
+        self.assertEqual([c.pk for c in cobradas], [cuotas[0].pk])
+        self.assertEqual([c.pk for c in pendientes], [cuotas[1].pk])
+        self.assertEqual(response.context['repaso_semana_total_cobrado'], cuotas[0].monto_cuota)
+        self.assertContains(response, 'Repaso de la Semana')
+
+    def test_prestamo_renovado_no_infla_el_repaso_de_cobradas(self):
+        """
+        Las cuotas de un préstamo renovado quedan en PA por el bulk-close de
+        renovar_prestamo, pero no representan cobros reales de la semana.
+        """
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=2)
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('10000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=3,
+            nueva_frecuencia='SE'
+        )
+
+        response = self.client.get(reverse('core:cobros'))
+        self.assertEqual(response.context['repaso_semana_cobradas'], [])
+
+
 # ============== TESTS DE EXPORTACIÓN ==============
 
 class ExportViewsTest(TestCase):

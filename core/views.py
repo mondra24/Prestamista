@@ -211,10 +211,26 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Obtener rutas activas para filtrado
         rutas = RutaCobro.objects.filter(activa=True).order_by('orden', 'nombre')
-        
+
         # Obtener configuración de mora
         config_mora = ConfiguracionMora.obtener_config_activa()
-        
+
+        # Repaso de la semana (A5): cuotas que vencieron en los últimos 7 días,
+        # separadas en cobradas vs. pendientes. Se excluyen préstamos renovados
+        # (sus cuotas quedan marcadas PA al renovar, pero no fueron cobradas de verdad).
+        inicio_semana_pasada = hoy - timedelta(days=6)
+        cuotas_repaso_semana = list(Cuota.objects.filter(
+            fecha_vencimiento__gte=inicio_semana_pasada,
+            fecha_vencimiento__lte=hoy,
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by('-fecha_vencimiento'))
+
+        repaso_semana_cobradas = [c for c in cuotas_repaso_semana if c.estado == 'PA']
+        repaso_semana_pendientes = [c for c in cuotas_repaso_semana if c.estado in ('PE', 'PC')]
+        repaso_semana_total_cobrado = sum((c.monto_pagado for c in repaso_semana_cobradas), Decimal('0.00'))
+        repaso_semana_total_pendiente = sum((c.monto_restante for c in repaso_semana_pendientes), Decimal('0.00'))
+
         context.update({
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
@@ -229,6 +245,11 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'fecha_hoy': hoy,
             'rutas': rutas,
             'config_mora': config_mora,
+            'repaso_semana_cobradas': repaso_semana_cobradas,
+            'repaso_semana_pendientes': repaso_semana_pendientes,
+            'repaso_semana_total_cobrado': repaso_semana_total_cobrado,
+            'repaso_semana_total_pendiente': repaso_semana_total_pendiente,
+            'repaso_semana_inicio': inicio_semana_pasada,
         })
         
         # Anotar historial de modificaciones en todas las cuotas

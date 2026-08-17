@@ -391,9 +391,74 @@
             </div>
         </div>
         {% endif %}
-        
+
+        <!-- Repaso de la semana (A5): cobrado vs. no cobrado en los últimos 7 días -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseRepasoSemana" aria-expanded="false">
+                    <i class="bi bi-calendar2-week me-2 text-success"></i>
+                    <strong>Repaso de la Semana</strong>
+                    <span class="badge bg-success ms-2">{{ repaso_semana_cobradas|length }}</span>
+                    {% if repaso_semana_pendientes %}<span class="badge bg-warning text-dark ms-1">{{ repaso_semana_pendientes|length }}</span>{% endif %}
+                </button>
+            </h2>
+            <div id="collapseRepasoSemana" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
+                <div class="accordion-body p-2">
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-info-circle me-1"></i>Cuotas que vencieron entre el {{ repaso_semana_inicio|date:"d/m" }} y hoy.
+                    </p>
+                    <div class="week-review-summary">
+                        <div class="week-review-total cobrado">
+                            <div class="label"><i class="bi bi-check-circle-fill"></i> Cobrado</div>
+                            <div class="value">{{ repaso_semana_total_cobrado|dinero }}</div>
+                        </div>
+                        <div class="week-review-total pendiente">
+                            <div class="label"><i class="bi bi-hourglass-split"></i> Pendiente</div>
+                            <div class="value">{{ repaso_semana_total_pendiente|dinero }}</div>
+                        </div>
+                    </div>
+
+                    <h6 class="text-success small fw-bold mb-2">
+                        <i class="bi bi-check-circle me-1"></i>Cobradas ({{ repaso_semana_cobradas|length }})
+                    </h6>
+                    {% if repaso_semana_cobradas %}
+                        {% for cuota in repaso_semana_cobradas %}
+                        <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="week-review-row">
+                            <div class="week-review-avatar">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                            <div class="week-review-info">
+                                <div class="week-review-name">{{ cuota.prestamo.cliente.nombre_completo }}</div>
+                                <div class="week-review-fecha">Vencía {{ cuota.fecha_vencimiento|date:"d/m" }}{% if cuota.fecha_pago_real %} · Pagó {{ cuota.fecha_pago_real|date:"d/m" }}{% endif %}</div>
+                            </div>
+                            <div class="week-review-amount">{{ cuota.monto_pagado|dinero }}</div>
+                        </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="week-review-empty">Sin cobros esta semana todavía.</div>
+                    {% endif %}
+
+                    <h6 class="text-warning small fw-bold mb-2 mt-3">
+                        <i class="bi bi-hourglass-split me-1"></i>Pendientes ({{ repaso_semana_pendientes|length }})
+                    </h6>
+                    {% if repaso_semana_pendientes %}
+                        {% for cuota in repaso_semana_pendientes %}
+                        <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="week-review-row pendiente">
+                            <div class="week-review-avatar">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                            <div class="week-review-info">
+                                <div class="week-review-name">{{ cuota.prestamo.cliente.nombre_completo }}</div>
+                                <div class="week-review-fecha">Vencía {{ cuota.fecha_vencimiento|date:"d/m" }}</div>
+                            </div>
+                            <div class="week-review-amount">{{ cuota.monto_restante|dinero }}</div>
+                        </a>
+                        {% endfor %}
+                    {% else %}
+                        <div class="week-review-empty">¡Sin pendientes esta semana!</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
     </div>
-    
+
 </div>
 
 <!-- FAB para nuevo préstamo -->

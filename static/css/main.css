@@ -1713,3 +1713,117 @@ body {
     border-color: var(--color-pagado);
     box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.15);
 }
+
+/* ============ REPASO DE LA SEMANA (A5) ============ */
+.week-review-summary {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.week-review-total {
+    flex: 1;
+    border-radius: 14px;
+    padding: 10px 14px;
+    background: var(--bg-card-hover);
+}
+
+.week-review-total .label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.week-review-total .value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.week-review-total.cobrado .label { color: var(--color-pagado); }
+.week-review-total.cobrado .value { color: var(--color-pagado); }
+.week-review-total.pendiente .label { color: var(--color-pendiente); }
+.week-review-total.pendiente .value { color: var(--color-pendiente); }
+
+.week-review-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border-left: 3px solid var(--color-pagado);
+    margin-bottom: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.2s ease;
+}
+
+.week-review-row:hover {
+    background: var(--bg-card-hover);
+    color: inherit;
+}
+
+.week-review-row.pendiente {
+    border-left-color: var(--color-pendiente);
+}
+
+.week-review-row .week-review-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--color-pagado);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.week-review-row.pendiente .week-review-avatar {
+    background: var(--color-pendiente);
+}
+
+.week-review-row .week-review-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.week-review-row .week-review-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.week-review-row .week-review-fecha {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.week-review-row .week-review-amount {
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    color: var(--color-pagado);
+}
+
+.week-review-row.pendiente .week-review-amount {
+    color: var(--color-pendiente);
+}
+
+.week-review-empty {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding: 10px;
+    text-align: center;
+}
