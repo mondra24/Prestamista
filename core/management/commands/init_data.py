@@ -13,7 +13,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from core.models import (
             ConfiguracionCredito, ConfiguracionMora, ConfiguracionRespaldo,
-            ConfiguracionPlanilla, ColumnaPlanilla, RutaCobro, TipoNegocio
+            ConfiguracionPlanilla, ColumnaPlanilla, RutaCobro, TipoNegocio,
+            ConfiguracionCategorizacion
         )
 
         creados = []
@@ -61,6 +62,11 @@ class Command(BaseCommand):
         )
         if created:
             creados.append('ConfiguracionRespaldo')
+
+        # --- Configuración de Categorización (por defecto: manual) ---
+        obj, created = ConfiguracionCategorizacion.objects.get_or_create(pk=1)
+        if created:
+            creados.append('ConfiguracionCategorizacion')
 
         # --- Configuración de Planilla ---
         obj, created = ConfiguracionPlanilla.objects.get_or_create(

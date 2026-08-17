@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
-    PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo
+    PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
+    ConfiguracionCategorizacion
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 
@@ -160,6 +161,20 @@ class PrestamoModelTest(TestCase):
         """Test progreso inicial es 0%"""
         self.assertEqual(self.prestamo.progreso_porcentaje, 0)
 
+    def test_proxima_cuota_incluye_pago_parcial(self):
+        """
+        Regresión: proxima_cuota solo miraba estado='PE', así que una cuota
+        pagada parcialmente (PC) quedaba invisible y la ficha del cliente
+        mostraba como "próxima" la cuota siguiente en vez de la que
+        realmente falta terminar de cobrar.
+        """
+        primera = self.prestamo.cuotas.order_by('numero_cuota').first()
+        primera.registrar_pago(primera.monto_cuota / 2)
+        self.assertEqual(primera.estado, 'PC')
+
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.proxima_cuota.pk, primera.pk)
+
 
 class CuotaModelTest(TestCase):
     """Tests para el modelo Cuota"""
@@ -280,9 +295,10 @@ class ViewsAccessTest(TestCase):
             tasa_interes_porcentaje=Decimal('10'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user  # PrestamoDetailView filtra por cobrador asignado si no es admin
         )
-    
+
     def test_dashboard_view(self):
         """Test vista dashboard"""
         response = self.client.get(reverse('core:dashboard'))
@@ -360,7 +376,8 @@ class APIViewsTest(TestCase):
             nombre='API',
             apellido='Test',
             telefono='2222222222',
-            direccion='Dirección API Test'
+            direccion='Dirección API Test',
+            usuario=self.user  # cambiar_categoria_cliente exige propiedad para no-admins
         )
         self.prestamo = Prestamo.objects.create(
             cliente=self.cliente,
@@ -368,7 +385,8 @@ class APIViewsTest(TestCase):
             tasa_interes_porcentaje=Decimal('15'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user  # cobrar_cuota exige que sea el cobrador asignado
         )
         self.cuota = self.prestamo.cuotas.first()
     
@@ -472,9 +490,10 @@ class PrestamoFormTest(TestCase):
             nombre='Para',
             apellido='Préstamo',
             telefono='6666666666',
-            direccion='Dir Prestamo Test'
+            direccion='Dir Prestamo Test',
+            usuario=self.user  # PrestamoCreateView filtra clientes por cobrador si no es admin
         )
-    
+
     def test_crear_prestamo_valido(self):
         """Test crear préstamo mediante modelo"""
         # Crear préstamo directamente (el form requiere selección de cliente)
@@ -491,6 +510,293 @@ class PrestamoFormTest(TestCase):
         self.assertIsNotNone(prestamo)
         self.assertEqual(prestamo.cuotas.count(), 10)
         self.assertEqual(prestamo.monto_total_a_pagar, Decimal('60000'))
+
+    def _datos_prestamo(self, cliente=None):
+        return {
+            'cliente': (cliente or self.cliente).pk,
+            'monto_solicitado': '10000',
+            'tasa_interes_porcentaje': '10',
+            'cuotas_pactadas': '3',
+            'frecuencia': 'SE',
+            'fecha_inicio': date.today().isoformat(),
+        }
+
+    def test_bloquea_segundo_prestamo_si_cliente_ya_tiene_uno_activo(self):
+        """A2: no se puede crear un préstamo nuevo si el cliente ya tiene uno activo"""
+        Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        count_before = Prestamo.objects.count()
+
+        response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
+
+        self.assertEqual(response.status_code, 200)  # se queda en el form, no redirige
+        self.assertEqual(Prestamo.objects.count(), count_before)
+        self.assertContains(response, 'ya tiene un préstamo activo')
+
+    def test_permite_prestamo_si_cliente_no_tiene_uno_activo(self):
+        """Sin préstamo activo previo, la creación funciona normalmente"""
+        response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Prestamo.objects.filter(cliente=self.cliente).count(), 1)
+
+
+class RepasoSemanaCobrosViewTest(TestCase):
+    """Tests para A5: repaso semanal cobrado vs. no cobrado en la vista de Cobros"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='cobrador_semana', password='x')
+        self.client.login(username='cobrador_semana', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Repaso', apellido='Semanal', telefono='444', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('30000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=20),
+            cobrador=self.user
+        )
+
+    def test_separa_cobradas_y_pendientes_de_los_ultimos_7_dias(self):
+        cuotas = list(self.prestamo.cuotas.all())
+        # Cuota 1: venció hace 3 días y se cobró
+        cuotas[0].fecha_vencimiento = date.today() - timedelta(days=3)
+        cuotas[0].save()
+        cuotas[0].registrar_pago(cuotas[0].monto_cuota, cobrador=self.user)
+        # Cuota 2: venció hace 1 día y sigue pendiente
+        cuotas[1].fecha_vencimiento = date.today() - timedelta(days=1)
+        cuotas[1].save()
+        # Cuota 3: venció hace 20 días (fuera de la ventana de 7 días) y sigue pendiente
+        cuotas[2].fecha_vencimiento = date.today() - timedelta(days=20)
+        cuotas[2].save()
+
+        response = self.client.get(reverse('core:cobros'))
+
+        self.assertEqual(response.status_code, 200)
+        cobradas = response.context['repaso_semana_cobradas']
+        pendientes = response.context['repaso_semana_pendientes']
+
+        self.assertEqual([c.pk for c in cobradas], [cuotas[0].pk])
+        self.assertEqual([c.pk for c in pendientes], [cuotas[1].pk])
+        self.assertEqual(response.context['repaso_semana_total_cobrado'], cuotas[0].monto_cuota)
+        self.assertContains(response, 'Repaso de la Semana')
+
+    def test_prestamo_renovado_no_infla_el_repaso_de_cobradas(self):
+        """
+        Las cuotas de un préstamo renovado quedan en PA por el bulk-close de
+        renovar_prestamo, pero no representan cobros reales de la semana.
+        """
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=2)
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('10000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=3,
+            nueva_frecuencia='SE'
+        )
+
+        response = self.client.get(reverse('core:cobros'))
+        self.assertEqual(response.context['repaso_semana_cobradas'], [])
+
+
+class CalendarioCobrosViewTest(TestCase):
+    """Tests para A6: calendario visual de cobros"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='cal_user', password='x')
+        self.client.login(username='cal_user', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Calen', apellido='Dario', telefono='777', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('9000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=10),
+            cobrador=self.user
+        )
+
+    def _dia_de(self, response, fecha):
+        for semana in response.context['grilla']:
+            for dia in semana:
+                if dia and dia['numero'] == fecha.day:
+                    return dia
+        return None
+
+    def test_dia_cobrado_pendiente_y_proxima_se_clasifican_bien(self):
+        cuotas = list(self.prestamo.cuotas.all())
+        hoy = date.today()
+
+        cuotas[0].fecha_vencimiento = hoy - timedelta(days=2)
+        cuotas[0].save()
+        cuotas[0].registrar_pago(cuotas[0].monto_cuota, cobrador=self.user)  # cobrada
+
+        cuotas[1].fecha_vencimiento = hoy - timedelta(days=1)
+        cuotas[1].save()  # vencida, sin cobrar -> pendiente
+
+        cuotas[2].fecha_vencimiento = hoy + timedelta(days=3)
+        cuotas[2].save()  # futura -> próxima
+
+        response = self.client.get(reverse('core:calendario_cobros'))
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._dia_de(response, cuotas[0].fecha_vencimiento)['color'], 'cobrado')
+        self.assertEqual(self._dia_de(response, cuotas[1].fecha_vencimiento)['color'], 'pendiente')
+        # Si la fecha de la cuota "próxima" cae en el mes siguiente no se verá en esta grilla;
+        # solo se verifica cuando cae dentro del mes actual.
+        if cuotas[2].fecha_vencimiento.month == hoy.month:
+            self.assertEqual(self._dia_de(response, cuotas[2].fecha_vencimiento)['color'], 'proxima')
+
+    def test_dia_sin_cuotas_no_tiene_color(self):
+        response = self.client.get(reverse('core:calendario_cobros'))
+        # Un día muy lejano dentro del mes sin ninguna cuota generada
+        for semana in response.context['grilla']:
+            for dia in semana:
+                if dia and dia['numero'] == 1 and dia['cantidad'] == 0:
+                    self.assertEqual(dia['color'], '')
+                    return
+
+    def test_prestamo_renovado_no_pinta_el_dia_como_cobrado(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+
+        response = self.client.get(reverse('core:calendario_cobros'))
+        dia = self._dia_de(response, date.today())
+        # Ninguna cuota "activa" ese día (el préstamo quedó renovado): sin color ni cantidad
+        self.assertEqual(dia['cantidad'], 0)
+        self.assertEqual(dia['color'], '')
+
+    def test_navegacion_de_mes_no_le_mete_punto_de_miles_al_anio(self):
+        """Regresión: USE_THOUSAND_SEPARATOR formateaba el año como '2.026' en el querystring"""
+        response = self.client.get(reverse('core:calendario_cobros'))
+        self.assertNotIn('.', response.context['url_mes_siguiente'].split('year=')[1].split('&')[0])
+
+    def test_navegacion_diciembre_a_enero(self):
+        response = self.client.get(reverse('core:calendario_cobros'), {'year': 2026, 'month': 12})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['url_mes_siguiente'], '?year=2027&month=1')
+        self.assertEqual(response.context['url_mes_anterior'], '?year=2026&month=11')
+
+    def test_mes_year_invalido_cae_al_mes_actual(self):
+        response = self.client.get(reverse('core:calendario_cobros'), {'year': 'abc', 'month': '99'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['es_mes_actual'])
+
+
+class ClienteDetailA3Test(TestCase):
+    """Tests para A3: ficha de cliente rediseñada (estado del préstamo, cobrar directo, actividad)"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='ficha_user', password='x')
+        self.client.login(username='ficha_user', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ficha', apellido='Test', telefono='888', direccion='x',
+            usuario=self.user, notas='Nota interna del cliente'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('12000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+
+    def test_banner_atrasado_y_boton_cobrar_cuando_hay_mora(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=5)
+        cuota.save()
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+
+        self.assertContains(response, 'loan-status-banner atrasado')
+        self.assertContains(response, 'Atrasado 5 días')
+        self.assertContains(response, f'data-cuota-id="{cuota.pk}"')
+        self.assertContains(response, 'btn-cobrar-perfil')
+
+    def test_banner_al_dia_cuando_no_hay_mora(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=3)
+        cuota.save()
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'loan-status-banner al-dia')
+        self.assertContains(response, 'Al día')
+
+    def test_no_muestra_boton_cobrar_si_no_es_el_cobrador_asignado(self):
+        """
+        El botón de cobro directo respeta el mismo permiso que /api/cobrar/
+        (solo el cobrador asignado). Nota: 'btn-cobrar-perfil' por sí solo
+        no sirve para el assert porque el <script> de la página lo nombra
+        siempre en el selector JS; se busca el atributo data-cuota-id del
+        botón real.
+        """
+        otro = User.objects.create_user(username='otro_cobrador', password='x')
+        self.prestamo.cobrador = otro
+        self.prestamo.save()
+        cuota_id = self.prestamo.cuotas.first().pk
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, f'data-cuota-id="{cuota_id}"')
+
+    def test_proxima_cuota_parcial_aparece_como_la_que_hay_que_cobrar(self):
+        """No debe saltear a la cuota siguiente cuando la actual quedó con pago parcial"""
+        primera = self.prestamo.cuotas.order_by('numero_cuota').first()
+        primera.registrar_pago(primera.monto_cuota / 2, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, f'data-cuota-id="{primera.pk}"')
+
+    def test_muestra_puntualidad_de_pago_si_hay_prestamos_finalizados(self):
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'Puntualidad de Pago')
+
+    def test_no_muestra_puntualidad_sin_prestamos_finalizados(self):
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, 'Puntualidad de Pago')
+
+    def test_muestra_notas_y_actividad_reciente(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'Nota interna del cliente')
+        self.assertContains(response, 'Actividad Reciente')
+        self.assertContains(response, 'Pago completo')
 
 
 # ============== TESTS DE EXPORTACIÓN ==============
@@ -900,6 +1206,36 @@ class PrestamoRenovacionTest(TestCase):
         self.assertGreater(progreso, 50)
         self.assertLess(progreso, 100)
 
+    def test_renovar_oculta_el_prestamo_viejo_de_las_listas_activas(self):
+        """
+        A1: tras renovar, el préstamo viejo pasa a estado RENOVADO y deja de
+        aparecer donde se filtra por estado='AC' (dashboard, cobros, reporte
+        general), pero se sigue pudiendo consultar en el historial del cliente.
+        """
+        prestamo_viejo_pk = self.prestamo.pk
+
+        nuevo = Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('20000'),
+            nueva_tasa=Decimal('15'),
+            nuevas_cuotas=6,
+            nueva_frecuencia='SE'
+        )
+
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'RE')
+
+        # Listas "del día a día" (mismo filtro que dashboard/cobros/reporte general)
+        activos_del_cliente = Prestamo.objects.filter(cliente=self.cliente, estado='AC')
+        self.assertEqual(list(activos_del_cliente), [nuevo])
+        self.assertNotIn(self.prestamo, activos_del_cliente)
+
+        # El cliente ahora "activo" apunta al préstamo nuevo, no al viejo
+        self.assertEqual(self.cliente.prestamo_activo.pk, nuevo.pk)
+
+        # El historial no se pierde
+        self.assertIn(prestamo_viejo_pk, [p.pk for p in self.cliente.prestamos.all()])
+
 
 class CategoriaClienteTest(TestCase):
     """Tests para lógica de categorías de cliente"""
@@ -926,6 +1262,65 @@ class CategoriaClienteTest(TestCase):
         cliente.save()
         cliente.refresh_from_db()
         self.assertEqual(cliente.categoria, 'EX')
+
+
+class ConfiguracionCategorizacionTest(TestCase):
+    """Tests para A4: categoría del cliente 100% manual por defecto"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Roberto', apellido='Suárez', telefono='333', direccion='x',
+            categoria='EX'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+
+    def _pagar_mal_y_finalizar(self):
+        """Paga las 2 cuotas tarde (mal historial) y finaliza el préstamo"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+            cuota.save()
+            cuota.registrar_pago(cuota.monto_cuota)
+
+    def test_por_defecto_categorizacion_es_manual(self):
+        self.assertFalse(ConfiguracionCategorizacion.esta_activa())
+
+    def test_categoria_manual_no_cambia_con_mal_historial_por_defecto(self):
+        """Sin activar la categorización automática, un mal historial de pagos no toca la categoría manual"""
+        self._pagar_mal_y_finalizar()
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.categoria, 'EX')
+
+    def test_categorizacion_automatica_sigue_funcionando_si_se_activa(self):
+        """El interruptor de vuelta al modo automático (pedido explícito del cliente) sigue funcionando"""
+        ConfiguracionCategorizacion.objects.create(pk=1, categorizacion_automatica=True)
+        self._pagar_mal_y_finalizar()
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.categoria, 'MO')
+
+    def test_historial_pagos_se_calcula_aunque_este_en_modo_manual(self):
+        """
+        A3: el resumen de puntualidad debe poder mostrarse en la ficha del
+        cliente aunque la categorización automática esté apagada (que es el
+        default) — son dos cosas independientes.
+        """
+        self._pagar_mal_y_finalizar()
+        resumen = self.cliente.historial_pagos
+        self.assertEqual(resumen['total'], 2)
+        self.assertEqual(resumen['a_tiempo'], 0)
+        self.assertEqual(resumen['porcentaje'], 0)
+
+    def test_historial_pagos_sin_prestamos_finalizados(self):
+        cliente_nuevo = Cliente.objects.create(nombre='Sin', apellido='Historial', telefono='1', direccion='x')
+        resumen = cliente_nuevo.historial_pagos
+        self.assertEqual(resumen['total'], 0)
+        self.assertIsNone(resumen['porcentaje'])
 
 
 # ============== TESTS DE BÚSQUEDA Y FILTROS ==============

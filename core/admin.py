@@ -8,7 +8,8 @@ from .models import (
     Cliente, Prestamo, Cuota, PerfilUsuario, RutaCobro,
     TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
-    ConfiguracionMora, InteresMora, HistorialModificacionPago
+    ConfiguracionMora, InteresMora, HistorialModificacionPago,
+    ConfiguracionCategorizacion
 )
 
 User = get_user_model()
@@ -113,6 +114,20 @@ class ConfiguracionCreditoAdmin(admin.ModelAdmin):
             'description': 'Configure las reglas para renovar préstamos'
         }),
     )
+
+
+@admin.register(ConfiguracionCategorizacion)
+class ConfiguracionCategorizacionAdmin(admin.ModelAdmin):
+    list_display = ['categorizacion_automatica']
+    list_editable = ['categorizacion_automatica']
+    list_display_links = None
+
+    def has_add_permission(self, request):
+        # Solo debe existir una fila (pk=1)
+        return not ConfiguracionCategorizacion.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 # ==================== CONFIGURACIÓN DE PLANILLA ====================

@@ -12,7 +12,8 @@ urlpatterns = [
     
     # Cobros del día
     path('cobros/', views.CobrosView.as_view(), name='cobros'),
-    
+    path('cobros/calendario/', views.CalendarioCobrosView.as_view(), name='calendario_cobros'),
+
     # Autenticación
     path('logout/', views.logout_view, name='logout'),
     
