@@ -696,6 +696,36 @@ class PrestamoRenovacionTest(TestCase):
         self.assertGreater(progreso, 50)
         self.assertLess(progreso, 100)
 
+    def test_renovar_oculta_el_prestamo_viejo_de_las_listas_activas(self):
+        """
+        A1: tras renovar, el préstamo viejo pasa a estado RENOVADO y deja de
+        aparecer donde se filtra por estado='AC' (dashboard, cobros, reporte
+        general), pero se sigue pudiendo consultar en el historial del cliente.
+        """
+        prestamo_viejo_pk = self.prestamo.pk
+
+        nuevo = Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('20000'),
+            nueva_tasa=Decimal('15'),
+            nuevas_cuotas=6,
+            nueva_frecuencia='SE'
+        )
+
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'RE')
+
+        # Listas "del día a día" (mismo filtro que dashboard/cobros/reporte general)
+        activos_del_cliente = Prestamo.objects.filter(cliente=self.cliente, estado='AC')
+        self.assertEqual(list(activos_del_cliente), [nuevo])
+        self.assertNotIn(self.prestamo, activos_del_cliente)
+
+        # El cliente ahora "activo" apunta al préstamo nuevo, no al viejo
+        self.assertEqual(self.cliente.prestamo_activo.pk, nuevo.pk)
+
+        # El historial no se pierde
+        self.assertIn(prestamo_viejo_pk, [p.pk for p in self.cliente.prestamos.all()])
+
 
 class CategoriaClienteTest(TestCase):
     """Tests para lógica de categorías de cliente"""
