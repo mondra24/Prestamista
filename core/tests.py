@@ -8,6 +8,9 @@ from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from unittest.mock import patch
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
@@ -596,6 +599,246 @@ class NotificacionModelTest(TestCase):
         notif.leida = True
         notif.save()
         self.assertTrue(notif.leida)
+
+
+class GenerarNotificacionesDiariasCommandTest(TestCase):
+    """Tests para el comando D1: notificaciones automáticas de cuotas vencidas/por vencer"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Marta',
+            apellido='Gómez',
+            telefono='1122334455',
+            direccion='Calle Cron 123'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('30000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+
+    def test_comando_crea_notificacion_de_cuota_vencida(self):
+        """La cuota vencida sin notificación previa genera una notificación CV"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=2)
+        cuota.save()
+
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 0)
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 1)
+
+    def test_comando_crea_notificacion_de_cuota_por_vencer(self):
+        """La cuota que vence mañana genera una notificación CP"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CP').count(), 1)
+
+    def test_comando_es_idempotente_en_el_mismo_dia(self):
+        """Correr el comando dos veces el mismo día no duplica notificaciones"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 1)
+
+    def test_comando_por_vencer_es_idempotente_en_el_mismo_dia(self):
+        """Correr el comando dos veces el mismo día no duplica la notificación CP
+        (regresión: el título de CP no incluía el # de cuota, así el chequeo de
+        duplicados nunca encontraba la notificación ya creada)"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CP').count(), 1)
+
+    def test_comando_no_notifica_cuotas_al_dia(self):
+        """Una cuota que vence en 10 días no genera ninguna notificación"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=10)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo__in=['CV', 'CP']).count(), 0)
+
+
+class RespaldoAutomaticoCommandTest(TestCase):
+    """Tests para D4: vigilancia del respaldo diario"""
+
+    def test_respaldo_exitoso_no_genera_notificacion(self):
+        """Si el respaldo se hace bien, no se avisa a nadie (evita spam diario)"""
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo', return_value=(True, 'backup_x.json', None)):
+            call_command('respaldo_automatico')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_respaldo_fallido_notifica_solo_a_superadmins(self):
+        """Si el respaldo falla, se avisa únicamente a los superusuarios (quienes gestionan respaldos)"""
+        superadmin = User.objects.create_user(username='dev', password='x', is_superuser=True)
+        User.objects.create_user(username='cobrador1', password='x')
+
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo', return_value=(False, None, 'disco lleno')):
+            with self.assertRaises(CommandError):
+                call_command('respaldo_automatico')
+
+        notifs = Notificacion.objects.filter(tipo='AS')
+        self.assertEqual(notifs.count(), 1)
+        self.assertEqual(notifs.first().usuario, superadmin)
+        self.assertEqual(notifs.first().prioridad, 'AL')
+
+    def test_respaldo_desactivado_no_ejecuta_ni_notifica(self):
+        """Si ConfiguracionRespaldo.activo=False, el comando no corre el respaldo"""
+        ConfiguracionRespaldo.objects.create(nombre='Respaldo Automático', activo=False)
+
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo') as mock_ejecutar:
+            call_command('respaldo_automatico')
+            mock_ejecutar.assert_not_called()
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+
+class AlertarCobradoresSinActividadCommandTest(TestCase):
+    """Tests para D2: alerta si un cobrador no registró cobros en el día"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin1', password='x')
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+
+        self.cobrador = User.objects.create_user(username='cobrador1', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Ruiz', telefono='111', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('20000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_avisa_si_tenia_cuotas_y_no_cobro_nada(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.admin).count(), 1)
+        # El propio cobrador no recibe la alerta sobre sí mismo
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.cobrador).count(), 0)
+
+    def test_no_avisa_si_ya_registro_un_cobro(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+
+        call_command('alertar_cobradores_sin_actividad')
+
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_no_avisa_si_no_tenia_nada_para_cobrar(self):
+        """Cuota recién generada con vencimiento futuro: no es responsabilidad del cobrador"""
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_no_avisa_de_cobrador_inactivo(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        self.cobrador.perfil.activo = False
+        self.cobrador.perfil.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_es_idempotente_en_el_mismo_dia(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.admin).count(), 1)
+
+
+class NotificarCandidatosRenovacionCommandTest(TestCase):
+    """Tests para D3: candidatos automáticos a renovación"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin2', password='x')
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+
+        self.cobrador = User.objects.create_user(username='cobrador2', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Luis', apellido='Pérez', telefono='222', direccion='x'
+        )
+
+    def _crear_y_pagar_prestamo(self, fecha_vencimiento_pasada=False, fecha_pago=None):
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('15000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+        for cuota in prestamo.cuotas.all():
+            if fecha_vencimiento_pasada:
+                cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+                cuota.save()
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+            if fecha_pago is not None:
+                cuota.fecha_pago_real = fecha_pago
+                cuota.save()
+        prestamo.refresh_from_db()
+        return prestamo
+
+    def test_candidato_con_buen_historial_es_notificado(self):
+        prestamo = self._crear_y_pagar_prestamo()
+        self.assertEqual(prestamo.estado, 'FI')
+
+        call_command('notificar_candidatos_renovacion')
+
+        notifs = Notificacion.objects.filter(tipo='RN', usuario=self.admin)
+        self.assertEqual(notifs.count(), 1)
+        self.assertIn(str(prestamo.pk), notifs.first().titulo)
+        # El cobrador no recibe la alerta interna de candidatos
+        self.assertEqual(Notificacion.objects.filter(tipo='RN', usuario=self.cobrador).count(), 0)
+
+    def test_mal_historial_no_es_candidato(self):
+        self._crear_y_pagar_prestamo(fecha_vencimiento_pasada=True)
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN').count(), 0)
+
+    def test_prestamo_finalizado_en_el_pasado_no_se_notifica_hoy(self):
+        self._crear_y_pagar_prestamo(fecha_pago=date.today() - timedelta(days=5))
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN').count(), 0)
+
+    def test_es_idempotente_en_el_mismo_dia(self):
+        self._crear_y_pagar_prestamo()
+        call_command('notificar_candidatos_renovacion')
+        call_command('notificar_candidatos_renovacion')
+        self.assertEqual(Notificacion.objects.filter(tipo='RN', usuario=self.admin).count(), 1)
 
 
 class AuditoriaModelTest(TestCase):

@@ -116,3 +116,6 @@ staticfiles/
 
 # Media files
 media/
+
+# Respaldos de base de datos (contienen datos personales de clientes)
+backups/
