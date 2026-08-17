@@ -801,6 +801,30 @@ class ClienteDetailA3Test(TestCase):
         self.assertContains(response, 'Actividad Reciente')
         self.assertContains(response, 'Pago completo')
 
+    def test_historial_no_repite_el_prestamo_activo(self):
+        """
+        El préstamo activo ya se ve arriba en grande; no debería duplicarse en el
+        historial. Nota: 'loan-history-card' solo por sí solo no sirve para el
+        assert porque el <script> de la página lo nombra en el selector JS; se
+        busca el atributo class="loan-history-card del HTML real.
+        """
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertEqual(list(response.context['prestamos_historial']), [])
+        self.assertNotContains(response, 'class="loan-history-card')
+
+    def test_historial_muestra_tarjeta_con_color_segun_estado(self):
+        """Renovar o finalizar un préstamo lo saca de 'activos' y lo manda a la tarjeta de historial"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)  # finaliza el préstamo solo
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'class="loan-history-card estado-fi')
+        self.assertContains(response, 'data-filtro="todos"')  # los chips de filtro aparecen junto con el historial
+
+    def test_sin_historial_no_muestra_filtros(self):
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, 'data-filtro=')
+
 
 # ============== TESTS DE EXPORTACIÓN ==============
 

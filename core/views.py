@@ -463,10 +463,14 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['prestamos'] = self.object.prestamos.select_related('cobrador').all()
-        context['prestamos_activos'] = self.object.prestamos.filter(
+        prestamos_activos = list(self.object.prestamos.filter(estado='AC').select_related('cobrador'))
+        context['prestamos_activos'] = prestamos_activos
+        context['prestamos_activos_count'] = len(prestamos_activos)
+        # Historial = todo lo que no está activo (lo activo ya se ve arriba, en grande;
+        # repetirlo acá sería ruido, no información nueva).
+        context['prestamos_historial'] = self.object.prestamos.exclude(
             estado='AC'
-        ).select_related('cobrador')
+        ).select_related('cobrador').order_by('-fecha_inicio')
         # Últimos movimientos (A3): repasar la actividad reciente sin entrar a cada préstamo
         context['movimientos_recientes'] = HistorialModificacionPago.objects.filter(
             cuota__prestamo__cliente=self.object
