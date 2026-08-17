@@ -704,6 +704,77 @@ class RespaldoAutomaticoCommandTest(TestCase):
         self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
 
 
+class AlertarCobradoresSinActividadCommandTest(TestCase):
+    """Tests para D2: alerta si un cobrador no registró cobros en el día"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin1', password='x')
+        self.admin.perfil.rol = 'AD'
+        self.admin.perfil.save()
+
+        self.cobrador = User.objects.create_user(username='cobrador1', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Ruiz', telefono='111', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('20000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_avisa_si_tenia_cuotas_y_no_cobro_nada(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.admin).count(), 1)
+        # El propio cobrador no recibe la alerta sobre sí mismo
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.cobrador).count(), 0)
+
+    def test_no_avisa_si_ya_registro_un_cobro(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+
+        call_command('alertar_cobradores_sin_actividad')
+
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_no_avisa_si_no_tenia_nada_para_cobrar(self):
+        """Cuota recién generada con vencimiento futuro: no es responsabilidad del cobrador"""
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_no_avisa_de_cobrador_inactivo(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        self.cobrador.perfil.activo = False
+        self.cobrador.perfil.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_es_idempotente_en_el_mismo_dia(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        call_command('alertar_cobradores_sin_actividad')
+        call_command('alertar_cobradores_sin_actividad')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS', usuario=self.admin).count(), 1)
+
+
 class AuditoriaModelTest(TestCase):
     """Tests para RegistroAuditoria"""
     

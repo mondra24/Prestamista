@@ -1638,6 +1638,67 @@ class Notificacion(models.Model):
                 creadas += 1
         return creadas
 
+    @classmethod
+    def notificar_cobradores_sin_actividad(cls):
+        """
+        Alerta a los administradores si un cobrador tenía cuotas para cobrar hoy
+        (vencidas o de hoy) y no registró ningún cobro en el día. Retorna la
+        cantidad de cobradores detectados sin actividad.
+        """
+        hoy = fecha_local_hoy()
+
+        cobradores = User.objects.filter(
+            perfil__rol=PerfilUsuario.Rol.COBRADOR,
+            perfil__activo=True
+        )
+
+        administradores = User.objects.filter(
+            models.Q(is_superuser=True) | models.Q(perfil__rol=PerfilUsuario.Rol.ADMIN)
+        ).distinct()
+
+        detectados = 0
+        for cobrador in cobradores:
+            tenia_para_cobrar = Cuota.objects.filter(
+                fecha_vencimiento__lte=hoy,
+                estado__in=['PE', 'PC'],
+                prestamo__estado='AC',
+                prestamo__cobrador=cobrador
+            ).exists()
+
+            if not tenia_para_cobrar:
+                continue
+
+            registro_algun_cobro = Cuota.objects.filter(
+                fecha_pago_real=hoy,
+                estado__in=['PA', 'PC'],
+                prestamo__cobrador=cobrador
+            ).exists()
+
+            if registro_algun_cobro:
+                continue
+
+            nombre_cobrador = cobrador.get_full_name() or cobrador.username
+
+            for admin in administradores:
+                existe = cls.objects.filter(
+                    tipo='AS',
+                    usuario=admin,
+                    titulo__contains=f'sin cobros - {nombre_cobrador}',
+                    fecha_creacion__date=hoy
+                ).exists()
+
+                if not existe:
+                    cls.crear_notificacion(
+                        tipo='AS',
+                        titulo=f'Día sin cobros - {nombre_cobrador}',
+                        mensaje=f'{nombre_cobrador} tenía cuotas pendientes para cobrar hoy y no registró ningún cobro.',
+                        usuario=admin,
+                        prioridad='ME',
+                        enlace='/cobros/'
+                    )
+            detectados += 1
+        return detectados
+
 
 # ==================== CONFIGURACIÓN DE RESPALDOS ====================
 
