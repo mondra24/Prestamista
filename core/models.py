@@ -1577,14 +1577,15 @@ class Notificacion(models.Model):
     
     @classmethod
     def notificar_cuotas_vencidas(cls):
-        """Crea notificaciones para cuotas vencidas"""
+        """Crea notificaciones para cuotas vencidas. Retorna la cantidad creada."""
         hoy = fecha_local_hoy()
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC'
         ).select_related('prestamo', 'prestamo__cliente')
-        
+
+        creadas = 0
         for cuota in cuotas_vencidas:
             # Verificar si ya existe notificación para esta cuota
             existe = cls.objects.filter(
@@ -1593,7 +1594,7 @@ class Notificacion(models.Model):
                 fecha_creacion__date=hoy,
                 leida=False
             ).exists()
-            
+
             if not existe:
                 dias = (hoy - cuota.fecha_vencimiento).days
                 cls.crear_notificacion(
@@ -1603,34 +1604,39 @@ class Notificacion(models.Model):
                     prioridad='AL' if dias > 7 else 'ME',
                     enlace=f'/prestamos/{cuota.prestamo.pk}/'
                 )
-    
+                creadas += 1
+        return creadas
+
     @classmethod
     def notificar_cuotas_por_vencer(cls, dias_anticipacion=1):
-        """Crea notificaciones para cuotas que vencen pronto"""
+        """Crea notificaciones para cuotas que vencen pronto. Retorna la cantidad creada."""
         hoy = fecha_local_hoy()
         fecha_limite = hoy + timedelta(days=dias_anticipacion)
-        
+
         cuotas = Cuota.objects.filter(
             fecha_vencimiento=fecha_limite,
             estado='PE',
             prestamo__estado='AC'
         ).select_related('prestamo', 'prestamo__cliente')
-        
+
+        creadas = 0
         for cuota in cuotas:
             existe = cls.objects.filter(
                 tipo='CP',
                 titulo__contains=f'#{cuota.pk}',
                 fecha_creacion__date=hoy
             ).exists()
-            
+
             if not existe:
                 cls.crear_notificacion(
                     tipo='CP',
-                    titulo=f'Cuota por vencer - {cuota.prestamo.cliente.nombre_completo}',
+                    titulo=f'Cuota #{cuota.pk} por vencer - {cuota.prestamo.cliente.nombre_completo}',
                     mensaje=f'La cuota {cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas} vence mañana. Monto: ${cuota.monto_cuota}',
                     prioridad='BA',
                     enlace=f'/cobros/'
                 )
+                creadas += 1
+        return creadas
 
 
 # ==================== CONFIGURACIÓN DE RESPALDOS ====================

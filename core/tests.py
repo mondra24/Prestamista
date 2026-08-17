@@ -8,6 +8,7 @@ from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.core.management import call_command
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
@@ -596,6 +597,76 @@ class NotificacionModelTest(TestCase):
         notif.leida = True
         notif.save()
         self.assertTrue(notif.leida)
+
+
+class GenerarNotificacionesDiariasCommandTest(TestCase):
+    """Tests para el comando D1: notificaciones automáticas de cuotas vencidas/por vencer"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Marta',
+            apellido='Gómez',
+            telefono='1122334455',
+            direccion='Calle Cron 123'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('30000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+
+    def test_comando_crea_notificacion_de_cuota_vencida(self):
+        """La cuota vencida sin notificación previa genera una notificación CV"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=2)
+        cuota.save()
+
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 0)
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 1)
+
+    def test_comando_crea_notificacion_de_cuota_por_vencer(self):
+        """La cuota que vence mañana genera una notificación CP"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CP').count(), 1)
+
+    def test_comando_es_idempotente_en_el_mismo_dia(self):
+        """Correr el comando dos veces el mismo día no duplica notificaciones"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CV').count(), 1)
+
+    def test_comando_por_vencer_es_idempotente_en_el_mismo_dia(self):
+        """Correr el comando dos veces el mismo día no duplica la notificación CP
+        (regresión: el título de CP no incluía el # de cuota, así el chequeo de
+        duplicados nunca encontraba la notificación ya creada)"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=1)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo='CP').count(), 1)
+
+    def test_comando_no_notifica_cuotas_al_dia(self):
+        """Una cuota que vence en 10 días no genera ninguna notificación"""
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=10)
+        cuota.save()
+
+        call_command('generar_notificaciones_diarias')
+        self.assertEqual(Notificacion.objects.filter(tipo__in=['CV', 'CP']).count(), 0)
 
 
 class AuditoriaModelTest(TestCase):
