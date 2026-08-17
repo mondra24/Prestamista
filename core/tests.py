@@ -278,9 +278,10 @@ class ViewsAccessTest(TestCase):
             tasa_interes_porcentaje=Decimal('10'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user  # PrestamoDetailView filtra por cobrador asignado si no es admin
         )
-    
+
     def test_dashboard_view(self):
         """Test vista dashboard"""
         response = self.client.get(reverse('core:dashboard'))
@@ -358,7 +359,8 @@ class APIViewsTest(TestCase):
             nombre='API',
             apellido='Test',
             telefono='2222222222',
-            direccion='Dirección API Test'
+            direccion='Dirección API Test',
+            usuario=self.user  # cambiar_categoria_cliente exige propiedad para no-admins
         )
         self.prestamo = Prestamo.objects.create(
             cliente=self.cliente,
@@ -366,7 +368,8 @@ class APIViewsTest(TestCase):
             tasa_interes_porcentaje=Decimal('15'),
             cuotas_pactadas=4,
             frecuencia='SE',
-            fecha_inicio=date.today()
+            fecha_inicio=date.today(),
+            cobrador=self.user  # cobrar_cuota exige que sea el cobrador asignado
         )
         self.cuota = self.prestamo.cuotas.first()
     
@@ -470,9 +473,10 @@ class PrestamoFormTest(TestCase):
             nombre='Para',
             apellido='Préstamo',
             telefono='6666666666',
-            direccion='Dir Prestamo Test'
+            direccion='Dir Prestamo Test',
+            usuario=self.user  # PrestamoCreateView filtra clientes por cobrador si no es admin
         )
-    
+
     def test_crear_prestamo_valido(self):
         """Test crear préstamo mediante modelo"""
         # Crear préstamo directamente (el form requiere selección de cliente)
@@ -489,6 +493,40 @@ class PrestamoFormTest(TestCase):
         self.assertIsNotNone(prestamo)
         self.assertEqual(prestamo.cuotas.count(), 10)
         self.assertEqual(prestamo.monto_total_a_pagar, Decimal('60000'))
+
+    def _datos_prestamo(self, cliente=None):
+        return {
+            'cliente': (cliente or self.cliente).pk,
+            'monto_solicitado': '10000',
+            'tasa_interes_porcentaje': '10',
+            'cuotas_pactadas': '3',
+            'frecuencia': 'SE',
+            'fecha_inicio': date.today().isoformat(),
+        }
+
+    def test_bloquea_segundo_prestamo_si_cliente_ya_tiene_uno_activo(self):
+        """A2: no se puede crear un préstamo nuevo si el cliente ya tiene uno activo"""
+        Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        count_before = Prestamo.objects.count()
+
+        response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
+
+        self.assertEqual(response.status_code, 200)  # se queda en el form, no redirige
+        self.assertEqual(Prestamo.objects.count(), count_before)
+        self.assertContains(response, 'ya tiene un préstamo activo')
+
+    def test_permite_prestamo_si_cliente_no_tiene_uno_activo(self):
+        """Sin préstamo activo previo, la creación funciona normalmente"""
+        response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Prestamo.objects.filter(cliente=self.cliente).count(), 1)
 
 
 # ============== TESTS DE EXPORTACIÓN ==============
