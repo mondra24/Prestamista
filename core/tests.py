@@ -1604,6 +1604,44 @@ class PaginacionTest(TestCase):
         self.assertEqual(len(response.context['prestamos']), 50)
 
 
+class LinkRapidoPrestamoListTest(TestCase):
+    """Tests para el link rápido de copiar/mandar el link público desde el listado de préstamos"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='link_rapido_user', password='x')
+        self.client = TestClient()
+        self.client.login(username='link_rapido_user', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Link', apellido='Rapido', telefono='1122334455', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'), cuotas_pactadas=3,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.user
+        )
+
+    def test_muestra_los_botones_si_el_link_esta_activo(self):
+        """
+        Nota: 'link-rapido-btn' solo no sirve para el assert porque el <script>
+        de la página nombra esa clase en el selector JS; se busca el atributo
+        data-link del botón real, que solo existe en el HTML renderizado.
+        """
+        self.prestamo.token_activo = True
+        self.prestamo.save()
+
+        response = self.client.get(reverse('core:prestamo_list'))
+        self.assertContains(response, 'class="link-rapido-btn"')
+        self.assertContains(response, str(self.prestamo.token_publico))
+
+    def test_oculta_los_botones_si_el_link_esta_desactivado(self):
+        self.prestamo.token_activo = False
+        self.prestamo.save()
+
+        response = self.client.get(reverse('core:prestamo_list'))
+        self.assertNotContains(response, 'class="link-rapido-btn"')
+
+
 class BusquedaPrestamosTest(TestCase):
     """Tests para la búsqueda de préstamos por cliente"""
 

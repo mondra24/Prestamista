@@ -57,7 +57,10 @@
     <section>
         {% if prestamos %}
             {% for prestamo in prestamos %}
-            <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="cliente-item filtrable">
+            <div class="cliente-item filtrable"
+                 data-href="{% url 'core:prestamo_detail' prestamo.pk %}"
+                 onclick="if(!event.target.closest('.link-rapido-btn')){window.location=this.dataset.href}"
+                 style="cursor: pointer;">
                 <div class="flex-grow-1">
                     <div class="fw-semibold">{{ prestamo.cliente.nombre_completo }}</div>
                     <small class="text-muted">
@@ -89,8 +92,22 @@
                     </small>
                     {% endif %}
                 </div>
+                {% if prestamo.token_activo %}
+                <div class="link-rapido-actions">
+                    <button type="button" class="link-rapido-btn" title="Copiar link del crédito"
+                            data-link="{{ request.scheme }}://{{ request.get_host }}{% url 'core:estado_publico' token=prestamo.token_publico %}">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                    <button type="button" class="link-rapido-btn whatsapp" title="Mandar link por WhatsApp"
+                            data-link="{{ request.scheme }}://{{ request.get_host }}{% url 'core:estado_publico' token=prestamo.token_publico %}"
+                            data-tel="{{ prestamo.cliente.telefono }}"
+                            data-cliente="{{ prestamo.cliente.nombre_completo }}">
+                        <i class="bi bi-whatsapp"></i>
+                    </button>
+                </div>
+                {% endif %}
                 <i class="bi bi-chevron-right text-muted"></i>
-            </a>
+            </div>
             {% endfor %}
         {% else %}
             <div class="empty-state">
@@ -131,4 +148,48 @@
 <a href="{% url 'core:prestamo_create' %}" class="fab no-print" title="Nuevo Préstamo">
     <i class="bi bi-plus-lg"></i>
 </a>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ============ LINK RÁPIDO DEL CRÉDITO (copiar / WhatsApp) ============
+document.addEventListener('click', function (e) {
+    const btnCopiar = e.target.closest('.link-rapido-btn:not(.whatsapp)');
+    if (btnCopiar) {
+        e.preventDefault();
+        e.stopPropagation();
+        const marcarCopiado = function () {
+            const icon = btnCopiar.querySelector('i');
+            icon.className = 'bi bi-check-lg';
+            btnCopiar.classList.add('copiado');
+            setTimeout(function () {
+                icon.className = 'bi bi-clipboard';
+                btnCopiar.classList.remove('copiado');
+            }, 1400);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(btnCopiar.dataset.link).then(marcarCopiado).catch(function () {
+                if (typeof showToast === 'function') {
+                    showToast('No se pudo copiar. Link: ' + btnCopiar.dataset.link, 'danger');
+                }
+            });
+        } else if (typeof showToast === 'function') {
+            showToast('No se pudo copiar. Link: ' + btnCopiar.dataset.link, 'danger');
+        }
+        return;
+    }
+
+    const btnWhatsapp = e.target.closest('.link-rapido-btn.whatsapp');
+    if (btnWhatsapp) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mensaje = `Hola ${btnWhatsapp.dataset.cliente}, acá podés consultar el estado de tu crédito:\n${btnWhatsapp.dataset.link}`;
+        let tel = (btnWhatsapp.dataset.tel || '').replace(/[^0-9]/g, '');
+        if (tel.startsWith('0')) tel = tel.substring(1);
+        if (!tel.startsWith('54')) tel = '54' + tel;
+        window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
+    }
+});
+</script>
 {% endblock %}
