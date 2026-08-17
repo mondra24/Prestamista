@@ -2089,3 +2089,113 @@ body {
     text-align: left;
     margin-top: 10px;
 }
+
+/* ============ ANIMACIÓN DE ENTRADA (ficha de cliente) ============ */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-item {
+    animation: fadeInUp 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fade-in-item { animation: none; }
+}
+
+/* ============ FILTROS DE HISTORIAL (chips) ============ */
+.history-filters {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 14px;
+}
+
+.history-filter-chip {
+    flex-shrink: 0;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.history-filter-chip:hover {
+    background: var(--bg-card-hover);
+}
+
+.history-filter-chip.active {
+    background: var(--color-nuevo);
+    border-color: var(--color-nuevo);
+    color: #fff;
+}
+
+/* ============ TARJETAS DE HISTORIAL DE PRÉSTAMOS ============ */
+.loan-history-card {
+    display: block;
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: var(--text-primary);
+    box-shadow: 0 1px 4px var(--shadow-card);
+    border-left: 4px solid var(--border-color);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.loan-history-card:hover {
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px var(--shadow-card-hover);
+}
+
+.loan-history-card:active {
+    transform: scale(0.99);
+}
+
+.loan-history-card.estado-fi { border-left-color: var(--color-pagado); }
+.loan-history-card.estado-re { border-left-color: var(--color-nuevo); }
+.loan-history-card.estado-ca { border-left-color: var(--color-moroso); }
+
+.loan-history-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.loan-history-top .loan-history-num {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.loan-history-amount {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.loan-history-progress .progress {
+    height: 6px;
+    margin-bottom: 4px;
+}
+
+.loan-history-progress small {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.loan-history-empty {
+    display: none;
+}

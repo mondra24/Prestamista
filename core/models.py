@@ -2088,5 +2088,102 @@ class InteresMora(models.Model):
             monto_interes=monto_interes.quantize(Decimal('0.01')),
             agregado_manualmente=manual
         )
-        
+
         return interes
+
+
+# ==================== WHATSAPP (B1) ====================
+
+class ConfiguracionWhatsApp(models.Model):
+    """
+    Configuración global de los mensajes automáticos por WhatsApp. Las
+    credenciales de Meta (token, phone_number_id) NO viven acá — van por
+    variable de entorno (ver core/whatsapp.py). Fila única (pk=1).
+    """
+    activo = models.BooleanField(
+        default=False,
+        verbose_name='WhatsApp activo',
+        help_text='Activar recién cuando el número ya esté verificado en Meta y la plantilla aprobada. '
+                   'Mientras esté apagado, los comandos de envío no hacen nada.'
+    )
+    template_recordatorio = models.CharField(
+        max_length=100,
+        default='recordatorio_cuota',
+        verbose_name='Nombre de la plantilla (recordatorio B1)',
+        help_text='Debe coincidir exactamente con el nombre de la plantilla ya aprobada en Meta'
+    )
+    idioma_plantillas = models.CharField(max_length=10, default='es_AR', verbose_name='Idioma de las plantillas')
+    hora_envio_recordatorio = models.TimeField(
+        default='10:00',
+        verbose_name='Hora de envío del recordatorio',
+        help_text='Informativo: el horario real lo define el Cron Job en Railway, esto es solo para referencia'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de WhatsApp'
+        verbose_name_plural = 'Configuración de WhatsApp'
+
+    def __str__(self):
+        return 'WhatsApp: ' + ('activo' if self.activo else 'inactivo')
+
+    @classmethod
+    def esta_activo(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config.activo
+
+    @classmethod
+    def obtener(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+
+class EnvioWhatsApp(models.Model):
+    """
+    Registro de cada intento de envío por WhatsApp — auditoría de qué se
+    mandó, cuándo, y si funcionó. También sirve para no mandar el mismo
+    recordatorio dos veces el mismo día si el Cron Job se corre a mano.
+    """
+    class Tipo(models.TextChoices):
+        RECORDATORIO = 'RE', 'Recordatorio de cuota (B1)'
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='envios_whatsapp',
+        verbose_name='Cliente'
+    )
+    cuota = models.ForeignKey(
+        Cuota,
+        on_delete=models.CASCADE,
+        related_name='envios_whatsapp',
+        null=True,
+        blank=True,
+        verbose_name='Cuota'
+    )
+    tipo = models.CharField(max_length=2, choices=Tipo.choices, verbose_name='Tipo')
+    fecha_envio = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Envío')
+    exitoso = models.BooleanField(default=False, verbose_name='Exitoso')
+    error = models.TextField(blank=True, null=True, verbose_name='Error')
+    message_id = models.CharField(max_length=100, blank=True, null=True, verbose_name='ID de mensaje (Meta)')
+
+    class Meta:
+        verbose_name = 'Envío de WhatsApp'
+        verbose_name_plural = 'Envíos de WhatsApp'
+        ordering = ['-fecha_envio']
+        indexes = [
+            models.Index(fields=['cuota', 'tipo', 'fecha_envio']),
+        ]
+
+    def __str__(self):
+        estado = 'OK' if self.exitoso else 'ERROR'
+        return f'{self.get_tipo_display()} a {self.cliente.nombre_completo} - {estado}'
+
+    @classmethod
+    def ya_enviado_hoy(cls, cuota, tipo):
+        """Evita mandar el mismo recordatorio dos veces el mismo día (cada envío es una conversación facturable)"""
+        return cls.objects.filter(
+            cuota=cuota,
+            tipo=tipo,
+            fecha_envio__date=fecha_local_hoy(),
+            exitoso=True
+        ).exists()

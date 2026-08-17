@@ -98,7 +98,7 @@
         </h3>
 
         {% for prestamo in prestamos_activos %}
-        <div class="card border-0 shadow-sm {% if not forloop.last %}mb-3{% endif %}">
+        <div class="card border-0 shadow-sm fade-in-item {% if not forloop.last %}mb-3{% endif %}" style="--i: {{ forloop.counter0 }};">
             <div class="card-body">
 
                 {% with cuota=prestamo.proxima_cuota %}
@@ -293,35 +293,51 @@
     </section>
     {% endif %}
 
-    <!-- Historial de préstamos -->
-    {% if prestamos %}
+    <!-- Historial de préstamos: mismo lenguaje visual que el activo (tarjeta, color, progreso) -->
+    {% if prestamos_historial %}
     <section>
         <h3 class="section-title">
             <i class="bi bi-clock-history"></i>
-            Historial de Préstamos
+            Historial de Préstamos ({{ prestamos_historial|length }})
         </h3>
 
-        {% for prestamo in prestamos %}
-        <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="cliente-item">
-            <div class="flex-grow-1">
-                <div class="fw-semibold">Préstamo #{{ prestamo.pk }}</div>
-                <small class="text-muted">
-                    {{ prestamo.fecha_inicio|date:"d/m/Y" }} - {{ prestamo.monto_solicitado|dinero }}
-                </small>
-                {% if prestamo.cobrador %}
+        <div class="history-filters" id="history-filters">
+            <button type="button" class="history-filter-chip active" data-filtro="todos">Todos</button>
+            <button type="button" class="history-filter-chip" data-filtro="fi">Finalizados</button>
+            <button type="button" class="history-filter-chip" data-filtro="re">Renovados</button>
+            <button type="button" class="history-filter-chip" data-filtro="ca">Cancelados</button>
+        </div>
+
+        {% for prestamo in prestamos_historial %}
+        <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}"
+           class="loan-history-card estado-{{ prestamo.estado|lower }} fade-in-item"
+           data-estado="{{ prestamo.estado|lower }}"
+           style="--i: {{ forloop.counter0|add:prestamos_activos_count }};">
+            <div class="loan-history-top">
                 <div>
-                    <small class="text-info">
-                        <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
-                    </small>
+                    <span class="loan-history-num">Préstamo #{{ prestamo.pk }}</span>
+                    <span class="badge {% if prestamo.estado == 'FI' %}bg-success{% elif prestamo.estado == 'RE' %}bg-primary{% else %}bg-danger{% endif %}">
+                        {{ prestamo.get_estado_display }}
+                    </span>
                 </div>
-                {% endif %}
+                <i class="bi bi-chevron-right text-muted"></i>
             </div>
-            <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %}">
-                {{ prestamo.get_estado_display }}
-            </span>
-            <i class="bi bi-chevron-right text-muted"></i>
+            <div class="loan-history-amount">{{ prestamo.monto_total_a_pagar|dinero }}</div>
+            <div class="loan-history-progress">
+                <div class="progress">
+                    <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>
+                </div>
+                <small>
+                    {{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }} cuotas · {{ prestamo.fecha_inicio|date:"d/m/Y" }}
+                    {% if prestamo.cobrador %} · {{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}{% endif %}
+                </small>
+            </div>
         </a>
         {% endfor %}
+
+        <p class="loan-history-empty text-muted text-center py-3" id="history-empty-msg">
+            No hay préstamos en esta categoría.
+        </p>
     </section>
     {% endif %}
 
@@ -332,6 +348,30 @@
 
 {% block extra_js %}
 <script>
+// ============ FILTROS DEL HISTORIAL ============
+const filtrosHistorial = document.getElementById('history-filters');
+if (filtrosHistorial) {
+    const tarjetas = document.querySelectorAll('.loan-history-card');
+    const mensajeVacio = document.getElementById('history-empty-msg');
+
+    filtrosHistorial.addEventListener('click', function (e) {
+        const chip = e.target.closest('.history-filter-chip');
+        if (!chip) return;
+
+        filtrosHistorial.querySelectorAll('.history-filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+
+        const filtro = chip.dataset.filtro;
+        let visibles = 0;
+        tarjetas.forEach(function (tarjeta) {
+            const coincide = filtro === 'todos' || tarjeta.dataset.estado === filtro;
+            tarjeta.style.display = coincide ? '' : 'none';
+            if (coincide) visibles++;
+        });
+        mensajeVacio.style.display = visibles === 0 ? 'block' : 'none';
+    });
+}
+
 document.querySelectorAll('.btn-cobrar-perfil').forEach(function (btn) {
     btn.addEventListener('click', async function () {
         const cuotaId = btn.dataset.cuotaId;

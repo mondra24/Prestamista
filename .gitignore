@@ -119,3 +119,6 @@ media/
 
 # Respaldos de base de datos (contienen datos personales de clientes)
 backups/
+
+# Reportes generados automáticamente (contienen datos personales de clientes)
+reportes/

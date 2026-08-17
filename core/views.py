@@ -463,10 +463,14 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['prestamos'] = self.object.prestamos.select_related('cobrador').all()
-        context['prestamos_activos'] = self.object.prestamos.filter(
+        prestamos_activos = list(self.object.prestamos.filter(estado='AC').select_related('cobrador'))
+        context['prestamos_activos'] = prestamos_activos
+        context['prestamos_activos_count'] = len(prestamos_activos)
+        # Historial = todo lo que no está activo (lo activo ya se ve arriba, en grande;
+        # repetirlo acá sería ruido, no información nueva).
+        context['prestamos_historial'] = self.object.prestamos.exclude(
             estado='AC'
-        ).select_related('cobrador')
+        ).select_related('cobrador').order_by('-fecha_inicio')
         # Últimos movimientos (A3): repasar la actividad reciente sin entrar a cada préstamo
         context['movimientos_recientes'] = HistorialModificacionPago.objects.filter(
             cuota__prestamo__cliente=self.object
@@ -1627,35 +1631,83 @@ def exportar_planilla_excel(request):
     return response
 
 
-@login_required
-def exportar_cierre_excel(request):
-    """Exportar cierre de caja a Excel con cobros realizados"""
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
-    except ImportError:
-        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
-        return redirect('core:cierre_caja')
-    
-    # Obtener fecha
-    fecha_str = request.GET.get('fecha')
-    if fecha_str:
-        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
-    else:
-        fecha = fecha_local_hoy()
-    
-    # Obtener cobros del día (completos y parciales)
-    pagos = Cuota.objects.filter(
-        fecha_pago_real=fecha,
-        estado__in=['PA', 'PC']
+def construir_excel_planilla_cobrador(fecha, cobrador):
+    """
+    Arma la hoja de ruta diaria de un cobrador (C3): sus cuotas a cobrar
+    (vencidas + de hoy) ordenadas por zona, con dirección, teléfono y
+    monto — pensada para llevar en el celular, más simple que la planilla
+    general de exportar_planilla_excel (esa es para el back-office).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    cuotas = Cuota.objects.filter(
+        prestamo__estado='AC',
+        prestamo__cobrador=cobrador,
+        estado__in=['PE', 'PC'],
+        fecha_vencimiento__lte=fecha
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+        'prestamo__cliente__ruta__orden', 'prestamo__cliente__ruta__nombre', 'prestamo__cliente__apellido'
     )
-    if not es_usuario_admin(request.user):
-        pagos = pagos.filter(prestamo__cobrador=request.user)
-    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
-        'prestamo__cliente__apellido'
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    nombre_cobrador = cobrador.get_full_name() or cobrador.username
+    ws.title = 'Ruta del día'
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='0d6efd', end_color='0d6efd', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
     )
-    
+
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'RUTA DEL DÍA - {nombre_cobrador} - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_esperado = sum((c.monto_restante for c in cuotas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total esperado: ${total_esperado:,.0f} | Clientes a visitar: {cuotas.count()}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Zona', 'Monto']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for col, width in zip('ABCDEF', [5, 25, 32, 15, 15, 14]):
+        ws.column_dimensions[col].width = width
+
+    for i, cuota in enumerate(cuotas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin zona').border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    return wb
+
+
+def construir_excel_cierre_caja(fecha, pagos):
+    """
+    Arma el Workbook de cierre de caja para una fecha, a partir de un
+    queryset de Cuota ya filtrado (por cobrador o completo, según quién
+    lo pida). Reutilizado por la exportación manual y por el comando
+    programado cierre_caja_automatico (C1).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
     # Pre-cargar historial de modificaciones para las cuotas del día
     cuota_ids = list(pagos.values_list('id', flat=True))
     historial_por_cuota = {}
@@ -1866,8 +1918,143 @@ def exportar_cierre_excel(request):
     tr_total_cell = ws.cell(row=total_row, column=11, value=float(total_transferencia))
     tr_total_cell.font = Font(bold=True, size=11)
     tr_total_cell.number_format = '#,##0'
-    
-    # Registrar auditoría
+
+    return wb
+
+
+def construir_excel_morosidad(fecha):
+    """
+    Arma el Workbook semanal de morosidad (C2): quiénes están atrasados hoy
+    y cuánto se espera cobrar en los próximos 7 días. Usado por el comando
+    morosidad_semanal.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from datetime import timedelta
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='dc3545', end_color='dc3545', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    vencidas = Cuota.objects.filter(
+        fecha_vencimiento__lt=fecha,
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by('-fecha_vencimiento')
+    vencidas = sorted(vencidas, key=lambda c: c.monto_restante, reverse=True)
+
+    proyeccion = Cuota.objects.filter(
+        fecha_vencimiento__gt=fecha,
+        fecha_vencimiento__lte=fecha + timedelta(days=7),
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+
+    wb = openpyxl.Workbook()
+
+    # --- Hoja 1: Morosidad ---
+    ws = wb.active
+    ws.title = 'Morosidad'
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'MOROSIDAD AL {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_adeudado = sum((c.monto_restante for c in vencidas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total adeudado: ${total_adeudado:,.0f} | Clientes atrasados: {len(set(c.prestamo.cliente_id for c in vencidas))} | Cuotas vencidas: {len(vencidas)}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['Cliente', 'Teléfono', 'Ruta', 'Préstamo', 'Días de atraso', 'Monto adeudado']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(vencidas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else '-').border = border
+        ws.cell(row=row, column=4, value=f'#{cuota.prestamo.pk}').border = border
+        ws.cell(row=row, column=5, value=cuota.dias_vencida).border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    for col, width in zip('ABCDEF', [25, 15, 15, 12, 14, 16]):
+        ws.column_dimensions[col].width = width
+
+    # --- Hoja 2: Proyección próxima semana ---
+    ws2 = wb.create_sheet('Proyección 7 días')
+    ws2.merge_cells('A1:D1')
+    ws2['A1'] = f'PROYECCIÓN {(fecha + timedelta(days=1)).strftime("%d/%m")} al {(fecha + timedelta(days=7)).strftime("%d/%m/%Y")}'
+    ws2['A1'].font = Font(bold=True, size=14)
+    ws2['A1'].alignment = Alignment(horizontal='center')
+
+    total_proyectado = sum((c.monto_restante for c in proyeccion), Decimal('0.00'))
+    ws2.merge_cells('A2:D2')
+    ws2['A2'] = f'Total a cobrar: ${total_proyectado:,.0f} | Cuotas: {proyeccion.count()}'
+    ws2['A2'].alignment = Alignment(horizontal='center')
+
+    headers2 = ['Cliente', 'Préstamo', 'Fecha de vencimiento', 'Monto']
+    for col, header in enumerate(headers2, 1):
+        cell = ws2.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(proyeccion, 1):
+        row = i + 4
+        ws2.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws2.cell(row=row, column=2, value=f'#{cuota.prestamo.pk}').border = border
+        ws2.cell(row=row, column=3, value=cuota.fecha_vencimiento.strftime('%d/%m/%Y')).border = border
+        monto_cell2 = ws2.cell(row=row, column=4, value=float(cuota.monto_restante))
+        monto_cell2.number_format = '#,##0'
+        monto_cell2.border = border
+
+    for col, width in zip('ABCD', [25, 12, 20, 16]):
+        ws2.column_dimensions[col].width = width
+
+    return wb
+
+
+@login_required
+def exportar_cierre_excel(request):
+    """Exportar cierre de caja a Excel con cobros realizados"""
+    try:
+        import openpyxl  # noqa: F401 — valida que la dependencia esté instalada
+    except ImportError:
+        messages.error(request, 'La exportación a Excel no está disponible. Instale openpyxl.')
+        return redirect('core:cierre_caja')
+
+    # Obtener fecha
+    fecha_str = request.GET.get('fecha')
+    if fecha_str:
+        fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+    else:
+        fecha = fecha_local_hoy()
+
+    # Obtener cobros del día (completos y parciales)
+    pagos = Cuota.objects.filter(
+        fecha_pago_real=fecha,
+        estado__in=['PA', 'PC']
+    )
+    if not es_usuario_admin(request.user):
+        pagos = pagos.filter(prestamo__cobrador=request.user)
+    pagos = pagos.select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'cobrado_por').order_by(
+        'prestamo__cliente__apellido'
+    )
+
+    wb = construir_excel_cierre_caja(fecha, pagos)
+
     RegistroAuditoria.registrar(
         usuario=request.user,
         tipo_accion='OT',
@@ -1875,7 +2062,7 @@ def exportar_cierre_excel(request):
         descripcion=f'Exportación de cierre de caja a Excel - Fecha: {fecha}',
         ip_address=get_client_ip(request)
     )
-    
+
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
@@ -2198,10 +2385,11 @@ def descargar_respaldo(request, nombre):
         return redirect('core:dashboard')
     
     from django.conf import settings
-    
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
     backup_dir = os.path.join(settings.BASE_DIR, 'backups')
     backup_path = os.path.join(backup_dir, nombre)
-    
+
     if os.path.exists(backup_path) and nombre.startswith('backup_'):
         with open(backup_path, 'rb') as f:
             response = HttpResponse(f.read(), content_type='application/octet-stream')
@@ -2243,6 +2431,82 @@ class RespaldoListView(LoginRequiredMixin, TemplateView):
         context['backups'] = backups
         context['config'] = ConfiguracionRespaldo.objects.first()
         return context
+
+
+# ==================== REPORTES AUTOMÁTICOS (C1-C3) ====================
+
+class ReportesAutomaticosListView(LoginRequiredMixin, TemplateView):
+    """
+    Lista los reportes que generan solos los Cron Jobs (cierre de caja diario,
+    morosidad semanal, planillas de ruta por cobrador) para descargarlos desde
+    el panel. Por ahora es la única forma de acceder a ellos — todavía no se
+    envían por WhatsApp/email.
+    """
+    template_name = 'core/reportes_automaticos.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo los administradores pueden ver los reportes automáticos.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+
+        context = super().get_context_data(**kwargs)
+        reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+
+        reportes = []
+        if os.path.exists(reportes_dir):
+            for f in sorted(os.listdir(reportes_dir), reverse=True):
+                if not f.endswith('.xlsx'):
+                    continue
+                if f.startswith('cierre_'):
+                    tipo = 'Cierre de caja'
+                elif f.startswith('morosidad_'):
+                    tipo = 'Morosidad semanal'
+                elif f.startswith('planilla_'):
+                    tipo = 'Planilla de ruta'
+                else:
+                    tipo = 'Reporte'
+                path = os.path.join(reportes_dir, f)
+                size = os.path.getsize(path)
+                reportes.append({
+                    'nombre': f,
+                    'tipo': tipo,
+                    'tamano': f'{size / 1024:.0f} KB',
+                    'fecha': datetime.fromtimestamp(os.path.getctime(path)),
+                })
+
+        context['reportes'] = reportes
+        return context
+
+
+@login_required
+def descargar_reporte_automatico(request, nombre):
+    """Descargar un reporte automático específico (cierre, morosidad o planilla)"""
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'Solo los administradores pueden descargar reportes.')
+        return redirect('core:dashboard')
+
+    from django.conf import settings
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
+    reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+    reporte_path = os.path.join(reportes_dir, nombre)
+
+    nombre_valido = nombre.startswith(('cierre_', 'morosidad_', 'planilla_')) and nombre.endswith('.xlsx')
+    if nombre_valido and os.path.exists(reporte_path):
+        with open(reporte_path, 'rb') as f:
+            response = HttpResponse(
+                f.read(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename={nombre}'
+            return response
+
+    messages.error(request, 'El reporte no existe.')
+    return redirect('core:reportes_automaticos')
 
 
 # ==================== UTILIDADES ====================

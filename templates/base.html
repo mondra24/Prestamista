@@ -151,6 +151,9 @@
             <a href="{% url 'core:auditoria_list' %}" class="{% if request.resolver_match.url_name == 'auditoria_list' %}active{% endif %}">
                 <i class="bi bi-clock-history"></i> Auditoría
             </a>
+            <a href="{% url 'core:reportes_automaticos' %}" class="{% if request.resolver_match.url_name == 'reportes_automaticos' %}active{% endif %}">
+                <i class="bi bi-file-earmark-bar-graph"></i> Reportes Automáticos
+            </a>
             {% endif %}
             {% if user.is_superuser %}
             {% if not user.perfil.es_admin %}<hr class="my-2 opacity-25">{% endif %}

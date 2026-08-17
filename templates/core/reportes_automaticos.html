@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reportes Automáticos - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+
+    <!-- Header -->
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-file-earmark-bar-graph me-2"></i>Reportes Automáticos
+        </h1>
+    </div>
+
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i>
+        Estos reportes se generan solos todos los días (cierre de caja, morosidad semanal y
+        planillas de ruta). Por ahora se descargan desde acá; más adelante van a poder llegar
+        directo por WhatsApp.
+    </div>
+
+    <!-- Lista de reportes -->
+    <section>
+        <h5 class="section-title">
+            <i class="bi bi-archive"></i>
+            Reportes Disponibles
+        </h5>
+
+        {% if reportes %}
+        <div class="list-group">
+            {% for reporte in reportes %}
+            <div class="list-group-item d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i class="bi bi-file-earmark-excel fs-4 text-success"></i>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">
+                            {{ reporte.nombre }}
+                            <span class="badge bg-secondary ms-1">{{ reporte.tipo }}</span>
+                        </div>
+                        <small class="text-muted">
+                            {{ reporte.fecha|date:"d/m/Y H:i" }} · {{ reporte.tamano }}
+                        </small>
+                    </div>
+                </div>
+                <a href="{% url 'core:descargar_reporte_automatico' reporte.nombre %}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-download me-1"></i>Descargar
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-archive"></i>
+            <h3>Todavía no hay reportes</h3>
+            <p>Se van a generar solos con el Cron Job diario. También podés esperar al cierre de hoy.</p>
+        </div>
+        {% endif %}
+    </section>
+
+</div>
+{% endblock %}

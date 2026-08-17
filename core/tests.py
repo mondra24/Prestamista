@@ -2,9 +2,11 @@
 Tests rigurosos para el Sistema de Gestión de Préstamos
 Ejecutar: python manage.py test core -v 2
 """
+import tempfile
+from pathlib import Path
 from decimal import Decimal
 from datetime import date, timedelta
-from django.test import TestCase, Client as TestClient
+from django.test import TestCase, Client as TestClient, override_settings
 from django.urls import reverse
 from django.contrib.auth.models import User
 from django.utils import timezone
@@ -15,9 +17,10 @@ from unittest.mock import patch
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
-    ConfiguracionCategorizacion
+    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
+from . import whatsapp as whatsapp_module
 
 
 # ============== TESTS DE FILTROS DE MONEDA ==============
@@ -798,6 +801,30 @@ class ClienteDetailA3Test(TestCase):
         self.assertContains(response, 'Actividad Reciente')
         self.assertContains(response, 'Pago completo')
 
+    def test_historial_no_repite_el_prestamo_activo(self):
+        """
+        El préstamo activo ya se ve arriba en grande; no debería duplicarse en el
+        historial. Nota: 'loan-history-card' solo por sí solo no sirve para el
+        assert porque el <script> de la página lo nombra en el selector JS; se
+        busca el atributo class="loan-history-card del HTML real.
+        """
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertEqual(list(response.context['prestamos_historial']), [])
+        self.assertNotContains(response, 'class="loan-history-card')
+
+    def test_historial_muestra_tarjeta_con_color_segun_estado(self):
+        """Renovar o finalizar un préstamo lo saca de 'activos' y lo manda a la tarjeta de historial"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)  # finaliza el préstamo solo
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'class="loan-history-card estado-fi')
+        self.assertContains(response, 'data-filtro="todos"')  # los chips de filtro aparecen junto con el historial
+
+    def test_sin_historial_no_muestra_filtros(self):
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, 'data-filtro=')
+
 
 # ============== TESTS DE EXPORTACIÓN ==============
 
@@ -841,10 +868,34 @@ class ExportViewsTest(TestCase):
     def test_exportar_planilla_excel(self):
         """Test exportar planilla a Excel"""
         response = self.client.get(
-            reverse('core:exportar_planilla_excel') + 
+            reverse('core:exportar_planilla_excel') +
             f'?fecha={date.today().strftime("%Y-%m-%d")}'
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_exportar_cierre_excel(self):
+        """Test exportar cierre de caja a Excel (usa construir_excel_cierre_caja)"""
+        prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+        cuota = prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(
+            reverse('core:exportar_cierre_excel') +
+            f'?fecha={date.today().strftime("%Y-%m-%d")}'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
 
 
 # ============== TESTS DE MODELOS ADICIONALES ==============
@@ -1008,6 +1059,229 @@ class RespaldoAutomaticoCommandTest(TestCase):
             call_command('respaldo_automatico')
             mock_ejecutar.assert_not_called()
         self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+
+class CierreCajaAutomaticoCommandTest(TestCase):
+    """Tests para C1: cierre de caja diario automático"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cobrador_c1', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Cierre', apellido='Auto', telefono='1', direccion='x', usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('8000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+
+    def test_genera_el_excel_del_dia_en_reportes(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('cierre_caja_automatico')
+            nombre = f'cierre_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertTrue((Path(tmp) / 'reportes' / nombre).exists())
+
+    def test_genera_el_excel_aunque_no_haya_cobros(self):
+        """Un día sin cobros igual arma el Excel (vacío), no debería reventar"""
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('cierre_caja_automatico')
+            nombre = f'cierre_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertTrue((Path(tmp) / 'reportes' / nombre).exists())
+
+
+class MorosidadSemanalCommandTest(TestCase):
+    """Tests para C2: reporte semanal de morosidad y proyección"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cobrador_c2', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Deudor', apellido='Atrasado', telefono='2', direccion='x', usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('9000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=10),
+            cobrador=self.user
+        )
+
+    def test_hoja_morosidad_lista_a_los_atrasados(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=3)
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            path = Path(tmp) / 'reportes' / nombre
+            self.assertTrue(path.exists())
+
+            wb = openpyxl.load_workbook(path)
+            self.assertIn('Morosidad', wb.sheetnames)
+            self.assertIn('Proyección 7 días', wb.sheetnames)
+            ws = wb['Morosidad']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 7)]
+            self.assertEqual(fila[0], 'Deudor Atrasado')
+            self.assertEqual(fila[4], 3)  # días de atraso
+
+    def test_hoja_proyeccion_lista_lo_que_vence_la_semana_que_viene(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=4)
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            wb = openpyxl.load_workbook(Path(tmp) / 'reportes' / nombre)
+            ws = wb['Proyección 7 días']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 5)]
+            self.assertEqual(fila[0], 'Deudor Atrasado')
+
+    def test_prestamo_renovado_no_aparece_como_moroso(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=3)
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+
+        import openpyxl
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            wb = openpyxl.load_workbook(Path(tmp) / 'reportes' / nombre)
+            ws = wb['Morosidad']
+            self.assertIsNone(ws.cell(row=5, column=1).value)
+
+
+class PlanillasRutaDiariaCommandTest(TestCase):
+    """Tests para C3: planilla de ruta diaria por cobrador"""
+
+    def setUp(self):
+        self.cobrador = User.objects.create_user(username='cobrador_c3', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ruta', apellido='Diaria', telefono='3', direccion='Calle Falsa 123',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('7000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_genera_planilla_para_cobrador_con_pendientes(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            path = Path(tmp) / 'reportes' / nombre
+            self.assertTrue(path.exists())
+
+            wb = openpyxl.load_workbook(path)
+            ws = wb['Ruta del día']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 7)]
+            self.assertEqual(fila[1], 'Ruta Diaria')
+            self.assertEqual(fila[2], 'Calle Falsa 123')
+
+    def test_no_genera_planilla_para_cobrador_sin_pendientes(self):
+        """Un cobrador sin nada para cobrar hoy no debería recibir un archivo vacío"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertFalse((Path(tmp) / 'reportes' / nombre).exists())
+
+    def test_no_genera_planilla_para_cobrador_inactivo(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        self.cobrador.perfil.activo = False
+        self.cobrador.perfil.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertFalse((Path(tmp) / 'reportes' / nombre).exists())
+
+
+class ReportesAutomaticosViewTest(TestCase):
+    """Tests para la pantalla de descarga de reportes automáticos (C1-C3)"""
+
+    def setUp(self):
+        self.client = TestClient()
+
+    def test_admin_ve_la_lista_de_reportes(self):
+        admin = User.objects.create_user(username='admin_reportes', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+        self.client.login(username='admin_reportes', password='x')
+
+        response = self.client.get(reverse('core:reportes_automaticos'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_cobrador_no_admin_no_puede_ver_reportes(self):
+        User.objects.create_user(username='cobrador_reportes', password='x')
+        self.client.login(username='cobrador_reportes', password='x')
+
+        response = self.client.get(reverse('core:reportes_automaticos'))
+        self.assertRedirects(response, reverse('core:dashboard'))
+
+    def test_descarga_rechaza_nombre_que_no_es_un_reporte_valido(self):
+        """
+        El converter <str:nombre> de Django ya bloquea cualquier '/' en la URL
+        (no se puede ni construir /descargar/../../etc/passwd/), así que el
+        vector real a cubrir es un nombre de archivo cualquiera que no
+        empiece con un prefijo de reporte conocido.
+        """
+        admin = User.objects.create_user(username='admin_reportes2', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+        self.client.login(username='admin_reportes2', password='x')
+
+        response = self.client.get(
+            reverse('core:descargar_reporte_automatico', args=['..'])
+        )
+        self.assertRedirects(response, reverse('core:reportes_automaticos'))
 
 
 class AlertarCobradoresSinActividadCommandTest(TestCase):
@@ -1467,3 +1741,155 @@ class IntegridadDatosTest(TestCase):
         
         cuotas_count_after = Cuota.objects.filter(prestamo=prestamo).count()
         self.assertEqual(cuotas_count_after, 0)
+
+
+# ============== TESTS DE WHATSAPP (B1) ==============
+
+class WhatsAppServiceTest(TestCase):
+    """Tests para el cliente de la WhatsApp Cloud API (core/whatsapp.py)"""
+
+    def test_no_configurado_sin_variables_de_entorno(self):
+        with patch.dict('os.environ', {}, clear=True):
+            self.assertFalse(whatsapp_module.whatsapp_configurado())
+
+    def test_configurado_con_variables_de_entorno(self):
+        with patch.dict('os.environ', {
+            'WHATSAPP_ACCESS_TOKEN': 'token-x',
+            'WHATSAPP_PHONE_NUMBER_ID': '12345'
+        }):
+            self.assertTrue(whatsapp_module.whatsapp_configurado())
+
+    def test_normalizar_telefono_ya_con_codigo_de_pais(self):
+        self.assertEqual(whatsapp_module.normalizar_telefono_ar('5491122334455'), '5491122334455')
+
+    def test_normalizar_telefono_local_con_cero(self):
+        self.assertEqual(whatsapp_module.normalizar_telefono_ar('011-2233-4455'), '541122334455')
+
+    def test_enviar_sin_configurar_lanza_error(self):
+        with patch.dict('os.environ', {}, clear=True):
+            with self.assertRaises(whatsapp_module.WhatsAppError):
+                whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000', '18/08/2026'])
+
+    def test_enviar_exitoso_retorna_message_id(self):
+        mock_response = type('R', (), {
+            'status_code': 200,
+            'json': lambda self: {'messages': [{'id': 'wamid.ABC123'}]},
+            'text': ''
+        })()
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', return_value=mock_response) as mock_post:
+                message_id = whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000', '18/08/2026'])
+
+        self.assertEqual(message_id, 'wamid.ABC123')
+        mock_post.assert_called_once()
+
+    def test_meta_rechaza_el_mensaje(self):
+        mock_response = type('R', (), {
+            'status_code': 400,
+            'json': lambda self: {},
+            'text': '{"error": {"message": "Template not found"}}'
+        })()
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', return_value=mock_response):
+                with self.assertRaises(whatsapp_module.WhatsAppError):
+                    whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'plantilla_inexistente', ['1000'])
+
+    def test_error_de_red(self):
+        import requests
+
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch.object(whatsapp_module.requests, 'post', side_effect=requests.RequestException('timeout')):
+                with self.assertRaises(whatsapp_module.WhatsAppError):
+                    whatsapp_module.enviar_plantilla_whatsapp('1122334455', 'recordatorio_cuota', ['1000'])
+
+
+class RecordatorioWhatsAppDiarioCommandTest(TestCase):
+    """Tests para B1: recordatorio diario de WhatsApp"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Whats', apellido='App', telefono='1122334455', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.cuota = self.prestamo.cuotas.first()
+        self.cuota.fecha_vencimiento = date.today()
+        self.cuota.save()
+
+    def test_no_envia_si_configuracion_inactiva(self):
+        """Por defecto ConfiguracionWhatsApp.activo=False: no debe ni intentar mandar nada"""
+        with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+            call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+        self.assertEqual(EnvioWhatsApp.objects.count(), 0)
+
+    def test_no_envia_si_faltan_variables_de_entorno(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+
+    def test_envia_recordatorio_y_registra_el_envio(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp', return_value='wamid.X') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+
+        mock_enviar.assert_called_once()
+        envio = EnvioWhatsApp.objects.get()
+        self.assertTrue(envio.exitoso)
+        self.assertEqual(envio.cliente, self.cliente)
+        self.assertEqual(envio.message_id, 'wamid.X')
+
+    def test_no_reenvia_si_ya_se_envio_hoy(self):
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        EnvioWhatsApp.objects.create(
+            cliente=self.cliente, cuota=self.cuota, tipo=EnvioWhatsApp.Tipo.RECORDATORIO, exitoso=True
+        )
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
+
+    def test_registra_fallo_y_notifica_a_los_admins(self):
+        admin = User.objects.create_user(username='admin_wa', password='x')
+        admin.perfil.rol = 'AD'
+        admin.perfil.save()
+
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch(
+                'core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp',
+                side_effect=whatsapp_module.WhatsAppError('rechazado')
+            ):
+                call_command('recordatorio_whatsapp_diario')
+
+        envio = EnvioWhatsApp.objects.get()
+        self.assertFalse(envio.exitoso)
+        self.assertEqual(envio.error, 'rechazado')
+
+        notif = Notificacion.objects.filter(tipo='AS', usuario=admin)
+        self.assertEqual(notif.count(), 1)
+
+    def test_prestamo_renovado_no_recibe_recordatorio(self):
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+        ConfiguracionWhatsApp.objects.create(pk=1, activo=True)
+        with patch.dict('os.environ', {'WHATSAPP_ACCESS_TOKEN': 'x', 'WHATSAPP_PHONE_NUMBER_ID': '1'}):
+            with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
+                call_command('recordatorio_whatsapp_diario')
+        mock_enviar.assert_not_called()
