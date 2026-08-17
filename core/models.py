@@ -573,6 +573,29 @@ class Cliente(models.Model):
             'fecha_fin_actual': self.fecha_fin_prestamo_activo,
         }
     
+    @property
+    def historial_pagos(self):
+        """
+        Resumen de puntualidad de pago sobre los préstamos ya finalizados:
+        cuántas cuotas pagó a tiempo de las totales. Se usa tanto para
+        recalcular la categoría (si la automática está activa) como para
+        mostrarlo de un vistazo en la ficha del cliente.
+        """
+        total_cuotas = 0
+        cuotas_a_tiempo = 0
+        for prestamo in self.prestamos.filter(estado='FI'):
+            for cuota in prestamo.cuotas.all():
+                total_cuotas += 1
+                if cuota.fecha_pago_real and cuota.fecha_pago_real <= cuota.fecha_vencimiento:
+                    cuotas_a_tiempo += 1
+
+        porcentaje = (cuotas_a_tiempo / total_cuotas * 100) if total_cuotas > 0 else None
+        return {
+            'total': total_cuotas,
+            'a_tiempo': cuotas_a_tiempo,
+            'porcentaje': porcentaje,
+        }
+
     def actualizar_categoria(self):
         """
         Actualiza la categoría del cliente basado en su historial de pagos.
@@ -582,28 +605,18 @@ class Cliente(models.Model):
         if not ConfiguracionCategorizacion.esta_activa():
             return
 
-        prestamos_finalizados = self.prestamos.filter(estado='FI')
-        if not prestamos_finalizados.exists():
+        resumen = self.historial_pagos
+        if resumen['porcentaje'] is None:
             return
-        
-        # Calcular porcentaje de pagos a tiempo
-        total_cuotas = 0
-        cuotas_a_tiempo = 0
-        for prestamo in prestamos_finalizados:
-            for cuota in prestamo.cuotas.all():
-                total_cuotas += 1
-                if cuota.fecha_pago_real and cuota.fecha_pago_real <= cuota.fecha_vencimiento:
-                    cuotas_a_tiempo += 1
-        
-        if total_cuotas > 0:
-            porcentaje = (cuotas_a_tiempo / total_cuotas) * 100
-            if porcentaje >= 95:
-                self.categoria = self.Categoria.EXCELENTE
-            elif porcentaje >= 70:
-                self.categoria = self.Categoria.REGULAR
-            else:
-                self.categoria = self.Categoria.MOROSO
-            self.save()
+
+        porcentaje = resumen['porcentaje']
+        if porcentaje >= 95:
+            self.categoria = self.Categoria.EXCELENTE
+        elif porcentaje >= 70:
+            self.categoria = self.Categoria.REGULAR
+        else:
+            self.categoria = self.Categoria.MOROSO
+        self.save()
 
 
 class Prestamo(models.Model):
@@ -838,8 +851,8 @@ class Prestamo(models.Model):
     
     @property
     def proxima_cuota(self):
-        """Retorna la próxima cuota pendiente"""
-        return self.cuotas.filter(estado='PE').order_by('numero_cuota').first()
+        """Retorna la próxima cuota pendiente (incluye parciales, no solo las que no se tocaron)"""
+        return self.cuotas.filter(estado__in=['PE', 'PC']).order_by('numero_cuota').first()
     
     def liquidar_prestamo(self):
         """Liquida el préstamo marcando todas las cuotas como pagadas"""

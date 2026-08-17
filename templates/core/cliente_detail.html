@@ -6,7 +6,7 @@
 
 {% block content %}
 <div class="container-fluid px-2 px-lg-4">
-    
+
     <!-- Header con volver -->
     <div class="d-flex align-items-center mb-3">
         <a href="javascript:history.back()" class="btn btn-outline-secondary me-3">
@@ -17,11 +17,11 @@
             <i class="bi bi-pencil"></i>
         </a>
     </div>
-    
+
     <!-- Info del cliente -->
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body text-center py-4">
-            <div class="cliente-avatar mx-auto mb-3" style="width: 80px; height: 80px; font-size: 2rem;">
+            <div class="client-avatar mx-auto mb-3" style="width: 80px; height: 80px; font-size: 2rem; border-radius: 50%;">
                 {{ cliente.nombre|slice:":1" }}{{ cliente.apellido|slice:":1" }}
             </div>
             <h2 class="h4 mb-1">{{ cliente.nombre_completo }}</h2>
@@ -32,7 +32,7 @@
             <p class="text-muted mb-3">
                 <i class="bi bi-geo-alt me-1"></i>{{ cliente.direccion }}
             </p>
-            
+
             <!-- Badges -->
             <div>
                 <span class="badge {% if cliente.categoria == 'EX' %}badge-pagado{% elif cliente.categoria == 'RE' %}badge-pendiente{% elif cliente.categoria == 'MO' %}badge-moroso{% else %}badge-nuevo{% endif %} fs-6">
@@ -47,17 +47,180 @@
                 </span>
                 {% endif %}
             </div>
-            {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
-            <div class="mt-2">
-                <span class="badge bg-primary bg-opacity-75 fs-6">
-                    <i class="bi bi-person-badge me-1"></i>Cobrador: {{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
+
+            <!-- Chips operativos: ruta, día de pago, cobrador -->
+            {% if cliente.ruta or cliente.dia_pago_preferido or cliente.usuario %}
+            <div class="info-chips justify-content-center mt-2">
+                {% if cliente.ruta %}
+                <span class="chip" style="background: {{ cliente.ruta.color }}22; color: {{ cliente.ruta.color }};">
+                    <i class="bi bi-signpost-2"></i> {{ cliente.ruta.nombre }}
                 </span>
+                {% endif %}
+                {% if cliente.dia_pago_preferido %}
+                <span class="chip"><i class="bi bi-calendar-week"></i> Cobra los {{ cliente.dia_pago_preferido }}</span>
+                {% endif %}
+                {% if user.is_superuser or user.perfil.es_admin %}{% if cliente.usuario %}
+                <span class="chip" style="background: #e0e7ff; color: #3730a3;">
+                    <i class="bi bi-person-badge"></i> {{ cliente.usuario.get_full_name|default:cliente.usuario.username }}
+                </span>
+                {% endif %}{% endif %}
             </div>
-            {% endif %}{% endif %}
+            {% endif %}
+
+            {% if cliente.notas %}
+            <div class="notas-box">
+                <i class="bi bi-sticky me-1"></i>{{ cliente.notas|linebreaksbr }}
+            </div>
+            {% endif %}
         </div>
     </div>
-    
-    <!-- Info de Crédito -->
+
+    <!-- Acciones rápidas -->
+    <div class="row g-2 mb-4">
+        <div class="col-6">
+            <a href="tel:{{ cliente.telefono }}" class="btn btn-outline-primary btn-lg w-100">
+                <i class="bi bi-telephone-fill me-2"></i>Llamar
+            </a>
+        </div>
+        <div class="col-6">
+            <a href="https://wa.me/{{ cliente.telefono|cut:' '|cut:'-' }}" target="_blank" class="btn btn-success btn-lg w-100">
+                <i class="bi bi-whatsapp me-2"></i>WhatsApp
+            </a>
+        </div>
+    </div>
+
+    <!-- Préstamos activos -->
+    {% if prestamos_activos %}
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-wallet2"></i>
+            {% if prestamos_activos|length > 1 %}Préstamos Activos ({{ prestamos_activos|length }}){% else %}Préstamo Activo{% endif %}
+        </h3>
+
+        {% for prestamo in prestamos_activos %}
+        <div class="card border-0 shadow-sm {% if not forloop.last %}mb-3{% endif %}">
+            <div class="card-body">
+
+                {% with cuota=prestamo.proxima_cuota %}
+                {% if cuota %}
+                    {% if cuota.esta_vencida %}
+                    <div class="loan-status-banner atrasado">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <div>
+                            Atrasado {{ cuota.dias_vencida }} día{{ cuota.dias_vencida|pluralize }}
+                            {% if cuota.interes_mora_pendiente > 0 %}
+                            <span class="status-sub">+ {{ cuota.interes_mora_pendiente|dinero }} de interés por mora</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="loan-status-banner al-dia">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <div>
+                            Al día
+                            <span class="status-sub">Próximo vencimiento: {{ cuota.fecha_vencimiento|date:"d/m/Y" }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endif %}
+                {% endwith %}
+
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <small class="text-muted">Préstamo #{{ prestamo.pk }}</small>
+                        {% if prestamo.cobrador %}
+                        <small class="badge bg-info bg-opacity-25 text-info ms-1">
+                            <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
+                        </small>
+                        {% endif %}
+                        <div class="loan-big-number text-danger">{{ prestamo.monto_pendiente|dinero }}</div>
+                        <small class="text-muted">de {{ prestamo.monto_total_a_pagar|dinero }} en total</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-primary">{{ prestamo.get_frecuencia_display }}</span>
+                        {% if prestamo.fecha_finalizacion %}
+                        <small class="d-block text-muted mt-1">
+                            <i class="bi bi-calendar-event me-1"></i>Fin: {{ prestamo.fecha_finalizacion|date:"d/m/Y" }}
+                        </small>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Progreso -->
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>Progreso</small>
+                        <small>{{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }} cuotas</small>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>
+                    </div>
+                </div>
+
+                {% with cuota=prestamo.proxima_cuota %}
+                {% if cuota %}
+                <div class="row text-center g-2 mb-3">
+                    <div class="col-6">
+                        <small class="text-muted d-block">Próxima cuota</small>
+                        <strong>{{ cuota.monto_restante|dinero }}</strong>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted d-block">Vence</small>
+                        <strong>{{ cuota.fecha_vencimiento|date:"d/m/Y" }}</strong>
+                    </div>
+                </div>
+
+                {% if cuota.prestamo.cobrador == user %}
+                <button type="button" class="btn btn-success btn-lg w-100 mb-2 btn-cobrar-perfil"
+                        data-cuota-id="{{ cuota.pk }}"
+                        data-monto="{{ cuota.monto_restante|numero_raw }}"
+                        data-cliente="{{ cliente.nombre_completo }}">
+                    <i class="bi bi-cash-coin me-2"></i>Cobrar {{ cuota.monto_restante|dinero }}
+                </button>
+                {% endif %}
+                {% endif %}
+                {% endwith %}
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="btn btn-outline-primary flex-grow-1">
+                        <i class="bi bi-list-ul me-1"></i> Ver Cuotas
+                    </a>
+                    <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
+                        <i class="bi bi-arrow-repeat me-1"></i> Renovar
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </section>
+    {% else %}
+    <div class="text-center py-4">
+        <p class="text-muted mb-3">Este cliente no tiene préstamos activos.</p>
+        <a href="{% url 'core:prestamo_create' %}?cliente={{ cliente.pk }}" class="btn btn-success btn-lg">
+            <i class="bi bi-plus-circle me-2"></i>Crear Préstamo
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Puntualidad de pago: a simple vista, sin abrir cada préstamo viejo -->
+    {% if historial_pagos.total > 0 %}
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-graph-up-arrow"></i> Puntualidad de Pago
+        </h3>
+        <div class="puntualidad-card">
+            <div class="puntualidad-ring {% if historial_pagos.porcentaje >= 95 %}excelente{% elif historial_pagos.porcentaje >= 70 %}regular{% else %}moroso{% endif %}">
+                {{ historial_pagos.porcentaje|floatformat:0 }}%
+            </div>
+            <div>
+                <strong>{{ historial_pagos.a_tiempo }} de {{ historial_pagos.total }}</strong> cuotas pagadas a tiempo
+                <div class="text-muted small">En préstamos ya finalizados</div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    <!-- Información de Crédito -->
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
             <h6 class="text-muted mb-3">
@@ -91,15 +254,6 @@
                     </strong>
                 </div>
             </div>
-            {% if cliente.fecha_fin_prestamo_activo %}
-            <hr class="my-2">
-            <div class="text-center">
-                <small class="text-muted">
-                    <i class="bi bi-calendar-check me-1"></i>
-                    Préstamo activo finaliza: <strong class="text-info">{{ cliente.fecha_fin_prestamo_activo|date:"d/m/Y" }}</strong>
-                </small>
-            </div>
-            {% endif %}
             {% if cliente.dias_para_poder_renovar > 0 %}
             <div class="text-center mt-2">
                 <small class="text-warning">
@@ -110,111 +264,35 @@
             {% endif %}
         </div>
     </div>
-    
-    <!-- Acciones rápidas -->
-    <div class="row g-2 mb-4">
-        <div class="col-6">
-            <a href="tel:{{ cliente.telefono }}" class="btn btn-outline-primary btn-lg w-100">
-                <i class="bi bi-telephone-fill me-2"></i>Llamar
-            </a>
-        </div>
-        <div class="col-6">
-            <a href="https://wa.me/{{ cliente.telefono|cut:' '|cut:'-' }}" target="_blank" class="btn btn-success btn-lg w-100">
-                <i class="bi bi-whatsapp me-2"></i>WhatsApp
-            </a>
-        </div>
-    </div>
-    
-    <!-- Préstamos activos -->
-    {% if prestamos_activos %}
+
+    <!-- Actividad reciente: últimos movimientos sin entrar a cada préstamo -->
+    {% if movimientos_recientes %}
     <section class="mb-4">
         <h3 class="section-title">
-            <i class="bi bi-wallet2"></i>
-            {% if prestamos_activos|length > 1 %}Préstamos Activos ({{ prestamos_activos|length }}){% else %}Préstamo Activo{% endif %}
+            <i class="bi bi-activity"></i> Actividad Reciente
         </h3>
-        
-        {% for prestamo in prestamos_activos %}
-        <div class="card border-0 shadow-sm {% if not forloop.last %}mb-3{% endif %}">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-3">
-                    <div>
-                        <small class="text-muted">Préstamo #{{ prestamo.pk }}</small>
-                        {% if prestamo.cobrador %}
-                        <small class="badge bg-info bg-opacity-25 text-info ms-1">
-                            <i class="bi bi-person-badge me-1"></i>{{ prestamo.cobrador.get_full_name|default:prestamo.cobrador.username }}
-                        </small>
-                        {% endif %}
-                        <h4 class="mb-0">{{ prestamo.monto_total_a_pagar|dinero }}</h4>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2">
+                {% for m in movimientos_recientes %}
+                <div class="activity-row">
+                    <div class="activity-icon {% if m.tipo_modificacion == 'PP' %}bg-warning{% elif m.tipo_modificacion == 'PA' %}bg-success{% elif m.tipo_modificacion == 'TR' %}bg-info{% elif m.tipo_modificacion == 'CE' %}bg-primary{% elif m.tipo_modificacion == 'MR' %}bg-secondary{% elif m.tipo_modificacion == 'AN' %}bg-danger{% endif %}">
+                        <i class="bi {% if m.tipo_modificacion == 'AN' %}bi-arrow-counterclockwise{% elif m.tipo_modificacion == 'PA' %}bi-check-lg{% else %}bi-cash{% endif %}"></i>
                     </div>
-                    <div class="text-end">
-                        <span class="badge bg-primary">{{ prestamo.get_frecuencia_display }}</span>
-                        {% if prestamo.fecha_finalizacion %}
-                        <small class="d-block text-muted mt-1">
-                            <i class="bi bi-calendar-event me-1"></i>Fin: {{ prestamo.fecha_finalizacion|date:"d/m/Y" }}
-                        </small>
-                        {% endif %}
+                    <div class="activity-body">
+                        <div>{{ m.resumen }}</div>
+                        <div class="activity-meta">
+                            Préstamo #{{ m.cuota.prestamo_id }} · Cuota {{ m.cuota.numero_cuota }}
+                            · {{ m.fecha_modificacion|date:"d/m/Y H:i" }}
+                            {% if m.usuario %} · {{ m.usuario.get_full_name|default:m.usuario.username }}{% endif %}
+                        </div>
                     </div>
                 </div>
-                
-                <!-- Progreso -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>Progreso</small>
-                        <small>{{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }} cuotas</small>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar" style="width: {{ prestamo.progreso_porcentaje }}%"></div>
-                    </div>
-                </div>
-                
-                <div class="row text-center g-2">
-                    <div class="col-4">
-                        <small class="text-muted d-block">Pagado</small>
-                        <strong class="text-success">{{ prestamo.monto_pagado|dinero }}</strong>
-                    </div>
-                    <div class="col-4">
-                        <small class="text-muted d-block">Pendiente</small>
-                        <strong class="text-warning">{{ prestamo.monto_pendiente|dinero }}</strong>
-                    </div>
-                    <div class="col-4">
-                        <small class="text-muted d-block">Cuota</small>
-                        {% if prestamo.proxima_cuota %}
-                        <strong>
-                        {% if prestamo.proxima_cuota.estado == 'PC' %}
-                            {{ prestamo.proxima_cuota.monto_restante|dinero }}
-                        {% else %}
-                            {{ prestamo.proxima_cuota.monto_cuota|dinero }}
-                        {% endif %}
-                        </strong>
-                        {% else %}
-                        <strong>-</strong>
-                        {% endif %}
-                    </div>
-                </div>
-                
-                <hr class="my-3">
-                
-                <div class="d-flex gap-2">
-                    <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="btn btn-outline-primary flex-grow-1">
-                        <i class="bi bi-eye me-1"></i> Ver Cuotas
-                    </a>
-                    <a href="{% url 'core:prestamo_renovar' prestamo.pk %}" class="btn btn-warning flex-grow-1">
-                        <i class="bi bi-arrow-repeat me-1"></i> Renovar
-                    </a>
-                </div>
+                {% endfor %}
             </div>
         </div>
-        {% endfor %}
     </section>
-    {% else %}
-    <div class="text-center py-4">
-        <p class="text-muted mb-3">Este cliente no tiene préstamos activos.</p>
-        <a href="{% url 'core:prestamo_create' %}?cliente={{ cliente.pk }}" class="btn btn-success btn-lg">
-            <i class="bi bi-plus-circle me-2"></i>Crear Préstamo
-        </a>
-    </div>
     {% endif %}
-    
+
     <!-- Historial de préstamos -->
     {% if prestamos %}
     <section>
@@ -222,7 +300,7 @@
             <i class="bi bi-clock-history"></i>
             Historial de Préstamos
         </h3>
-        
+
         {% for prestamo in prestamos %}
         <a href="{% url 'core:prestamo_detail' prestamo.pk %}?next=cliente&cliente={{ cliente.pk }}" class="cliente-item">
             <div class="flex-grow-1">
@@ -246,6 +324,55 @@
         {% endfor %}
     </section>
     {% endif %}
-    
+
 </div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll('.btn-cobrar-perfil').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+        const cuotaId = btn.dataset.cuotaId;
+        const monto = parseFloat(btn.dataset.monto) || 0;
+        const cliente = btn.dataset.cliente || 'Cliente';
+
+        const confirmed = await showConfirmModal(monto, cliente);
+        if (!confirmed) return;
+
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const original = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+        try {
+            const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CONFIG.CSRF_TOKEN
+                },
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                showSuccessModal();
+                // Recargamos para que saldo, progreso y próxima cuota se actualicen
+                // desde el servidor (no vale la pena reconstruir todo eso a mano en JS).
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                showToast(data.message || 'Error al registrar el cobro', 'danger');
+                btn.disabled = false;
+                btn.innerHTML = original;
+            }
+        } catch (error) {
+            showToast('Error de conexión', 'danger');
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+});
+</script>
 {% endblock %}

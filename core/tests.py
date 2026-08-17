@@ -158,6 +158,20 @@ class PrestamoModelTest(TestCase):
         """Test progreso inicial es 0%"""
         self.assertEqual(self.prestamo.progreso_porcentaje, 0)
 
+    def test_proxima_cuota_incluye_pago_parcial(self):
+        """
+        Regresión: proxima_cuota solo miraba estado='PE', así que una cuota
+        pagada parcialmente (PC) quedaba invisible y la ficha del cliente
+        mostraba como "próxima" la cuota siguiente en vez de la que
+        realmente falta terminar de cobrar.
+        """
+        primera = self.prestamo.cuotas.order_by('numero_cuota').first()
+        primera.registrar_pago(primera.monto_cuota / 2)
+        self.assertEqual(primera.estado, 'PC')
+
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.proxima_cuota.pk, primera.pk)
+
 
 class CuotaModelTest(TestCase):
     """Tests para el modelo Cuota"""
@@ -694,6 +708,94 @@ class CalendarioCobrosViewTest(TestCase):
         self.assertTrue(response.context['es_mes_actual'])
 
 
+class ClienteDetailA3Test(TestCase):
+    """Tests para A3: ficha de cliente rediseñada (estado del préstamo, cobrar directo, actividad)"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='ficha_user', password='x')
+        self.client.login(username='ficha_user', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ficha', apellido='Test', telefono='888', direccion='x',
+            usuario=self.user, notas='Nota interna del cliente'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('12000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+
+    def test_banner_atrasado_y_boton_cobrar_cuando_hay_mora(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=5)
+        cuota.save()
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+
+        self.assertContains(response, 'loan-status-banner atrasado')
+        self.assertContains(response, 'Atrasado 5 días')
+        self.assertContains(response, f'data-cuota-id="{cuota.pk}"')
+        self.assertContains(response, 'btn-cobrar-perfil')
+
+    def test_banner_al_dia_cuando_no_hay_mora(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=3)
+        cuota.save()
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'loan-status-banner al-dia')
+        self.assertContains(response, 'Al día')
+
+    def test_no_muestra_boton_cobrar_si_no_es_el_cobrador_asignado(self):
+        """
+        El botón de cobro directo respeta el mismo permiso que /api/cobrar/
+        (solo el cobrador asignado). Nota: 'btn-cobrar-perfil' por sí solo
+        no sirve para el assert porque el <script> de la página lo nombra
+        siempre en el selector JS; se busca el atributo data-cuota-id del
+        botón real.
+        """
+        otro = User.objects.create_user(username='otro_cobrador', password='x')
+        self.prestamo.cobrador = otro
+        self.prestamo.save()
+        cuota_id = self.prestamo.cuotas.first().pk
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, f'data-cuota-id="{cuota_id}"')
+
+    def test_proxima_cuota_parcial_aparece_como_la_que_hay_que_cobrar(self):
+        """No debe saltear a la cuota siguiente cuando la actual quedó con pago parcial"""
+        primera = self.prestamo.cuotas.order_by('numero_cuota').first()
+        primera.registrar_pago(primera.monto_cuota / 2, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, f'data-cuota-id="{primera.pk}"')
+
+    def test_muestra_puntualidad_de_pago_si_hay_prestamos_finalizados(self):
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'Puntualidad de Pago')
+
+    def test_no_muestra_puntualidad_sin_prestamos_finalizados(self):
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertNotContains(response, 'Puntualidad de Pago')
+
+    def test_muestra_notas_y_actividad_reciente(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.get(reverse('core:cliente_detail', args=[self.cliente.pk]))
+        self.assertContains(response, 'Nota interna del cliente')
+        self.assertContains(response, 'Actividad Reciente')
+        self.assertContains(response, 'Pago completo')
+
+
 # ============== TESTS DE EXPORTACIÓN ==============
 
 class ExportViewsTest(TestCase):
@@ -958,6 +1060,24 @@ class ConfiguracionCategorizacionTest(TestCase):
         self._pagar_mal_y_finalizar()
         self.cliente.refresh_from_db()
         self.assertEqual(self.cliente.categoria, 'MO')
+
+    def test_historial_pagos_se_calcula_aunque_este_en_modo_manual(self):
+        """
+        A3: el resumen de puntualidad debe poder mostrarse en la ficha del
+        cliente aunque la categorización automática esté apagada (que es el
+        default) — son dos cosas independientes.
+        """
+        self._pagar_mal_y_finalizar()
+        resumen = self.cliente.historial_pagos
+        self.assertEqual(resumen['total'], 2)
+        self.assertEqual(resumen['a_tiempo'], 0)
+        self.assertEqual(resumen['porcentaje'], 0)
+
+    def test_historial_pagos_sin_prestamos_finalizados(self):
+        cliente_nuevo = Cliente.objects.create(nombre='Sin', apellido='Historial', telefono='1', direccion='x')
+        resumen = cliente_nuevo.historial_pagos
+        self.assertEqual(resumen['total'], 0)
+        self.assertIsNone(resumen['porcentaje'])
 
 
 # ============== TESTS DE BÚSQUEDA Y FILTROS ==============

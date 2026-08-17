@@ -467,6 +467,11 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
         context['prestamos_activos'] = self.object.prestamos.filter(
             estado='AC'
         ).select_related('cobrador')
+        # Últimos movimientos (A3): repasar la actividad reciente sin entrar a cada préstamo
+        context['movimientos_recientes'] = HistorialModificacionPago.objects.filter(
+            cuota__prestamo__cliente=self.object
+        ).select_related('cuota', 'cuota_relacionada', 'usuario').order_by('-fecha_modificacion')[:6]
+        context['historial_pagos'] = self.object.historial_pagos
         return context
 
 
