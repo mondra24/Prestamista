@@ -2457,4 +2457,43 @@ body {
     filter: invert(1) grayscale(100%) brightness(200%);
 }
 
+/* ============ LINK RÁPIDO DEL CRÉDITO (listado de préstamos) ============ */
+.link-rapido-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.link-rapido-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card-hover);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.link-rapido-btn:hover {
+    background: var(--color-nuevo);
+    border-color: var(--color-nuevo);
+    color: #fff;
+}
+
+.link-rapido-btn.whatsapp:hover {
+    background: var(--color-pagado);
+    border-color: var(--color-pagado);
+}
+
+.link-rapido-btn.copiado {
+    background: var(--color-pagado);
+    border-color: var(--color-pagado);
+    color: #fff;
+}
+
 
