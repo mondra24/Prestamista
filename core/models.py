@@ -1682,9 +1682,78 @@ class ConfiguracionRespaldo(models.Model):
     class Meta:
         verbose_name = 'Configuración de Respaldo'
         verbose_name_plural = 'Configuraciones de Respaldo'
-    
+
     def __str__(self):
         return self.nombre
+
+    def ejecutar_respaldo(self):
+        """
+        Crea el archivo de respaldo (JSON en Postgres, copia del archivo en SQLite),
+        actualiza ultimo_respaldo y limpia respaldos viejos según mantener_ultimos.
+        Usado tanto por el botón manual de respaldo como por el job automático (D4).
+        Retorna (exito: bool, backup_name: str|None, error: str|None).
+        """
+        import os
+        import shutil
+        import json
+        from datetime import datetime
+        from django.conf import settings
+
+        try:
+            backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            db_engine = settings.DATABASES['default']['ENGINE']
+
+            if 'postgresql' in db_engine:
+                backup_name = f'backup_{timestamp}.json'
+                backup_path = os.path.join(backup_dir, backup_name)
+
+                from core.models import (
+                    Cliente, Prestamo, Cuota, TipoNegocio, RutaCobro,
+                    ConfiguracionCredito, ConfiguracionPlanilla, PerfilUsuario,
+                    RegistroAuditoria, Notificacion
+                )
+                from django.core import serializers
+
+                all_data = {}
+                models_to_export = [
+                    ('users', User),
+                    ('perfiles', PerfilUsuario),
+                    ('tipos_negocio', TipoNegocio),
+                    ('rutas_cobro', RutaCobro),
+                    ('config_credito', ConfiguracionCredito),
+                    ('config_planilla', ConfiguracionPlanilla),
+                    ('clientes', Cliente),
+                    ('prestamos', Prestamo),
+                    ('cuotas', Cuota),
+                ]
+
+                for name, model in models_to_export:
+                    all_data[name] = json.loads(serializers.serialize('json', model.objects.all()))
+
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_data, f, ensure_ascii=False, indent=2, default=str)
+            else:
+                backup_name = f'backup_{timestamp}.sqlite3'
+                backup_path = os.path.join(backup_dir, backup_name)
+                db_path = settings.DATABASES['default']['NAME']
+                shutil.copy2(db_path, backup_path)
+
+            self.ultimo_respaldo = timezone.now()
+            self.save(update_fields=['ultimo_respaldo'])
+
+            backups = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith('backup_')],
+                reverse=True
+            )
+            for old_backup in backups[self.mantener_ultimos:]:
+                os.remove(os.path.join(backup_dir, old_backup))
+
+            return True, backup_name, None
+        except Exception as e:
+            return False, None, str(e)
 
 # ==================== CONFIGURACIÓN DE MORA ====================
 

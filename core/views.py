@@ -2036,60 +2036,12 @@ def crear_respaldo(request):
         messages.error(request, 'Solo los desarrolladores pueden crear respaldos.')
         return redirect('core:dashboard')
     
-    import shutil
-    import json
-    from django.conf import settings
-    from django.core import serializers
-    
-    try:
-        # Crear directorio de respaldos si no existe
-        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        db_engine = settings.DATABASES['default']['ENGINE']
-        
-        # Verificar si es PostgreSQL o SQLite
-        if 'postgresql' in db_engine:
-            # PostgreSQL: exportar datos a JSON
-            backup_name = f'backup_{timestamp}.json'
-            backup_path = os.path.join(backup_dir, backup_name)
-            
-            # Exportar todos los modelos a JSON
-            from core.models import (
-                Cliente, Prestamo, Cuota, TipoNegocio, RutaCobro,
-                ConfiguracionCredito, ConfiguracionPlanilla, PerfilUsuario,
-                RegistroAuditoria, Notificacion
-            )
-            from django.contrib.auth.models import User
-            
-            all_data = {}
-            models_to_export = [
-                ('users', User),
-                ('perfiles', PerfilUsuario),
-                ('tipos_negocio', TipoNegocio),
-                ('rutas_cobro', RutaCobro),
-                ('config_credito', ConfiguracionCredito),
-                ('config_planilla', ConfiguracionPlanilla),
-                ('clientes', Cliente),
-                ('prestamos', Prestamo),
-                ('cuotas', Cuota),
-            ]
-            
-            for name, model in models_to_export:
-                all_data[name] = json.loads(serializers.serialize('json', model.objects.all()))
-            
-            with open(backup_path, 'w', encoding='utf-8') as f:
-                json.dump(all_data, f, ensure_ascii=False, indent=2, default=str)
-                
-        else:
-            # SQLite: copiar archivo
-            backup_name = f'backup_{timestamp}.sqlite3'
-            backup_path = os.path.join(backup_dir, backup_name)
-            db_path = settings.DATABASES['default']['NAME']
-            shutil.copy2(db_path, backup_path)
-        
-        # Registrar auditoría
+    config, _ = ConfiguracionRespaldo.objects.get_or_create(
+        defaults={'nombre': 'Respaldo Automático'}
+    )
+    exito, backup_name, error = config.ejecutar_respaldo()
+
+    if exito:
         RegistroAuditoria.registrar(
             usuario=request.user,
             tipo_accion='RS',
@@ -2097,25 +2049,10 @@ def crear_respaldo(request):
             descripcion=f'Respaldo manual creado: {backup_name}',
             ip_address=get_client_ip(request)
         )
-        
-        # Limpiar respaldos antiguos
-        config = ConfiguracionRespaldo.objects.first()
-        if config:
-            config.ultimo_respaldo = timezone.now()
-            config.save()
-            
-            # Mantener solo los últimos N respaldos
-            backups = sorted(
-                [f for f in os.listdir(backup_dir) if f.startswith('backup_')],
-                reverse=True
-            )
-            for old_backup in backups[config.mantener_ultimos:]:
-                os.remove(os.path.join(backup_dir, old_backup))
-        
         messages.success(request, f'Respaldo creado exitosamente: {backup_name}')
-    except Exception as e:
-        messages.error(request, f'Error al crear respaldo: {str(e)}')
-    
+    else:
+        messages.error(request, f'Error al crear respaldo: {error}')
+
     return redirect('core:reporte_general')
 
 

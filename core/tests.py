@@ -9,6 +9,8 @@ from django.urls import reverse
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from unittest.mock import patch
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
@@ -667,6 +669,39 @@ class GenerarNotificacionesDiariasCommandTest(TestCase):
 
         call_command('generar_notificaciones_diarias')
         self.assertEqual(Notificacion.objects.filter(tipo__in=['CV', 'CP']).count(), 0)
+
+
+class RespaldoAutomaticoCommandTest(TestCase):
+    """Tests para D4: vigilancia del respaldo diario"""
+
+    def test_respaldo_exitoso_no_genera_notificacion(self):
+        """Si el respaldo se hace bien, no se avisa a nadie (evita spam diario)"""
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo', return_value=(True, 'backup_x.json', None)):
+            call_command('respaldo_automatico')
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
+
+    def test_respaldo_fallido_notifica_solo_a_superadmins(self):
+        """Si el respaldo falla, se avisa únicamente a los superusuarios (quienes gestionan respaldos)"""
+        superadmin = User.objects.create_user(username='dev', password='x', is_superuser=True)
+        User.objects.create_user(username='cobrador1', password='x')
+
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo', return_value=(False, None, 'disco lleno')):
+            with self.assertRaises(CommandError):
+                call_command('respaldo_automatico')
+
+        notifs = Notificacion.objects.filter(tipo='AS')
+        self.assertEqual(notifs.count(), 1)
+        self.assertEqual(notifs.first().usuario, superadmin)
+        self.assertEqual(notifs.first().prioridad, 'AL')
+
+    def test_respaldo_desactivado_no_ejecuta_ni_notifica(self):
+        """Si ConfiguracionRespaldo.activo=False, el comando no corre el respaldo"""
+        ConfiguracionRespaldo.objects.create(nombre='Respaldo Automático', activo=False)
+
+        with patch.object(ConfiguracionRespaldo, 'ejecutar_respaldo') as mock_ejecutar:
+            call_command('respaldo_automatico')
+            mock_ejecutar.assert_not_called()
+        self.assertEqual(Notificacion.objects.filter(tipo='AS').count(), 0)
 
 
 class AuditoriaModelTest(TestCase):
