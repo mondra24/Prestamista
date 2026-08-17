@@ -1851,6 +1851,110 @@ def construir_excel_cierre_caja(fecha, pagos):
     return wb
 
 
+def construir_excel_morosidad(fecha):
+    """
+    Arma el Workbook semanal de morosidad (C2): quiénes están atrasados hoy
+    y cuánto se espera cobrar en los próximos 7 días. Usado por el comando
+    morosidad_semanal.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from datetime import timedelta
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='dc3545', end_color='dc3545', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    vencidas = Cuota.objects.filter(
+        fecha_vencimiento__lt=fecha,
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by('-fecha_vencimiento')
+    vencidas = sorted(vencidas, key=lambda c: c.monto_restante, reverse=True)
+
+    proyeccion = Cuota.objects.filter(
+        fecha_vencimiento__gt=fecha,
+        fecha_vencimiento__lte=fecha + timedelta(days=7),
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+
+    wb = openpyxl.Workbook()
+
+    # --- Hoja 1: Morosidad ---
+    ws = wb.active
+    ws.title = 'Morosidad'
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'MOROSIDAD AL {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_adeudado = sum((c.monto_restante for c in vencidas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total adeudado: ${total_adeudado:,.0f} | Clientes atrasados: {len(set(c.prestamo.cliente_id for c in vencidas))} | Cuotas vencidas: {len(vencidas)}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['Cliente', 'Teléfono', 'Ruta', 'Préstamo', 'Días de atraso', 'Monto adeudado']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(vencidas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else '-').border = border
+        ws.cell(row=row, column=4, value=f'#{cuota.prestamo.pk}').border = border
+        ws.cell(row=row, column=5, value=cuota.dias_vencida).border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    for col, width in zip('ABCDEF', [25, 15, 15, 12, 14, 16]):
+        ws.column_dimensions[col].width = width
+
+    # --- Hoja 2: Proyección próxima semana ---
+    ws2 = wb.create_sheet('Proyección 7 días')
+    ws2.merge_cells('A1:D1')
+    ws2['A1'] = f'PROYECCIÓN {(fecha + timedelta(days=1)).strftime("%d/%m")} al {(fecha + timedelta(days=7)).strftime("%d/%m/%Y")}'
+    ws2['A1'].font = Font(bold=True, size=14)
+    ws2['A1'].alignment = Alignment(horizontal='center')
+
+    total_proyectado = sum((c.monto_restante for c in proyeccion), Decimal('0.00'))
+    ws2.merge_cells('A2:D2')
+    ws2['A2'] = f'Total a cobrar: ${total_proyectado:,.0f} | Cuotas: {proyeccion.count()}'
+    ws2['A2'].alignment = Alignment(horizontal='center')
+
+    headers2 = ['Cliente', 'Préstamo', 'Fecha de vencimiento', 'Monto']
+    for col, header in enumerate(headers2, 1):
+        cell = ws2.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(proyeccion, 1):
+        row = i + 4
+        ws2.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws2.cell(row=row, column=2, value=f'#{cuota.prestamo.pk}').border = border
+        ws2.cell(row=row, column=3, value=cuota.fecha_vencimiento.strftime('%d/%m/%Y')).border = border
+        monto_cell2 = ws2.cell(row=row, column=4, value=float(cuota.monto_restante))
+        monto_cell2.number_format = '#,##0'
+        monto_cell2.border = border
+
+    for col, width in zip('ABCD', [25, 12, 20, 16]):
+        ws2.column_dimensions[col].width = width
+
+    return wb
+
+
 @login_required
 def exportar_cierre_excel(request):
     """Exportar cierre de caja a Excel con cobros realizados"""

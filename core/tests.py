@@ -1073,6 +1073,85 @@ class CierreCajaAutomaticoCommandTest(TestCase):
             self.assertTrue((Path(tmp) / 'reportes' / nombre).exists())
 
 
+class MorosidadSemanalCommandTest(TestCase):
+    """Tests para C2: reporte semanal de morosidad y proyección"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='cobrador_c2', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Deudor', apellido='Atrasado', telefono='2', direccion='x', usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('9000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=10),
+            cobrador=self.user
+        )
+
+    def test_hoja_morosidad_lista_a_los_atrasados(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=3)
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            path = Path(tmp) / 'reportes' / nombre
+            self.assertTrue(path.exists())
+
+            wb = openpyxl.load_workbook(path)
+            self.assertIn('Morosidad', wb.sheetnames)
+            self.assertIn('Proyección 7 días', wb.sheetnames)
+            ws = wb['Morosidad']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 7)]
+            self.assertEqual(fila[0], 'Deudor Atrasado')
+            self.assertEqual(fila[4], 3)  # días de atraso
+
+    def test_hoja_proyeccion_lista_lo_que_vence_la_semana_que_viene(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() + timedelta(days=4)
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            wb = openpyxl.load_workbook(Path(tmp) / 'reportes' / nombre)
+            ws = wb['Proyección 7 días']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 5)]
+            self.assertEqual(fila[0], 'Deudor Atrasado')
+
+    def test_prestamo_renovado_no_aparece_como_moroso(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today() - timedelta(days=3)
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+
+        import openpyxl
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('morosidad_semanal')
+            nombre = f'morosidad_{date.today().strftime("%Y%m%d")}.xlsx'
+            wb = openpyxl.load_workbook(Path(tmp) / 'reportes' / nombre)
+            ws = wb['Morosidad']
+            self.assertIsNone(ws.cell(row=5, column=1).value)
+
+
 class ReportesAutomaticosViewTest(TestCase):
     """Tests para la pantalla de descarga de reportes automáticos (C1-C3)"""
 
