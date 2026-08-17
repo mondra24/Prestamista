@@ -4,7 +4,7 @@ Vistas del Sistema de Gestión de Préstamos
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
-from django.urls import reverse_lazy
+from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.db.models import Sum, Count, Q, F
 from django.db import transaction
@@ -215,10 +215,26 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Obtener rutas activas para filtrado
         rutas = RutaCobro.objects.filter(activa=True).order_by('orden', 'nombre')
-        
+
         # Obtener configuración de mora
         config_mora = ConfiguracionMora.obtener_config_activa()
-        
+
+        # Repaso de la semana (A5): cuotas que vencieron en los últimos 7 días,
+        # separadas en cobradas vs. pendientes. Se excluyen préstamos renovados
+        # (sus cuotas quedan marcadas PA al renovar, pero no fueron cobradas de verdad).
+        inicio_semana_pasada = hoy - timedelta(days=6)
+        cuotas_repaso_semana = list(Cuota.objects.filter(
+            fecha_vencimiento__gte=inicio_semana_pasada,
+            fecha_vencimiento__lte=hoy,
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by('-fecha_vencimiento'))
+
+        repaso_semana_cobradas = [c for c in cuotas_repaso_semana if c.estado == 'PA']
+        repaso_semana_pendientes = [c for c in cuotas_repaso_semana if c.estado in ('PE', 'PC')]
+        repaso_semana_total_cobrado = sum((c.monto_pagado for c in repaso_semana_cobradas), Decimal('0.00'))
+        repaso_semana_total_pendiente = sum((c.monto_restante for c in repaso_semana_pendientes), Decimal('0.00'))
+
         context.update({
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
@@ -233,6 +249,11 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'fecha_hoy': hoy,
             'rutas': rutas,
             'config_mora': config_mora,
+            'repaso_semana_cobradas': repaso_semana_cobradas,
+            'repaso_semana_pendientes': repaso_semana_pendientes,
+            'repaso_semana_total_cobrado': repaso_semana_total_cobrado,
+            'repaso_semana_total_pendiente': repaso_semana_total_pendiente,
+            'repaso_semana_inicio': inicio_semana_pasada,
         })
         
         # Anotar historial de modificaciones en todas las cuotas
@@ -251,6 +272,114 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             for cuota in todas_cuotas:
                 cuota.historial_list = historial_map.get(cuota.id, [])
         
+        return context
+
+
+class CalendarioCobrosView(LoginRequiredMixin, TemplateView):
+    """Calendario visual de cobros (A6): un vistazo del mes completo, día por día."""
+    template_name = 'core/calendario_cobros.html'
+
+    def get_context_data(self, **kwargs):
+        import calendar as calendar_module
+        from datetime import date
+
+        context = super().get_context_data(**kwargs)
+        hoy = fecha_local_hoy()
+
+        try:
+            year = int(self.request.GET.get('year', hoy.year))
+            month = int(self.request.GET.get('month', hoy.month))
+            date(year, month, 1)  # valida que el año/mes sean válidos
+        except (ValueError, TypeError):
+            year, month = hoy.year, hoy.month
+
+        base_filter = {}
+        if not es_usuario_admin(self.request.user):
+            base_filter['prestamo__cobrador'] = self.request.user
+
+        _, ultimo_dia_num = calendar_module.monthrange(year, month)
+        primer_dia = date(year, month, 1)
+        ultimo_dia = date(year, month, ultimo_dia_num)
+
+        cuotas_mes = list(Cuota.objects.filter(
+            fecha_vencimiento__gte=primer_dia,
+            fecha_vencimiento__lte=ultimo_dia,
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related('prestamo', 'prestamo__cliente').order_by('prestamo__cliente__apellido'))
+
+        cuotas_por_dia = {}
+        for cuota in cuotas_mes:
+            cuotas_por_dia.setdefault(cuota.fecha_vencimiento.day, []).append(cuota)
+
+        dias = []
+        detalle_dias = {}
+        for dia_num in range(1, ultimo_dia_num + 1):
+            fecha_dia = date(year, month, dia_num)
+            cuotas_dia = cuotas_por_dia.get(dia_num, [])
+
+            if not cuotas_dia:
+                color = ''
+            elif fecha_dia > hoy:
+                color = 'proxima'
+            elif all(c.estado == 'PA' for c in cuotas_dia):
+                color = 'cobrado'
+            else:
+                color = 'pendiente'
+
+            total_dia = sum((c.monto_cuota for c in cuotas_dia), Decimal('0.00'))
+
+            dias.append({
+                'numero': dia_num,
+                'color': color,
+                'cantidad': len(cuotas_dia),
+                'es_hoy': fecha_dia == hoy,
+            })
+
+            detalle_dias[str(dia_num)] = {
+                'fecha': fecha_dia.strftime('%d/%m/%Y'),
+                'total': float(total_dia),
+                'cuotas': [
+                    {
+                        'cliente': c.prestamo.cliente.nombre_completo,
+                        'monto': float(c.monto_restante if c.estado != 'PA' else c.monto_cuota),
+                        'estado': c.get_estado_display(),
+                        'cobrado': c.estado == 'PA',
+                        'cliente_url': reverse('core:cliente_detail', args=[c.prestamo.cliente.pk]),
+                    }
+                    for c in cuotas_dia
+                ],
+            }
+
+        # Grilla del mes (semanas de lunes a domingo, con relleno de días de otros meses)
+        cal = calendar_module.Calendar(firstweekday=0)
+        semanas = cal.monthdayscalendar(year, month)
+        dias_por_numero = {d['numero']: d for d in dias}
+        grilla = [
+            [dias_por_numero.get(num) if num != 0 else None for num in semana]
+            for semana in semanas
+        ]
+
+        mes_anterior = (year, month - 1) if month > 1 else (year - 1, 12)
+        mes_siguiente = (year, month + 1) if month < 12 else (year + 1, 1)
+
+        total_mes_cobrado = sum((c.monto_cuota for c in cuotas_mes if c.estado == 'PA'), Decimal('0.00'))
+        total_mes_pendiente = sum((c.monto_restante for c in cuotas_mes if c.estado != 'PA'), Decimal('0.00'))
+
+        context.update({
+            'primer_dia_mes': primer_dia,
+            'grilla': grilla,
+            'anio': year,
+            'mes': month,
+            # Armadas ya en Python (no en el template) para que USE_THOUSAND_SEPARATOR
+            # no le meta un punto de miles al año dentro del querystring (?year=2.026)
+            'url_mes_anterior': f'?year={mes_anterior[0]}&month={mes_anterior[1]}',
+            'url_mes_siguiente': f'?year={mes_siguiente[0]}&month={mes_siguiente[1]}',
+            'detalle_dias': detalle_dias,
+            'total_mes_cobrado': total_mes_cobrado,
+            'total_mes_pendiente': total_mes_pendiente,
+            'es_mes_actual': (year == hoy.year and month == hoy.month),
+        })
         return context
 
 
@@ -367,10 +496,19 @@ class ClienteDetailView(LoginRequiredMixin, DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['prestamos'] = self.object.prestamos.select_related('cobrador').all()
-        context['prestamos_activos'] = self.object.prestamos.filter(
+        prestamos_activos = list(self.object.prestamos.filter(estado='AC').select_related('cobrador'))
+        context['prestamos_activos'] = prestamos_activos
+        context['prestamos_activos_count'] = len(prestamos_activos)
+        # Historial = todo lo que no está activo (lo activo ya se ve arriba, en grande;
+        # repetirlo acá sería ruido, no información nueva).
+        context['prestamos_historial'] = self.object.prestamos.exclude(
             estado='AC'
-        ).select_related('cobrador')
+        ).select_related('cobrador').order_by('-fecha_inicio')
+        # Últimos movimientos (A3): repasar la actividad reciente sin entrar a cada préstamo
+        context['movimientos_recientes'] = HistorialModificacionPago.objects.filter(
+            cuota__prestamo__cliente=self.object
+        ).select_related('cuota', 'cuota_relacionada', 'usuario').order_by('-fecha_modificacion')[:6]
+        context['historial_pagos'] = self.object.historial_pagos
         return context
 
 
@@ -2053,6 +2191,401 @@ def exportar_cierre_excel(request):
     return response
 
 
+def construir_excel_planilla_cobrador(fecha, cobrador):
+    """
+    Arma la hoja de ruta diaria de un cobrador (C3): sus cuotas a cobrar
+    (vencidas + de hoy) ordenadas por zona, con dirección, teléfono y
+    monto — pensada para llevar en el celular, más simple que la planilla
+    general de exportar_planilla_excel (esa es para el back-office).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    cuotas = Cuota.objects.filter(
+        prestamo__estado='AC',
+        prestamo__cobrador=cobrador,
+        estado__in=['PE', 'PC'],
+        fecha_vencimiento__lte=fecha
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+        'prestamo__cliente__ruta__orden', 'prestamo__cliente__ruta__nombre', 'prestamo__cliente__apellido'
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    nombre_cobrador = cobrador.get_full_name() or cobrador.username
+    ws.title = 'Ruta del día'
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='0d6efd', end_color='0d6efd', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'RUTA DEL DÍA - {nombre_cobrador} - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_esperado = sum((c.monto_restante for c in cuotas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total esperado: ${total_esperado:,.0f} | Clientes a visitar: {cuotas.count()}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Zona', 'Monto']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for col, width in zip('ABCDEF', [5, 25, 32, 15, 15, 14]):
+        ws.column_dimensions[col].width = width
+
+    for i, cuota in enumerate(cuotas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin zona').border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    return wb
+
+
+def construir_excel_cierre_caja(fecha, pagos):
+    """
+    Arma el Workbook de cierre de caja para una fecha, a partir de un
+    queryset de Cuota ya filtrado (por cobrador o completo, según quién
+    lo pida). Reutilizado por la exportación manual y por el comando
+    programado cierre_caja_automatico (C1).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Pre-cargar historial de modificaciones para las cuotas del día
+    cuota_ids = list(pagos.values_list('id', flat=True))
+    historial_por_cuota = {}
+    if cuota_ids:
+        historiales = HistorialModificacionPago.objects.filter(
+            cuota_id__in=cuota_ids
+        ).select_related('cuota_relacionada').order_by('fecha_modificacion')
+        for h in historiales:
+            if h.cuota_id not in historial_por_cuota:
+                historial_por_cuota[h.cuota_id] = []
+            historial_por_cuota[h.cuota_id].append(h)
+    
+    # También buscar cuotas que recibieron monto (fueron modificadas por un pago parcial previo)
+    cuotas_con_monto_recibido = {}
+    historiales_recibidos = HistorialModificacionPago.objects.filter(
+        cuota_id__in=cuota_ids,
+        tipo_modificacion='MR'
+    ).select_related('cuota_relacionada')
+    for h in historiales_recibidos:
+        cuotas_con_monto_recibido[h.cuota_id] = h
+    
+    # Crear workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"Cierre {fecha.strftime('%d-%m-%Y')}"
+    
+    # Estilos
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='198754', end_color='198754', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    modificada_fill = PatternFill(start_color='FFF3CD', end_color='FFF3CD', fill_type='solid')  # Amarillo claro
+    recibida_fill = PatternFill(start_color='D1ECF1', end_color='D1ECF1', fill_type='solid')  # Celeste claro
+    
+    # Título
+    ws.merge_cells('A1:S1')
+    ws['A1'] = f'CIERRE DE CAJA - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+    
+    total_cobrado = pagos.aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
+    total_efectivo = pagos.aggregate(total=Sum('monto_efectivo'))['total'] or Decimal('0.00')
+    total_transferencia = pagos.aggregate(total=Sum('monto_transferencia'))['total'] or Decimal('0.00')
+    ws.merge_cells('A2:S2')
+    ws['A2'] = f'Total cobrado: ${total_cobrado:,.0f} (Efectivo: ${total_efectivo:,.0f} | Transferencia: ${total_transferencia:,.0f}) | Pagos: {pagos.count()} | Generado: {datetime.now().strftime("%d/%m/%Y %H:%M")}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+    
+    # Leyenda de colores
+    ws.merge_cells('A3:S3')
+    ws['A3'] = '■ Amarillo = Pago parcial (se transfirió monto a otra cuota)  |  ■ Celeste = Cuota que recibió monto de otra cuota'
+    ws['A3'].font = Font(italic=True, size=9)
+    ws['A3'].alignment = Alignment(horizontal='center')
+    
+    # Headers - ahora con columnas de modificaciones
+    headers = ['#', 'Préstamo', 'Cliente', 'Dirección', 'Teléfono', 'Cuota', 'Monto Cuota', 'Cobrado', 
+               'Método Pago', 'Efectivo', 'Transferencia', 'Estado', 'Fecha Inicio', 
+               '% Interés', 'Fecha Fin Préstamo', 'Cobrador',
+               'Modificada', 'Monto Original', 'Observaciones']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=5, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # Anchos
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['C'].width = 25
+    ws.column_dimensions['D'].width = 30
+    ws.column_dimensions['E'].width = 15
+    ws.column_dimensions['F'].width = 10
+    ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 15
+    ws.column_dimensions['I'].width = 16
+    ws.column_dimensions['J'].width = 15
+    ws.column_dimensions['K'].width = 15
+    ws.column_dimensions['L'].width = 12
+    ws.column_dimensions['M'].width = 16
+    ws.column_dimensions['N'].width = 12
+    ws.column_dimensions['O'].width = 16
+    ws.column_dimensions['P'].width = 20
+    ws.column_dimensions['Q'].width = 14
+    ws.column_dimensions['R'].width = 16
+    ws.column_dimensions['S'].width = 45
+    
+    # Datos
+    total = Decimal('0.00')
+    for i, pago in enumerate(pagos, 1):
+        row = i + 5
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=f'#{pago.prestamo.pk}').border = border
+        ws.cell(row=row, column=3, value=pago.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=4, value=pago.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=5, value=pago.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=6, value=f'{pago.numero_cuota}/{pago.prestamo.cuotas_pactadas}').border = border
+        
+        monto_cell = ws.cell(row=row, column=7, value=float(pago.monto_cuota))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+        
+        cobrado_cell = ws.cell(row=row, column=8, value=float(pago.monto_pagado))
+        cobrado_cell.number_format = '#,##0'
+        cobrado_cell.border = border
+        cobrado_cell.font = Font(bold=True, color='198754')
+        
+        ws.cell(row=row, column=9, value=pago.get_metodo_pago_display()).border = border
+        
+        ef_cell = ws.cell(row=row, column=10, value=float(pago.monto_efectivo or 0))
+        ef_cell.number_format = '#,##0'
+        ef_cell.border = border
+        
+        tr_cell = ws.cell(row=row, column=11, value=float(pago.monto_transferencia or 0))
+        tr_cell.number_format = '#,##0'
+        tr_cell.border = border
+        
+        ws.cell(row=row, column=12, value=pago.get_estado_display()).border = border
+        ws.cell(row=row, column=13, value=pago.prestamo.fecha_inicio.strftime('%d/%m/%Y')).border = border
+        ws.cell(row=row, column=14, value=f'{pago.prestamo.tasa_interes_porcentaje}%').border = border
+        ws.cell(row=row, column=15, value=pago.prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if pago.prestamo.fecha_finalizacion else '-').border = border
+        ws.cell(row=row, column=16, value=pago.cobrado_por.get_full_name() or pago.cobrado_por.username if pago.cobrado_por else '-').border = border
+        
+        # --- Columnas de Modificaciones ---
+        historial = historial_por_cuota.get(pago.id, [])
+        recibido = cuotas_con_monto_recibido.get(pago.id)
+        
+        fue_modificada = False
+        monto_original = ''
+        observaciones_parts = []
+        row_fill = None
+        
+        for h in historial:
+            if h.tipo_modificacion == 'PP':
+                fue_modificada = True
+                row_fill = modificada_fill
+                if h.monto_restante_transferido > 0:
+                    observaciones_parts.append(
+                        f'Pago parcial: cobrado ${h.monto_pagado:,.0f} de ${h.monto_cuota_anterior:,.0f}. '
+                        f'Restante ${h.monto_restante_transferido:,.0f} transferido'
+                    )
+                else:
+                    observaciones_parts.append(
+                        f'Pago parcial: cobrado ${h.monto_pagado:,.0f} de ${h.monto_cuota_anterior:,.0f}'
+                    )
+            elif h.tipo_modificacion == 'TR':
+                destino = f' a cuota #{h.cuota_relacionada.numero_cuota}' if h.cuota_relacionada else ''
+                observaciones_parts.append(
+                    f'Transferido ${h.monto_restante_transferido:,.0f}{destino}'
+                )
+                if h.interes_mora > 0:
+                    observaciones_parts.append(f'(incluye mora: ${h.interes_mora:,.0f})')
+            elif h.tipo_modificacion == 'CE':
+                destino = f' (cuota #{h.cuota_relacionada.numero_cuota})' if h.cuota_relacionada else ''
+                observaciones_parts.append(
+                    f'Cuota especial creada por ${h.monto_restante_transferido:,.0f}{destino}'
+                )
+        
+        if recibido:
+            fue_modificada = True
+            if not row_fill:
+                row_fill = recibida_fill
+            monto_original = float(recibido.monto_cuota_anterior)
+            origen = f' de cuota #{recibido.cuota_relacionada.numero_cuota}' if recibido.cuota_relacionada else ''
+            observaciones_parts.insert(0,
+                f'Recibió ${recibido.monto_restante_transferido:,.0f}{origen}'
+            )
+            if recibido.interes_mora > 0:
+                observaciones_parts.insert(1, f'(incluye mora: ${recibido.interes_mora:,.0f})')
+        
+        mod_cell = ws.cell(row=row, column=17, value='SÍ' if fue_modificada else '-')
+        mod_cell.border = border
+        mod_cell.alignment = Alignment(horizontal='center')
+        if fue_modificada:
+            mod_cell.font = Font(bold=True, color='856404')
+        
+        orig_cell = ws.cell(row=row, column=18, value=monto_original if monto_original else '-')
+        if isinstance(monto_original, float):
+            orig_cell.number_format = '#,##0'
+        orig_cell.border = border
+        
+        obs_cell = ws.cell(row=row, column=19, value=' | '.join(observaciones_parts) if observaciones_parts else '-')
+        obs_cell.border = border
+        obs_cell.alignment = Alignment(wrap_text=True)
+        
+        # Aplicar color de fondo a toda la fila si fue modificada
+        if row_fill:
+            for col_idx in range(1, 20):
+                ws.cell(row=row, column=col_idx).fill = row_fill
+        
+        total += pago.monto_pagado
+    
+    # Fila total
+    total_row = pagos.count() + 6
+    ws.merge_cells(f'A{total_row}:G{total_row}')
+    total_label = ws.cell(row=total_row, column=1, value='TOTAL COBRADO:')
+    total_label.font = Font(bold=True, size=12)
+    total_cell = ws.cell(row=total_row, column=8, value=float(total))
+    total_cell.font = Font(bold=True, size=12, color='198754')
+    total_cell.number_format = '#,##0'
+    
+    # Totales efectivo y transferencia
+    ef_total_cell = ws.cell(row=total_row, column=10, value=float(total_efectivo))
+    ef_total_cell.font = Font(bold=True, size=11)
+    ef_total_cell.number_format = '#,##0'
+    tr_total_cell = ws.cell(row=total_row, column=11, value=float(total_transferencia))
+    tr_total_cell.font = Font(bold=True, size=11)
+    tr_total_cell.number_format = '#,##0'
+
+    return wb
+
+
+def construir_excel_morosidad(fecha):
+    """
+    Arma el Workbook semanal de morosidad (C2): quiénes están atrasados hoy
+    y cuánto se espera cobrar en los próximos 7 días. Usado por el comando
+    morosidad_semanal.
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from datetime import timedelta
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='dc3545', end_color='dc3545', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    vencidas = Cuota.objects.filter(
+        fecha_vencimiento__lt=fecha,
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by('-fecha_vencimiento')
+    vencidas = sorted(vencidas, key=lambda c: c.monto_restante, reverse=True)
+
+    proyeccion = Cuota.objects.filter(
+        fecha_vencimiento__gt=fecha,
+        fecha_vencimiento__lte=fecha + timedelta(days=7),
+        estado__in=['PE', 'PC'],
+        prestamo__estado='AC'
+    ).select_related('prestamo', 'prestamo__cliente').order_by('fecha_vencimiento')
+
+    wb = openpyxl.Workbook()
+
+    # --- Hoja 1: Morosidad ---
+    ws = wb.active
+    ws.title = 'Morosidad'
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'MOROSIDAD AL {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_adeudado = sum((c.monto_restante for c in vencidas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total adeudado: ${total_adeudado:,.0f} | Clientes atrasados: {len(set(c.prestamo.cliente_id for c in vencidas))} | Cuotas vencidas: {len(vencidas)}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['Cliente', 'Teléfono', 'Ruta', 'Préstamo', 'Días de atraso', 'Monto adeudado']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(vencidas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else '-').border = border
+        ws.cell(row=row, column=4, value=f'#{cuota.prestamo.pk}').border = border
+        ws.cell(row=row, column=5, value=cuota.dias_vencida).border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    for col, width in zip('ABCDEF', [25, 15, 15, 12, 14, 16]):
+        ws.column_dimensions[col].width = width
+
+    # --- Hoja 2: Proyección próxima semana ---
+    ws2 = wb.create_sheet('Proyección 7 días')
+    ws2.merge_cells('A1:D1')
+    ws2['A1'] = f'PROYECCIÓN {(fecha + timedelta(days=1)).strftime("%d/%m")} al {(fecha + timedelta(days=7)).strftime("%d/%m/%Y")}'
+    ws2['A1'].font = Font(bold=True, size=14)
+    ws2['A1'].alignment = Alignment(horizontal='center')
+
+    total_proyectado = sum((c.monto_restante for c in proyeccion), Decimal('0.00'))
+    ws2.merge_cells('A2:D2')
+    ws2['A2'] = f'Total a cobrar: ${total_proyectado:,.0f} | Cuotas: {proyeccion.count()}'
+    ws2['A2'].alignment = Alignment(horizontal='center')
+
+    headers2 = ['Cliente', 'Préstamo', 'Fecha de vencimiento', 'Monto']
+    for col, header in enumerate(headers2, 1):
+        cell = ws2.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for i, cuota in enumerate(proyeccion, 1):
+        row = i + 4
+        ws2.cell(row=row, column=1, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws2.cell(row=row, column=2, value=f'#{cuota.prestamo.pk}').border = border
+        ws2.cell(row=row, column=3, value=cuota.fecha_vencimiento.strftime('%d/%m/%Y')).border = border
+        monto_cell2 = ws2.cell(row=row, column=4, value=float(cuota.monto_restante))
+        monto_cell2.number_format = '#,##0'
+        monto_cell2.border = border
+
+    for col, width in zip('ABCD', [25, 12, 20, 16]):
+        ws2.column_dimensions[col].width = width
+
+    return wb
+
+
 @login_required
 def exportar_clientes_excel(request):
     """Exportar lista de clientes a Excel"""
@@ -2345,60 +2878,12 @@ def crear_respaldo(request):
         messages.error(request, 'Solo los desarrolladores pueden crear respaldos.')
         return redirect('core:dashboard')
     
-    import shutil
-    import json
-    from django.conf import settings
-    from django.core import serializers
-    
-    try:
-        # Crear directorio de respaldos si no existe
-        backup_dir = os.path.join(settings.BASE_DIR, 'backups')
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        db_engine = settings.DATABASES['default']['ENGINE']
-        
-        # Verificar si es PostgreSQL o SQLite
-        if 'postgresql' in db_engine:
-            # PostgreSQL: exportar datos a JSON
-            backup_name = f'backup_{timestamp}.json'
-            backup_path = os.path.join(backup_dir, backup_name)
-            
-            # Exportar todos los modelos a JSON
-            from core.models import (
-                Cliente, Prestamo, Cuota, TipoNegocio, RutaCobro,
-                ConfiguracionCredito, ConfiguracionPlanilla, PerfilUsuario,
-                RegistroAuditoria, Notificacion
-            )
-            from django.contrib.auth.models import User
-            
-            all_data = {}
-            models_to_export = [
-                ('users', User),
-                ('perfiles', PerfilUsuario),
-                ('tipos_negocio', TipoNegocio),
-                ('rutas_cobro', RutaCobro),
-                ('config_credito', ConfiguracionCredito),
-                ('config_planilla', ConfiguracionPlanilla),
-                ('clientes', Cliente),
-                ('prestamos', Prestamo),
-                ('cuotas', Cuota),
-            ]
-            
-            for name, model in models_to_export:
-                all_data[name] = json.loads(serializers.serialize('json', model.objects.all()))
-            
-            with open(backup_path, 'w', encoding='utf-8') as f:
-                json.dump(all_data, f, ensure_ascii=False, indent=2, default=str)
-                
-        else:
-            # SQLite: copiar archivo
-            backup_name = f'backup_{timestamp}.sqlite3'
-            backup_path = os.path.join(backup_dir, backup_name)
-            db_path = settings.DATABASES['default']['NAME']
-            shutil.copy2(db_path, backup_path)
-        
-        # Registrar auditoría
+    config, _ = ConfiguracionRespaldo.objects.get_or_create(
+        defaults={'nombre': 'Respaldo Automático'}
+    )
+    exito, backup_name, error = config.ejecutar_respaldo()
+
+    if exito:
         RegistroAuditoria.registrar(
             usuario=request.user,
             tipo_accion='RS',
@@ -2406,25 +2891,10 @@ def crear_respaldo(request):
             descripcion=f'Respaldo manual creado: {backup_name}',
             ip_address=get_client_ip(request)
         )
-        
-        # Limpiar respaldos antiguos
-        config = ConfiguracionRespaldo.objects.first()
-        if config:
-            config.ultimo_respaldo = timezone.now()
-            config.save()
-            
-            # Mantener solo los últimos N respaldos
-            backups = sorted(
-                [f for f in os.listdir(backup_dir) if f.startswith('backup_')],
-                reverse=True
-            )
-            for old_backup in backups[config.mantener_ultimos:]:
-                os.remove(os.path.join(backup_dir, old_backup))
-        
         messages.success(request, f'Respaldo creado exitosamente: {backup_name}')
-    except Exception as e:
-        messages.error(request, f'Error al crear respaldo: {str(e)}')
-    
+    else:
+        messages.error(request, f'Error al crear respaldo: {error}')
+
     return redirect('core:reporte_general')
 
 
@@ -2436,10 +2906,11 @@ def descargar_respaldo(request, nombre):
         return redirect('core:dashboard')
     
     from django.conf import settings
-    
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
     backup_dir = os.path.join(settings.BASE_DIR, 'backups')
     backup_path = os.path.join(backup_dir, nombre)
-    
+
     if os.path.exists(backup_path) and nombre.startswith('backup_'):
         with open(backup_path, 'rb') as f:
             response = HttpResponse(f.read(), content_type='application/octet-stream')
@@ -2481,6 +2952,82 @@ class RespaldoListView(LoginRequiredMixin, TemplateView):
         context['backups'] = backups
         context['config'] = ConfiguracionRespaldo.objects.first()
         return context
+
+
+# ==================== REPORTES AUTOMÁTICOS (C1-C3) ====================
+
+class ReportesAutomaticosListView(LoginRequiredMixin, TemplateView):
+    """
+    Lista los reportes que generan solos los Cron Jobs (cierre de caja diario,
+    morosidad semanal, planillas de ruta por cobrador) para descargarlos desde
+    el panel. Por ahora es la única forma de acceder a ellos — todavía no se
+    envían por WhatsApp/email.
+    """
+    template_name = 'core/reportes_automaticos.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo los administradores pueden ver los reportes automáticos.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        from django.conf import settings
+
+        context = super().get_context_data(**kwargs)
+        reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+
+        reportes = []
+        if os.path.exists(reportes_dir):
+            for f in sorted(os.listdir(reportes_dir), reverse=True):
+                if not f.endswith('.xlsx'):
+                    continue
+                if f.startswith('cierre_'):
+                    tipo = 'Cierre de caja'
+                elif f.startswith('morosidad_'):
+                    tipo = 'Morosidad semanal'
+                elif f.startswith('planilla_'):
+                    tipo = 'Planilla de ruta'
+                else:
+                    tipo = 'Reporte'
+                path = os.path.join(reportes_dir, f)
+                size = os.path.getsize(path)
+                reportes.append({
+                    'nombre': f,
+                    'tipo': tipo,
+                    'tamano': f'{size / 1024:.0f} KB',
+                    'fecha': datetime.fromtimestamp(os.path.getctime(path)),
+                })
+
+        context['reportes'] = reportes
+        return context
+
+
+@login_required
+def descargar_reporte_automatico(request, nombre):
+    """Descargar un reporte automático específico (cierre, morosidad o planilla)"""
+    if not es_usuario_admin(request.user):
+        messages.error(request, 'Solo los administradores pueden descargar reportes.')
+        return redirect('core:dashboard')
+
+    from django.conf import settings
+
+    nombre = os.path.basename(nombre)  # evita path traversal (../../)
+    reportes_dir = os.path.join(settings.BASE_DIR, 'reportes')
+    reporte_path = os.path.join(reportes_dir, nombre)
+
+    nombre_valido = nombre.startswith(('cierre_', 'morosidad_', 'planilla_')) and nombre.endswith('.xlsx')
+    if nombre_valido and os.path.exists(reporte_path):
+        with open(reporte_path, 'rb') as f:
+            response = HttpResponse(
+                f.read(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response['Content-Disposition'] = f'attachment; filename={nombre}'
+            return response
+
+    messages.error(request, 'El reporte no existe.')
+    return redirect('core:reportes_automaticos')
 
 
 # ==================== UTILIDADES ====================

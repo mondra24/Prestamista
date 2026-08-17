@@ -191,6 +191,33 @@ class ConfiguracionCredito(models.Model):
             return None
 
 
+class ConfiguracionCategorizacion(models.Model):
+    """
+    Configuración global: si la categoría del cliente (Excelente/Regular/Moroso)
+    se recalcula sola según su historial de pagos, o queda 100% en manos del
+    admin/cobrador (por defecto). Solo debe existir una fila.
+    """
+    categorizacion_automatica = models.BooleanField(
+        default=False,
+        verbose_name='Categorización automática',
+        help_text='Si está activo, el sistema recalcula la categoría del cliente solo al finalizar cada préstamo. '
+                   'Si está apagado (por defecto), la categoría la definen manualmente el admin o el cobrador.'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de Categorización'
+        verbose_name_plural = 'Configuración de Categorización'
+
+    def __str__(self):
+        return 'Categorización automática: ' + ('activada' if self.categorizacion_automatica else 'desactivada')
+
+    @classmethod
+    def esta_activa(cls):
+        """Retorna si la categorización automática está activa (crea la config con default si no existe)"""
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config.categorizacion_automatica
+
+
 class ColumnaPlanilla(models.Model):
     """Columnas personalizables para la planilla de cobros"""
     
@@ -564,30 +591,50 @@ class Cliente(models.Model):
             'fecha_fin_actual': self.fecha_fin_prestamo_activo,
         }
     
-    def actualizar_categoria(self):
-        """Actualiza la categoría del cliente basado en su historial de pagos"""
-        prestamos_finalizados = self.prestamos.filter(estado='FI')
-        if not prestamos_finalizados.exists():
-            return
-        
-        # Calcular porcentaje de pagos a tiempo
+    @property
+    def historial_pagos(self):
+        """
+        Resumen de puntualidad de pago sobre los préstamos ya finalizados:
+        cuántas cuotas pagó a tiempo de las totales. Se usa tanto para
+        recalcular la categoría (si la automática está activa) como para
+        mostrarlo de un vistazo en la ficha del cliente.
+        """
         total_cuotas = 0
         cuotas_a_tiempo = 0
-        for prestamo in prestamos_finalizados:
+        for prestamo in self.prestamos.filter(estado='FI'):
             for cuota in prestamo.cuotas.all():
                 total_cuotas += 1
                 if cuota.fecha_pago_real and cuota.fecha_pago_real <= cuota.fecha_vencimiento:
                     cuotas_a_tiempo += 1
-        
-        if total_cuotas > 0:
-            porcentaje = (cuotas_a_tiempo / total_cuotas) * 100
-            if porcentaje >= 95:
-                self.categoria = self.Categoria.EXCELENTE
-            elif porcentaje >= 70:
-                self.categoria = self.Categoria.REGULAR
-            else:
-                self.categoria = self.Categoria.MOROSO
-            self.save()
+
+        porcentaje = (cuotas_a_tiempo / total_cuotas * 100) if total_cuotas > 0 else None
+        return {
+            'total': total_cuotas,
+            'a_tiempo': cuotas_a_tiempo,
+            'porcentaje': porcentaje,
+        }
+
+    def actualizar_categoria(self):
+        """
+        Actualiza la categoría del cliente basado en su historial de pagos.
+        No hace nada si la categorización automática está desactivada
+        (ConfiguracionCategorizacion) — por defecto la categoría es 100% manual.
+        """
+        if not ConfiguracionCategorizacion.esta_activa():
+            return
+
+        resumen = self.historial_pagos
+        if resumen['porcentaje'] is None:
+            return
+
+        porcentaje = resumen['porcentaje']
+        if porcentaje >= 95:
+            self.categoria = self.Categoria.EXCELENTE
+        elif porcentaje >= 70:
+            self.categoria = self.Categoria.REGULAR
+        else:
+            self.categoria = self.Categoria.MOROSO
+        self.save()
 
 
 class Prestamo(models.Model):
@@ -928,8 +975,8 @@ class Prestamo(models.Model):
     
     @property
     def proxima_cuota(self):
-        """Retorna la próxima cuota pendiente"""
-        return self.cuotas.filter(estado='PE').order_by('numero_cuota').first()
+        """Retorna la próxima cuota pendiente (incluye parciales, no solo las que no se tocaron)"""
+        return self.cuotas.filter(estado__in=['PE', 'PC']).order_by('numero_cuota').first()
     
     def liquidar_prestamo(self):
         """Liquida el préstamo marcando todas las cuotas como pagadas"""
@@ -1773,14 +1820,15 @@ class Notificacion(models.Model):
     
     @classmethod
     def notificar_cuotas_vencidas(cls):
-        """Crea notificaciones para cuotas vencidas"""
+        """Crea notificaciones para cuotas vencidas. Retorna la cantidad creada."""
         hoy = fecha_local_hoy()
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC'
         ).select_related('prestamo', 'prestamo__cliente')
-        
+
+        creadas = 0
         for cuota in cuotas_vencidas:
             # Verificar si ya existe notificación para esta cuota
             existe = cls.objects.filter(
@@ -1789,7 +1837,7 @@ class Notificacion(models.Model):
                 fecha_creacion__date=hoy,
                 leida=False
             ).exists()
-            
+
             if not existe:
                 dias = (hoy - cuota.fecha_vencimiento).days
                 cls.crear_notificacion(
@@ -1799,34 +1847,155 @@ class Notificacion(models.Model):
                     prioridad='AL' if dias > 7 else 'ME',
                     enlace=f'/prestamos/{cuota.prestamo.pk}/'
                 )
-    
+                creadas += 1
+        return creadas
+
     @classmethod
     def notificar_cuotas_por_vencer(cls, dias_anticipacion=1):
-        """Crea notificaciones para cuotas que vencen pronto"""
+        """Crea notificaciones para cuotas que vencen pronto. Retorna la cantidad creada."""
         hoy = fecha_local_hoy()
         fecha_limite = hoy + timedelta(days=dias_anticipacion)
-        
+
         cuotas = Cuota.objects.filter(
             fecha_vencimiento=fecha_limite,
             estado='PE',
             prestamo__estado='AC'
         ).select_related('prestamo', 'prestamo__cliente')
-        
+
+        creadas = 0
         for cuota in cuotas:
             existe = cls.objects.filter(
                 tipo='CP',
                 titulo__contains=f'#{cuota.pk}',
                 fecha_creacion__date=hoy
             ).exists()
-            
+
             if not existe:
                 cls.crear_notificacion(
                     tipo='CP',
-                    titulo=f'Cuota por vencer - {cuota.prestamo.cliente.nombre_completo}',
+                    titulo=f'Cuota #{cuota.pk} por vencer - {cuota.prestamo.cliente.nombre_completo}',
                     mensaje=f'La cuota {cuota.numero_cuota}/{cuota.prestamo.cuotas_pactadas} vence mañana. Monto: ${cuota.monto_cuota}',
                     prioridad='BA',
                     enlace=f'/cobros/'
                 )
+                creadas += 1
+        return creadas
+
+    @classmethod
+    def notificar_cobradores_sin_actividad(cls):
+        """
+        Alerta a los administradores si un cobrador tenía cuotas para cobrar hoy
+        (vencidas o de hoy) y no registró ningún cobro en el día. Retorna la
+        cantidad de cobradores detectados sin actividad.
+        """
+        hoy = fecha_local_hoy()
+
+        cobradores = User.objects.filter(
+            perfil__rol=PerfilUsuario.Rol.COBRADOR,
+            perfil__activo=True
+        )
+
+        administradores = User.objects.filter(
+            models.Q(is_superuser=True) | models.Q(perfil__rol=PerfilUsuario.Rol.ADMIN)
+        ).distinct()
+
+        detectados = 0
+        for cobrador in cobradores:
+            tenia_para_cobrar = Cuota.objects.filter(
+                fecha_vencimiento__lte=hoy,
+                estado__in=['PE', 'PC'],
+                prestamo__estado='AC',
+                prestamo__cobrador=cobrador
+            ).exists()
+
+            if not tenia_para_cobrar:
+                continue
+
+            registro_algun_cobro = Cuota.objects.filter(
+                fecha_pago_real=hoy,
+                estado__in=['PA', 'PC'],
+                prestamo__cobrador=cobrador
+            ).exists()
+
+            if registro_algun_cobro:
+                continue
+
+            nombre_cobrador = cobrador.get_full_name() or cobrador.username
+
+            for admin in administradores:
+                existe = cls.objects.filter(
+                    tipo='AS',
+                    usuario=admin,
+                    titulo__contains=f'sin cobros - {nombre_cobrador}',
+                    fecha_creacion__date=hoy
+                ).exists()
+
+                if not existe:
+                    cls.crear_notificacion(
+                        tipo='AS',
+                        titulo=f'Día sin cobros - {nombre_cobrador}',
+                        mensaje=f'{nombre_cobrador} tenía cuotas pendientes para cobrar hoy y no registró ningún cobro.',
+                        usuario=admin,
+                        prioridad='ME',
+                        enlace='/cobros/'
+                    )
+            detectados += 1
+        return detectados
+
+    @classmethod
+    def notificar_candidatos_renovacion(cls):
+        """
+        Detecta préstamos que terminaron de pagarse hoy con buen historial
+        (>=70% de cuotas a tiempo, mismo umbral que separa MOROSO del resto en
+        Cliente.actualizar_categoria) y notifica a los administradores como
+        candidatos a renovación. Retorna la cantidad de candidatos detectados.
+        """
+        hoy = fecha_local_hoy()
+
+        prestamos_finalizados_hoy = Prestamo.objects.filter(
+            estado=Prestamo.Estado.FINALIZADO
+        ).annotate(
+            ultimo_pago=models.Max('cuotas__fecha_pago_real')
+        ).filter(ultimo_pago=hoy).select_related('cliente')
+
+        administradores = User.objects.filter(
+            models.Q(is_superuser=True) | models.Q(perfil__rol=PerfilUsuario.Rol.ADMIN)
+        ).distinct()
+
+        detectados = 0
+        for prestamo in prestamos_finalizados_hoy:
+            cuotas = list(prestamo.cuotas.all())
+            if not cuotas:
+                continue
+
+            a_tiempo = sum(
+                1 for c in cuotas
+                if c.fecha_pago_real and c.fecha_pago_real <= c.fecha_vencimiento
+            )
+            porcentaje = (a_tiempo / len(cuotas)) * 100
+            if porcentaje < 70:
+                continue
+
+            cliente = prestamo.cliente
+            for admin in administradores:
+                existe = cls.objects.filter(
+                    tipo='RN',
+                    usuario=admin,
+                    titulo__contains=f'préstamo #{prestamo.pk})',
+                    fecha_creacion__date=hoy
+                ).exists()
+
+                if not existe:
+                    cls.crear_notificacion(
+                        tipo='RN',
+                        titulo=f'Candidato a renovación - {cliente.nombre_completo} (préstamo #{prestamo.pk})',
+                        mensaje=f'{cliente.nombre_completo} terminó de pagar su préstamo con {porcentaje:.0f}% de cuotas a tiempo. Buen candidato para ofrecerle una renovación.',
+                        usuario=admin,
+                        prioridad='BA',
+                        enlace=f'/clientes/{cliente.pk}/'
+                    )
+            detectados += 1
+        return detectados
 
 
 # ==================== CONFIGURACIÓN DE RESPALDOS ====================
@@ -1872,9 +2041,78 @@ class ConfiguracionRespaldo(models.Model):
     class Meta:
         verbose_name = 'Configuración de Respaldo'
         verbose_name_plural = 'Configuraciones de Respaldo'
-    
+
     def __str__(self):
         return self.nombre
+
+    def ejecutar_respaldo(self):
+        """
+        Crea el archivo de respaldo (JSON en Postgres, copia del archivo en SQLite),
+        actualiza ultimo_respaldo y limpia respaldos viejos según mantener_ultimos.
+        Usado tanto por el botón manual de respaldo como por el job automático (D4).
+        Retorna (exito: bool, backup_name: str|None, error: str|None).
+        """
+        import os
+        import shutil
+        import json
+        from datetime import datetime
+        from django.conf import settings
+
+        try:
+            backup_dir = os.path.join(settings.BASE_DIR, 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            db_engine = settings.DATABASES['default']['ENGINE']
+
+            if 'postgresql' in db_engine:
+                backup_name = f'backup_{timestamp}.json'
+                backup_path = os.path.join(backup_dir, backup_name)
+
+                from core.models import (
+                    Cliente, Prestamo, Cuota, TipoNegocio, RutaCobro,
+                    ConfiguracionCredito, ConfiguracionPlanilla, PerfilUsuario,
+                    RegistroAuditoria, Notificacion
+                )
+                from django.core import serializers
+
+                all_data = {}
+                models_to_export = [
+                    ('users', User),
+                    ('perfiles', PerfilUsuario),
+                    ('tipos_negocio', TipoNegocio),
+                    ('rutas_cobro', RutaCobro),
+                    ('config_credito', ConfiguracionCredito),
+                    ('config_planilla', ConfiguracionPlanilla),
+                    ('clientes', Cliente),
+                    ('prestamos', Prestamo),
+                    ('cuotas', Cuota),
+                ]
+
+                for name, model in models_to_export:
+                    all_data[name] = json.loads(serializers.serialize('json', model.objects.all()))
+
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_data, f, ensure_ascii=False, indent=2, default=str)
+            else:
+                backup_name = f'backup_{timestamp}.sqlite3'
+                backup_path = os.path.join(backup_dir, backup_name)
+                db_path = settings.DATABASES['default']['NAME']
+                shutil.copy2(db_path, backup_path)
+
+            self.ultimo_respaldo = timezone.now()
+            self.save(update_fields=['ultimo_respaldo'])
+
+            backups = sorted(
+                [f for f in os.listdir(backup_dir) if f.startswith('backup_')],
+                reverse=True
+            )
+            for old_backup in backups[self.mantener_ultimos:]:
+                os.remove(os.path.join(backup_dir, old_backup))
+
+            return True, backup_name, None
+        except Exception as e:
+            return False, None, str(e)
 
 # ==================== CONFIGURACIÓN DE MORA ====================
 
@@ -2046,5 +2284,102 @@ class InteresMora(models.Model):
             monto_interes=monto_interes.quantize(Decimal('0.01')),
             agregado_manualmente=manual
         )
-        
+
         return interes
+
+
+# ==================== WHATSAPP (B1) ====================
+
+class ConfiguracionWhatsApp(models.Model):
+    """
+    Configuración global de los mensajes automáticos por WhatsApp. Las
+    credenciales de Meta (token, phone_number_id) NO viven acá — van por
+    variable de entorno (ver core/whatsapp.py). Fila única (pk=1).
+    """
+    activo = models.BooleanField(
+        default=False,
+        verbose_name='WhatsApp activo',
+        help_text='Activar recién cuando el número ya esté verificado en Meta y la plantilla aprobada. '
+                   'Mientras esté apagado, los comandos de envío no hacen nada.'
+    )
+    template_recordatorio = models.CharField(
+        max_length=100,
+        default='recordatorio_cuota',
+        verbose_name='Nombre de la plantilla (recordatorio B1)',
+        help_text='Debe coincidir exactamente con el nombre de la plantilla ya aprobada en Meta'
+    )
+    idioma_plantillas = models.CharField(max_length=10, default='es_AR', verbose_name='Idioma de las plantillas')
+    hora_envio_recordatorio = models.TimeField(
+        default='10:00',
+        verbose_name='Hora de envío del recordatorio',
+        help_text='Informativo: el horario real lo define el Cron Job en Railway, esto es solo para referencia'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de WhatsApp'
+        verbose_name_plural = 'Configuración de WhatsApp'
+
+    def __str__(self):
+        return 'WhatsApp: ' + ('activo' if self.activo else 'inactivo')
+
+    @classmethod
+    def esta_activo(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config.activo
+
+    @classmethod
+    def obtener(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+
+class EnvioWhatsApp(models.Model):
+    """
+    Registro de cada intento de envío por WhatsApp — auditoría de qué se
+    mandó, cuándo, y si funcionó. También sirve para no mandar el mismo
+    recordatorio dos veces el mismo día si el Cron Job se corre a mano.
+    """
+    class Tipo(models.TextChoices):
+        RECORDATORIO = 'RE', 'Recordatorio de cuota (B1)'
+
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='envios_whatsapp',
+        verbose_name='Cliente'
+    )
+    cuota = models.ForeignKey(
+        Cuota,
+        on_delete=models.CASCADE,
+        related_name='envios_whatsapp',
+        null=True,
+        blank=True,
+        verbose_name='Cuota'
+    )
+    tipo = models.CharField(max_length=2, choices=Tipo.choices, verbose_name='Tipo')
+    fecha_envio = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Envío')
+    exitoso = models.BooleanField(default=False, verbose_name='Exitoso')
+    error = models.TextField(blank=True, null=True, verbose_name='Error')
+    message_id = models.CharField(max_length=100, blank=True, null=True, verbose_name='ID de mensaje (Meta)')
+
+    class Meta:
+        verbose_name = 'Envío de WhatsApp'
+        verbose_name_plural = 'Envíos de WhatsApp'
+        ordering = ['-fecha_envio']
+        indexes = [
+            models.Index(fields=['cuota', 'tipo', 'fecha_envio']),
+        ]
+
+    def __str__(self):
+        estado = 'OK' if self.exitoso else 'ERROR'
+        return f'{self.get_tipo_display()} a {self.cliente.nombre_completo} - {estado}'
+
+    @classmethod
+    def ya_enviado_hoy(cls, cuota, tipo):
+        """Evita mandar el mismo recordatorio dos veces el mismo día (cada envío es una conversación facturable)"""
+        return cls.objects.filter(
+            cuota=cuota,
+            tipo=tipo,
+            fecha_envio__date=fecha_local_hoy(),
+            exitoso=True
+        ).exists()
