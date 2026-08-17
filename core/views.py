@@ -1627,6 +1627,73 @@ def exportar_planilla_excel(request):
     return response
 
 
+def construir_excel_planilla_cobrador(fecha, cobrador):
+    """
+    Arma la hoja de ruta diaria de un cobrador (C3): sus cuotas a cobrar
+    (vencidas + de hoy) ordenadas por zona, con dirección, teléfono y
+    monto — pensada para llevar en el celular, más simple que la planilla
+    general de exportar_planilla_excel (esa es para el back-office).
+    """
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    cuotas = Cuota.objects.filter(
+        prestamo__estado='AC',
+        prestamo__cobrador=cobrador,
+        estado__in=['PE', 'PC'],
+        fecha_vencimiento__lte=fecha
+    ).select_related('prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta').order_by(
+        'prestamo__cliente__ruta__orden', 'prestamo__cliente__ruta__nombre', 'prestamo__cliente__apellido'
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    nombre_cobrador = cobrador.get_full_name() or cobrador.username
+    ws.title = 'Ruta del día'
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='0d6efd', end_color='0d6efd', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+
+    ws.merge_cells('A1:F1')
+    ws['A1'] = f'RUTA DEL DÍA - {nombre_cobrador} - {fecha.strftime("%d/%m/%Y")}'
+    ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    total_esperado = sum((c.monto_restante for c in cuotas), Decimal('0.00'))
+    ws.merge_cells('A2:F2')
+    ws['A2'] = f'Total esperado: ${total_esperado:,.0f} | Clientes a visitar: {cuotas.count()}'
+    ws['A2'].alignment = Alignment(horizontal='center')
+
+    headers = ['#', 'Cliente', 'Dirección', 'Teléfono', 'Zona', 'Monto']
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=4, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+
+    for col, width in zip('ABCDEF', [5, 25, 32, 15, 15, 14]):
+        ws.column_dimensions[col].width = width
+
+    for i, cuota in enumerate(cuotas, 1):
+        row = i + 4
+        ws.cell(row=row, column=1, value=i).border = border
+        ws.cell(row=row, column=2, value=cuota.prestamo.cliente.nombre_completo).border = border
+        ws.cell(row=row, column=3, value=cuota.prestamo.cliente.direccion or '-').border = border
+        ws.cell(row=row, column=4, value=cuota.prestamo.cliente.telefono).border = border
+        ws.cell(row=row, column=5, value=cuota.prestamo.cliente.ruta.nombre if cuota.prestamo.cliente.ruta else 'Sin zona').border = border
+        monto_cell = ws.cell(row=row, column=6, value=float(cuota.monto_restante))
+        monto_cell.number_format = '#,##0'
+        monto_cell.border = border
+
+    return wb
+
+
 def construir_excel_cierre_caja(fecha, pagos):
     """
     Arma el Workbook de cierre de caja para una fecha, a partir de un

@@ -1152,6 +1152,73 @@ class MorosidadSemanalCommandTest(TestCase):
             self.assertIsNone(ws.cell(row=5, column=1).value)
 
 
+class PlanillasRutaDiariaCommandTest(TestCase):
+    """Tests para C3: planilla de ruta diaria por cobrador"""
+
+    def setUp(self):
+        self.cobrador = User.objects.create_user(username='cobrador_c3', password='x')
+        self.cobrador.perfil.rol = 'CO'
+        self.cobrador.perfil.save()
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ruta', apellido='Diaria', telefono='3', direccion='Calle Falsa 123',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('7000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_genera_planilla_para_cobrador_con_pendientes(self):
+        import openpyxl
+
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            path = Path(tmp) / 'reportes' / nombre
+            self.assertTrue(path.exists())
+
+            wb = openpyxl.load_workbook(path)
+            ws = wb['Ruta del día']
+            fila = [ws.cell(row=5, column=c).value for c in range(1, 7)]
+            self.assertEqual(fila[1], 'Ruta Diaria')
+            self.assertEqual(fila[2], 'Calle Falsa 123')
+
+    def test_no_genera_planilla_para_cobrador_sin_pendientes(self):
+        """Un cobrador sin nada para cobrar hoy no debería recibir un archivo vacío"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.cobrador)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertFalse((Path(tmp) / 'reportes' / nombre).exists())
+
+    def test_no_genera_planilla_para_cobrador_inactivo(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+        self.cobrador.perfil.activo = False
+        self.cobrador.perfil.save()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with override_settings(BASE_DIR=Path(tmp)):
+                call_command('planillas_ruta_diaria')
+            nombre = f'planilla_{self.cobrador.username}_{date.today().strftime("%Y%m%d")}.xlsx'
+            self.assertFalse((Path(tmp) / 'reportes' / nombre).exists())
+
+
 class ReportesAutomaticosViewTest(TestCase):
     """Tests para la pantalla de descarga de reportes automáticos (C1-C3)"""
 
