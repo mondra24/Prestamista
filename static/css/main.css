@@ -1961,6 +1961,141 @@ body {
 .pf-toast-icon {
     width: 32px;
     height: 32px;
+
+/* ============ REPASO DE LA SEMANA (A5) ============ */
+.week-review-summary {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.week-review-total {
+    flex: 1;
+    border-radius: 14px;
+    padding: 10px 14px;
+    background: var(--bg-card-hover);
+}
+
+.week-review-total .label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.week-review-total .value {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.week-review-total.cobrado .label { color: var(--color-pagado); }
+.week-review-total.cobrado .value { color: var(--color-pagado); }
+.week-review-total.pendiente .label { color: var(--color-pendiente); }
+.week-review-total.pendiente .value { color: var(--color-pendiente); }
+
+.week-review-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: var(--bg-card);
+    border-left: 3px solid var(--color-pagado);
+    margin-bottom: 6px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.2s ease;
+}
+
+.week-review-row:hover {
+    background: var(--bg-card-hover);
+    color: inherit;
+}
+
+.week-review-row.pendiente {
+    border-left-color: var(--color-pendiente);
+}
+
+.week-review-row .week-review-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--color-pagado);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+
+.week-review-row.pendiente .week-review-avatar {
+    background: var(--color-pendiente);
+}
+
+.week-review-row .week-review-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.week-review-row .week-review-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.week-review-row .week-review-fecha {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.week-review-row .week-review-amount {
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    color: var(--color-pagado);
+}
+
+.week-review-row.pendiente .week-review-amount {
+    color: var(--color-pendiente);
+}
+
+.week-review-empty {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    padding: 10px;
+    text-align: center;
+}
+
+/* ============ CALENDARIO VISUAL DE COBROS (A6) ============ */
+.calendar-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 8px 12px;
+}
+
+.calendar-nav-title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-primary);
+    text-transform: capitalize;
+}
+
+.calendar-nav-btn {
+    width: 36px;
+    height: 36px;
     border-radius: 10px;
     display: flex;
     align-items: center;
@@ -2480,6 +2615,288 @@ body {
 }
 
 .link-rapido-btn:hover {
+
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.calendar-nav-btn:hover {
+    background: var(--color-nuevo);
+    color: #fff;
+}
+
+.calendar-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.calendar-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.calendar-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.calendar-legend-dot.cobrado { background: var(--color-pagado); }
+.calendar-legend-dot.pendiente { background: var(--color-moroso); }
+.calendar-legend-dot.proxima { background: var(--color-nuevo); }
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+}
+
+.calendar-weekday {
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    padding-bottom: 4px;
+}
+
+.calendar-day {
+    aspect-ratio: 1;
+    border: none;
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-weight: 600;
+    position: relative;
+    padding: 0;
+}
+
+.calendar-day.empty {
+    background: transparent;
+}
+
+.calendar-day:disabled {
+    color: var(--text-secondary);
+    opacity: 0.45;
+}
+
+.calendar-day[data-dia] {
+    cursor: pointer;
+}
+
+.calendar-day[data-dia]:active {
+    transform: scale(0.94);
+}
+
+.calendar-day.hoy {
+    box-shadow: inset 0 0 0 2px var(--color-nuevo);
+}
+
+.calendar-day.cobrado {
+    background: var(--color-pagado);
+    color: #fff;
+}
+
+.calendar-day.pendiente {
+    background: var(--color-moroso);
+    color: #fff;
+}
+
+.calendar-day.proxima {
+    background: var(--color-nuevo);
+    color: #fff;
+}
+
+.calendar-day-number {
+    font-size: 0.85rem;
+    line-height: 1;
+}
+
+.calendar-day-count {
+    font-size: 0.62rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 8px;
+    padding: 0 5px;
+    line-height: 1.3;
+}
+
+@media (min-width: 992px) {
+    .calendar-day-number {
+        font-size: 1rem;
+    }
+}
+
+/* ============ FICHA DE CLIENTE — REDISEÑO (A3) ============ */
+
+/* Banner de estado del préstamo: lo primero que se ve, sin clics */
+.loan-status-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 14px;
+}
+
+.loan-status-banner .bi {
+    font-size: 1.2rem;
+}
+
+.loan-status-banner.al-dia {
+    background: var(--color-pagado-light);
+    color: var(--color-pagado);
+}
+
+.loan-status-banner.atrasado {
+    background: var(--color-moroso-light);
+    color: var(--color-moroso);
+}
+
+.loan-status-banner .status-sub {
+    font-weight: 500;
+    font-size: 0.78rem;
+    opacity: 0.85;
+    display: block;
+}
+
+.loan-big-number {
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+/* Resumen de puntualidad de pago */
+.puntualidad-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 1px 4px var(--shadow-card);
+}
+
+.puntualidad-ring {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    color: #fff;
+}
+
+.puntualidad-ring.excelente { background: var(--color-pagado); }
+.puntualidad-ring.regular { background: var(--color-pendiente); }
+.puntualidad-ring.moroso { background: var(--color-moroso); }
+
+/* Feed de actividad reciente */
+.activity-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.82rem;
+}
+
+.activity-row:last-child {
+    border-bottom: none;
+}
+
+.activity-row .activity-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.85rem;
+    color: #fff;
+}
+
+.activity-row .activity-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.activity-row .activity-meta {
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
+
+.notas-box {
+    background: var(--bg-card-hover);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    text-align: left;
+    margin-top: 10px;
+}
+
+/* ============ ANIMACIÓN DE ENTRADA (ficha de cliente) ============ */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in-item {
+    animation: fadeInUp 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fade-in-item { animation: none; }
+}
+
+/* ============ FILTROS DE HISTORIAL (chips) ============ */
+.history-filters {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 14px;
+}
+
+.history-filter-chip {
+    flex-shrink: 0;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.history-filter-chip:hover {
+    background: var(--bg-card-hover);
+}
+
+.history-filter-chip.active {
     background: var(--color-nuevo);
     border-color: var(--color-nuevo);
     color: #fff;
@@ -2497,3 +2914,65 @@ body {
 }
 
 
+
+/* ============ TARJETAS DE HISTORIAL DE PRÉSTAMOS ============ */
+.loan-history-card {
+    display: block;
+    background: var(--bg-card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    text-decoration: none;
+    color: var(--text-primary);
+    box-shadow: 0 1px 4px var(--shadow-card);
+    border-left: 4px solid var(--border-color);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.loan-history-card:hover {
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px var(--shadow-card-hover);
+}
+
+.loan-history-card:active {
+    transform: scale(0.99);
+}
+
+.loan-history-card.estado-fi { border-left-color: var(--color-pagado); }
+.loan-history-card.estado-re { border-left-color: var(--color-nuevo); }
+.loan-history-card.estado-ca { border-left-color: var(--color-moroso); }
+
+.loan-history-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.loan-history-top .loan-history-num {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-right: 8px;
+}
+
+.loan-history-amount {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.loan-history-progress .progress {
+    height: 6px;
+    margin-bottom: 4px;
+}
+
+.loan-history-progress small {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+.loan-history-empty {
+    display: none;
+}

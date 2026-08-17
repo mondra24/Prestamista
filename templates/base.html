@@ -124,6 +124,9 @@
             <a href="{% url 'core:cobros' %}" class="{% if request.resolver_match.url_name == 'cobros' %}active{% endif %}">
                 <i class="bi bi-cash-stack"></i> Cobros del Día
             </a>
+            <a href="{% url 'core:calendario_cobros' %}" class="{% if request.resolver_match.url_name == 'calendario_cobros' %}active{% endif %}">
+                <i class="bi bi-calendar3"></i> Calendario de Cobros
+            </a>
             <a href="{% url 'core:cliente_list' %}" class="{% if 'cliente' in request.resolver_match.url_name %}active{% endif %}">
                 <i class="bi bi-people"></i> Clientes
             </a>
@@ -147,6 +150,9 @@
             </a>
             <a href="{% url 'core:auditoria_list' %}" class="{% if request.resolver_match.url_name == 'auditoria_list' %}active{% endif %}">
                 <i class="bi bi-clock-history"></i> Auditoría
+            </a>
+            <a href="{% url 'core:reportes_automaticos' %}" class="{% if request.resolver_match.url_name == 'reportes_automaticos' %}active{% endif %}">
+                <i class="bi bi-file-earmark-bar-graph"></i> Reportes Automáticos
             </a>
             {% endif %}
             {% if user.is_superuser %}

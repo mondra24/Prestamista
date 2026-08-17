@@ -12,7 +12,8 @@ urlpatterns = [
     
     # Cobros del día
     path('cobros/', views.CobrosView.as_view(), name='cobros'),
-    
+    path('cobros/calendario/', views.CalendarioCobrosView.as_view(), name='calendario_cobros'),
+
     # Autenticación
     path('logout/', views.logout_view, name='logout'),
     
@@ -77,4 +78,8 @@ urlpatterns = [
     path('respaldos/', views.RespaldoListView.as_view(), name='respaldo_list'),
     path('respaldos/crear/', views.crear_respaldo, name='crear_respaldo'),
     path('respaldos/descargar/<str:nombre>/', views.descargar_respaldo, name='descargar_respaldo'),
+
+    # Reportes automáticos (C1-C3)
+    path('reportes/automaticos/', views.ReportesAutomaticosListView.as_view(), name='reportes_automaticos'),
+    path('reportes/automaticos/descargar/<str:nombre>/', views.descargar_reporte_automatico, name='descargar_reporte_automatico'),
 ]
