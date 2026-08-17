@@ -11,7 +11,8 @@ from django.utils import timezone
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
-    PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo
+    PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
+    ConfiguracionCategorizacion
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 
@@ -683,6 +684,47 @@ class CategoriaClienteTest(TestCase):
         cliente.save()
         cliente.refresh_from_db()
         self.assertEqual(cliente.categoria, 'EX')
+
+
+class ConfiguracionCategorizacionTest(TestCase):
+    """Tests para A4: categoría del cliente 100% manual por defecto"""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Roberto', apellido='Suárez', telefono='333', direccion='x',
+            categoria='EX'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+
+    def _pagar_mal_y_finalizar(self):
+        """Paga las 2 cuotas tarde (mal historial) y finaliza el préstamo"""
+        for cuota in self.prestamo.cuotas.all():
+            cuota.fecha_vencimiento = date.today() - timedelta(days=10)
+            cuota.save()
+            cuota.registrar_pago(cuota.monto_cuota)
+
+    def test_por_defecto_categorizacion_es_manual(self):
+        self.assertFalse(ConfiguracionCategorizacion.esta_activa())
+
+    def test_categoria_manual_no_cambia_con_mal_historial_por_defecto(self):
+        """Sin activar la categorización automática, un mal historial de pagos no toca la categoría manual"""
+        self._pagar_mal_y_finalizar()
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.categoria, 'EX')
+
+    def test_categorizacion_automatica_sigue_funcionando_si_se_activa(self):
+        """El interruptor de vuelta al modo automático (pedido explícito del cliente) sigue funcionando"""
+        ConfiguracionCategorizacion.objects.create(pk=1, categorizacion_automatica=True)
+        self._pagar_mal_y_finalizar()
+        self.cliente.refresh_from_db()
+        self.assertEqual(self.cliente.categoria, 'MO')
 
 
 # ============== TESTS DE BÚSQUEDA Y FILTROS ==============

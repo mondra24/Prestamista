@@ -190,6 +190,33 @@ class ConfiguracionCredito(models.Model):
             return None
 
 
+class ConfiguracionCategorizacion(models.Model):
+    """
+    Configuración global: si la categoría del cliente (Excelente/Regular/Moroso)
+    se recalcula sola según su historial de pagos, o queda 100% en manos del
+    admin/cobrador (por defecto). Solo debe existir una fila.
+    """
+    categorizacion_automatica = models.BooleanField(
+        default=False,
+        verbose_name='Categorización automática',
+        help_text='Si está activo, el sistema recalcula la categoría del cliente solo al finalizar cada préstamo. '
+                   'Si está apagado (por defecto), la categoría la definen manualmente el admin o el cobrador.'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de Categorización'
+        verbose_name_plural = 'Configuración de Categorización'
+
+    def __str__(self):
+        return 'Categorización automática: ' + ('activada' if self.categorizacion_automatica else 'desactivada')
+
+    @classmethod
+    def esta_activa(cls):
+        """Retorna si la categorización automática está activa (crea la config con default si no existe)"""
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config.categorizacion_automatica
+
+
 class ColumnaPlanilla(models.Model):
     """Columnas personalizables para la planilla de cobros"""
     
@@ -547,7 +574,14 @@ class Cliente(models.Model):
         }
     
     def actualizar_categoria(self):
-        """Actualiza la categoría del cliente basado en su historial de pagos"""
+        """
+        Actualiza la categoría del cliente basado en su historial de pagos.
+        No hace nada si la categorización automática está desactivada
+        (ConfiguracionCategorizacion) — por defecto la categoría es 100% manual.
+        """
+        if not ConfiguracionCategorizacion.esta_activa():
+            return
+
         prestamos_finalizados = self.prestamos.filter(estado='FI')
         if not prestamos_finalizados.exists():
             return
