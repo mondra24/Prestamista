@@ -596,6 +596,104 @@ class RepasoSemanaCobrosViewTest(TestCase):
         self.assertEqual(response.context['repaso_semana_cobradas'], [])
 
 
+class CalendarioCobrosViewTest(TestCase):
+    """Tests para A6: calendario visual de cobros"""
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='cal_user', password='x')
+        self.client.login(username='cal_user', password='x')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Calen', apellido='Dario', telefono='777', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('9000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=10),
+            cobrador=self.user
+        )
+
+    def _dia_de(self, response, fecha):
+        for semana in response.context['grilla']:
+            for dia in semana:
+                if dia and dia['numero'] == fecha.day:
+                    return dia
+        return None
+
+    def test_dia_cobrado_pendiente_y_proxima_se_clasifican_bien(self):
+        cuotas = list(self.prestamo.cuotas.all())
+        hoy = date.today()
+
+        cuotas[0].fecha_vencimiento = hoy - timedelta(days=2)
+        cuotas[0].save()
+        cuotas[0].registrar_pago(cuotas[0].monto_cuota, cobrador=self.user)  # cobrada
+
+        cuotas[1].fecha_vencimiento = hoy - timedelta(days=1)
+        cuotas[1].save()  # vencida, sin cobrar -> pendiente
+
+        cuotas[2].fecha_vencimiento = hoy + timedelta(days=3)
+        cuotas[2].save()  # futura -> próxima
+
+        response = self.client.get(reverse('core:calendario_cobros'))
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(self._dia_de(response, cuotas[0].fecha_vencimiento)['color'], 'cobrado')
+        self.assertEqual(self._dia_de(response, cuotas[1].fecha_vencimiento)['color'], 'pendiente')
+        # Si la fecha de la cuota "próxima" cae en el mes siguiente no se verá en esta grilla;
+        # solo se verifica cuando cae dentro del mes actual.
+        if cuotas[2].fecha_vencimiento.month == hoy.month:
+            self.assertEqual(self._dia_de(response, cuotas[2].fecha_vencimiento)['color'], 'proxima')
+
+    def test_dia_sin_cuotas_no_tiene_color(self):
+        response = self.client.get(reverse('core:calendario_cobros'))
+        # Un día muy lejano dentro del mes sin ninguna cuota generada
+        for semana in response.context['grilla']:
+            for dia in semana:
+                if dia and dia['numero'] == 1 and dia['cantidad'] == 0:
+                    self.assertEqual(dia['color'], '')
+                    return
+
+    def test_prestamo_renovado_no_pinta_el_dia_como_cobrado(self):
+        cuota = self.prestamo.cuotas.first()
+        cuota.fecha_vencimiento = date.today()
+        cuota.save()
+
+        Prestamo.renovar_prestamo(
+            prestamo_anterior=self.prestamo,
+            nuevo_monto=Decimal('5000'),
+            nueva_tasa=Decimal('10'),
+            nuevas_cuotas=2,
+            nueva_frecuencia='SE'
+        )
+
+        response = self.client.get(reverse('core:calendario_cobros'))
+        dia = self._dia_de(response, date.today())
+        # Ninguna cuota "activa" ese día (el préstamo quedó renovado): sin color ni cantidad
+        self.assertEqual(dia['cantidad'], 0)
+        self.assertEqual(dia['color'], '')
+
+    def test_navegacion_de_mes_no_le_mete_punto_de_miles_al_anio(self):
+        """Regresión: USE_THOUSAND_SEPARATOR formateaba el año como '2.026' en el querystring"""
+        response = self.client.get(reverse('core:calendario_cobros'))
+        self.assertNotIn('.', response.context['url_mes_siguiente'].split('year=')[1].split('&')[0])
+
+    def test_navegacion_diciembre_a_enero(self):
+        response = self.client.get(reverse('core:calendario_cobros'), {'year': 2026, 'month': 12})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['url_mes_siguiente'], '?year=2027&month=1')
+        self.assertEqual(response.context['url_mes_anterior'], '?year=2026&month=11')
+
+    def test_mes_year_invalido_cae_al_mes_actual(self):
+        response = self.client.get(reverse('core:calendario_cobros'), {'year': 'abc', 'month': '99'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['es_mes_actual'])
+
+
 # ============== TESTS DE EXPORTACIÓN ==============
 
 class ExportViewsTest(TestCase):

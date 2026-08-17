@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load currency_filters %}
+
+{% block title %}Calendario de Cobros - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+
+    <!-- Barra de acciones -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h5 mb-0 d-none d-lg-block">
+            <i class="bi bi-calendar3 me-2"></i>Calendario de Cobros
+        </h1>
+        <a href="{% url 'core:cobros' %}" class="btn btn-sm btn-outline-secondary ms-auto">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Cobros
+        </a>
+    </div>
+
+    <!-- Resumen del mes -->
+    <div class="row g-2 mb-3">
+        <div class="col-6">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <div class="stat-value text-success">{{ total_mes_cobrado|dinero }}</div>
+                <div class="stat-label">Cobrado en el mes</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div class="stat-value">{{ total_mes_pendiente|dinero }}</div>
+                <div class="stat-label">Pendiente en el mes</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navegación de mes -->
+    <div class="calendar-nav mb-2">
+        <a href="{{ url_mes_anterior }}" class="calendar-nav-btn" title="Mes anterior">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div class="calendar-nav-title">
+            {{ primer_dia_mes|date:"F Y"|capfirst }}
+            {% if es_mes_actual %}<span class="badge bg-primary ms-1">Hoy</span>{% endif %}
+        </div>
+        <a href="{{ url_mes_siguiente }}" class="calendar-nav-btn" title="Mes siguiente">
+            <i class="bi bi-chevron-right"></i>
+        </a>
+    </div>
+
+    <!-- Leyenda -->
+    <div class="calendar-legend mb-3">
+        <span><i class="calendar-legend-dot cobrado"></i> Cobrado</span>
+        <span><i class="calendar-legend-dot pendiente"></i> Sin cobrar</span>
+        <span><i class="calendar-legend-dot proxima"></i> Próximo</span>
+    </div>
+
+    <!-- Grilla del calendario -->
+    <div class="calendar-grid">
+        <div class="calendar-weekday">Lun</div>
+        <div class="calendar-weekday">Mar</div>
+        <div class="calendar-weekday">Mié</div>
+        <div class="calendar-weekday">Jue</div>
+        <div class="calendar-weekday">Vie</div>
+        <div class="calendar-weekday">Sáb</div>
+        <div class="calendar-weekday">Dom</div>
+
+        {% for semana in grilla %}
+            {% for dia in semana %}
+                {% if dia %}
+                <button type="button"
+                        class="calendar-day {{ dia.color }} {% if dia.es_hoy %}hoy{% endif %}"
+                        {% if dia.cantidad %}data-dia="{{ dia.numero }}"{% else %}disabled{% endif %}>
+                    <span class="calendar-day-number">{{ dia.numero }}</span>
+                    {% if dia.cantidad %}<span class="calendar-day-count">{{ dia.cantidad }}</span>{% endif %}
+                </button>
+                {% else %}
+                <div class="calendar-day empty"></div>
+                {% endif %}
+            {% endfor %}
+        {% endfor %}
+    </div>
+
+</div>
+
+<!-- Modal de detalle del día -->
+<div class="modal fade" id="modal-detalle-dia" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detalle-dia-fecha">
+                    <i class="bi bi-calendar-event me-2"></i>Detalle del día
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3 pb-2 border-bottom">
+                    <small class="text-muted">Total del día</small>
+                    <div class="fw-bold fs-5" id="detalle-dia-total">$0</div>
+                </div>
+                <div id="detalle-dia-cuotas"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ detalle_dias|json_script:"detalle-dias-data" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const detalleDias = JSON.parse(document.getElementById('detalle-dias-data').textContent);
+const modalDetalleDia = new bootstrap.Modal(document.getElementById('modal-detalle-dia'));
+
+function formatearMonedaCal(num) {
+    return '$ ' + Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+document.querySelectorAll('.calendar-day[data-dia]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const dia = detalleDias[btn.dataset.dia];
+        if (!dia) return;
+
+        document.getElementById('detalle-dia-fecha').innerHTML =
+            '<i class="bi bi-calendar-event me-2"></i>' + dia.fecha;
+        document.getElementById('detalle-dia-total').textContent = formatearMonedaCal(dia.total);
+
+        const contenedor = document.getElementById('detalle-dia-cuotas');
+        contenedor.innerHTML = '';
+        dia.cuotas.forEach(function (c) {
+            const fila = document.createElement('a');
+            fila.href = c.cliente_url;
+            fila.className = 'week-review-row' + (c.cobrado ? '' : ' pendiente');
+            fila.innerHTML =
+                '<div class="week-review-avatar">' + c.cliente.slice(0, 2).toUpperCase() + '</div>' +
+                '<div class="week-review-info">' +
+                    '<div class="week-review-name">' + c.cliente + '</div>' +
+                    '<div class="week-review-fecha">' + c.estado + '</div>' +
+                '</div>' +
+                '<div class="week-review-amount">' + formatearMonedaCal(c.monto) + '</div>';
+            contenedor.appendChild(fila);
+        });
+
+        modalDetalleDia.show();
+    });
+});
+</script>
+{% endblock %}

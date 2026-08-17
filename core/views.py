@@ -4,7 +4,7 @@ Vistas del Sistema de Gestión de Préstamos
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DetailView, TemplateView
-from django.urls import reverse_lazy
+from django.urls import reverse_lazy, reverse
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
 from django.contrib import messages
@@ -268,6 +268,114 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             for cuota in todas_cuotas:
                 cuota.historial_list = historial_map.get(cuota.id, [])
         
+        return context
+
+
+class CalendarioCobrosView(LoginRequiredMixin, TemplateView):
+    """Calendario visual de cobros (A6): un vistazo del mes completo, día por día."""
+    template_name = 'core/calendario_cobros.html'
+
+    def get_context_data(self, **kwargs):
+        import calendar as calendar_module
+        from datetime import date
+
+        context = super().get_context_data(**kwargs)
+        hoy = fecha_local_hoy()
+
+        try:
+            year = int(self.request.GET.get('year', hoy.year))
+            month = int(self.request.GET.get('month', hoy.month))
+            date(year, month, 1)  # valida que el año/mes sean válidos
+        except (ValueError, TypeError):
+            year, month = hoy.year, hoy.month
+
+        base_filter = {}
+        if not es_usuario_admin(self.request.user):
+            base_filter['prestamo__cobrador'] = self.request.user
+
+        _, ultimo_dia_num = calendar_module.monthrange(year, month)
+        primer_dia = date(year, month, 1)
+        ultimo_dia = date(year, month, ultimo_dia_num)
+
+        cuotas_mes = list(Cuota.objects.filter(
+            fecha_vencimiento__gte=primer_dia,
+            fecha_vencimiento__lte=ultimo_dia,
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related('prestamo', 'prestamo__cliente').order_by('prestamo__cliente__apellido'))
+
+        cuotas_por_dia = {}
+        for cuota in cuotas_mes:
+            cuotas_por_dia.setdefault(cuota.fecha_vencimiento.day, []).append(cuota)
+
+        dias = []
+        detalle_dias = {}
+        for dia_num in range(1, ultimo_dia_num + 1):
+            fecha_dia = date(year, month, dia_num)
+            cuotas_dia = cuotas_por_dia.get(dia_num, [])
+
+            if not cuotas_dia:
+                color = ''
+            elif fecha_dia > hoy:
+                color = 'proxima'
+            elif all(c.estado == 'PA' for c in cuotas_dia):
+                color = 'cobrado'
+            else:
+                color = 'pendiente'
+
+            total_dia = sum((c.monto_cuota for c in cuotas_dia), Decimal('0.00'))
+
+            dias.append({
+                'numero': dia_num,
+                'color': color,
+                'cantidad': len(cuotas_dia),
+                'es_hoy': fecha_dia == hoy,
+            })
+
+            detalle_dias[str(dia_num)] = {
+                'fecha': fecha_dia.strftime('%d/%m/%Y'),
+                'total': float(total_dia),
+                'cuotas': [
+                    {
+                        'cliente': c.prestamo.cliente.nombre_completo,
+                        'monto': float(c.monto_restante if c.estado != 'PA' else c.monto_cuota),
+                        'estado': c.get_estado_display(),
+                        'cobrado': c.estado == 'PA',
+                        'cliente_url': reverse('core:cliente_detail', args=[c.prestamo.cliente.pk]),
+                    }
+                    for c in cuotas_dia
+                ],
+            }
+
+        # Grilla del mes (semanas de lunes a domingo, con relleno de días de otros meses)
+        cal = calendar_module.Calendar(firstweekday=0)
+        semanas = cal.monthdayscalendar(year, month)
+        dias_por_numero = {d['numero']: d for d in dias}
+        grilla = [
+            [dias_por_numero.get(num) if num != 0 else None for num in semana]
+            for semana in semanas
+        ]
+
+        mes_anterior = (year, month - 1) if month > 1 else (year - 1, 12)
+        mes_siguiente = (year, month + 1) if month < 12 else (year + 1, 1)
+
+        total_mes_cobrado = sum((c.monto_cuota for c in cuotas_mes if c.estado == 'PA'), Decimal('0.00'))
+        total_mes_pendiente = sum((c.monto_restante for c in cuotas_mes if c.estado != 'PA'), Decimal('0.00'))
+
+        context.update({
+            'primer_dia_mes': primer_dia,
+            'grilla': grilla,
+            'anio': year,
+            'mes': month,
+            # Armadas ya en Python (no en el template) para que USE_THOUSAND_SEPARATOR
+            # no le meta un punto de miles al año dentro del querystring (?year=2.026)
+            'url_mes_anterior': f'?year={mes_anterior[0]}&month={mes_anterior[1]}',
+            'url_mes_siguiente': f'?year={mes_siguiente[0]}&month={mes_siguiente[1]}',
+            'detalle_dias': detalle_dias,
+            'total_mes_cobrado': total_mes_cobrado,
+            'total_mes_pendiente': total_mes_pendiente,
+            'es_mes_actual': (year == hoy.year and month == hoy.month),
+        })
         return context
 
 

@@ -20,6 +20,9 @@
                 <option value="{{ ruta.nombre }}">{{ ruta.nombre }}</option>
                 {% endfor %}
             </select>
+            <a href="{% url 'core:calendario_cobros' %}" class="btn btn-sm btn-outline-primary" title="Calendario de cobros">
+                <i class="bi bi-calendar3"></i>
+            </a>
             <a href="{% url 'core:exportar_planilla_excel' %}?fecha={{ fecha_hoy|date:'Y-m-d' }}" class="btn btn-sm btn-outline-success">
                 <i class="bi bi-file-earmark-excel me-1"></i> Excel
             </a>
