@@ -615,7 +615,7 @@ class Cliente(models.Model):
         for prestamo in self.prestamos.filter(estado='FI'):
             for cuota in prestamo.cuotas.all():
                 total_cuotas += 1
-                if cuota.fecha_pago_real and cuota.fecha_pago_real <= cuota.fecha_vencimiento:
+                if cuota.pagada_en_termino:
                     cuotas_a_tiempo += 1
 
         porcentaje = (cuotas_a_tiempo / total_cuotas * 100) if total_cuotas > 0 else None
@@ -1175,7 +1175,21 @@ class Cuota(models.Model):
         if not self.esta_vencida:
             return 0
         return (fecha_local_hoy() - self.fecha_vencimiento).days
-    
+
+    DIAS_GRACIA_PUNTUALIDAD = 6
+
+    @property
+    def pagada_en_termino(self):
+        """
+        Se considera 'pagada a tiempo' si se abonó hasta DIAS_GRACIA_PUNTUALIDAD
+        días después del vencimiento. Pedido explícito del cliente: él le da ese
+        margen a sus clientes y no quiere que cuenten como atraso en las
+        estadísticas de puntualidad ni en la detección de buenos pagadores.
+        """
+        if not self.fecha_pago_real:
+            return False
+        return (self.fecha_pago_real - self.fecha_vencimiento).days <= self.DIAS_GRACIA_PUNTUALIDAD
+
     @property
     def interes_mora_pendiente(self):
         """Mora calculada automáticamente. Desactivada por pedido del cliente:
@@ -1983,10 +1997,7 @@ class Notificacion(models.Model):
             if not cuotas:
                 continue
 
-            a_tiempo = sum(
-                1 for c in cuotas
-                if c.fecha_pago_real and c.fecha_pago_real <= c.fecha_vencimiento
-            )
+            a_tiempo = sum(1 for c in cuotas if c.pagada_en_termino)
             porcentaje = (a_tiempo / len(cuotas)) * 100
             if porcentaje < 70:
                 continue

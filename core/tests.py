@@ -1689,6 +1689,61 @@ class ConfiguracionCategorizacionTest(TestCase):
         self.assertIsNone(resumen['porcentaje'])
 
 
+class PuntualidadConGraciaTest(TestCase):
+    """
+    Tests para el margen de 6 días de gracia en 'pagado a tiempo', pedido
+    explícito del cliente: él le da ese margen a sus clientes en la calle y
+    no quiere que un pago dentro de esos días cuente como atraso ni en la
+    estadística de puntualidad ni en la detección de buenos pagadores.
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Marta', apellido='Gracia', telefono='444', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=1,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.cuota = self.prestamo.cuotas.first()
+        self.cuota.fecha_vencimiento = date(2026, 8, 10)
+
+    def test_pagada_el_mismo_dia_es_a_tiempo(self):
+        self.cuota.fecha_pago_real = date(2026, 8, 10)
+        self.assertTrue(self.cuota.pagada_en_termino)
+
+    def test_pagada_antes_es_a_tiempo(self):
+        self.cuota.fecha_pago_real = date(2026, 8, 5)
+        self.assertTrue(self.cuota.pagada_en_termino)
+
+    def test_pagada_dentro_de_los_6_dias_de_gracia_es_a_tiempo(self):
+        self.cuota.fecha_pago_real = date(2026, 8, 16)  # vencimiento + 6 días
+        self.assertTrue(self.cuota.pagada_en_termino)
+
+    def test_pagada_al_septimo_dia_ya_no_es_a_tiempo(self):
+        self.cuota.fecha_pago_real = date(2026, 8, 17)  # vencimiento + 7 días
+        self.assertFalse(self.cuota.pagada_en_termino)
+
+    def test_sin_pago_no_es_a_tiempo(self):
+        self.cuota.fecha_pago_real = None
+        self.assertFalse(self.cuota.pagada_en_termino)
+
+    def test_historial_pagos_cuenta_los_pagos_dentro_de_la_gracia(self):
+        """El resumen de puntualidad de la ficha del cliente usa el mismo margen"""
+        self.prestamo.estado = 'FI'
+        self.prestamo.save()
+        self.cuota.fecha_pago_real = date(2026, 8, 16)
+        self.cuota.save()
+
+        resumen = self.cliente.historial_pagos
+        self.assertEqual(resumen['a_tiempo'], 1)
+        self.assertEqual(resumen['porcentaje'], 100)
+
+
 # ============== TESTS DE BÚSQUEDA Y FILTROS ==============
 
 class BusquedaClienteTest(TestCase):
