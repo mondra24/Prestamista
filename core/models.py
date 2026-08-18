@@ -443,7 +443,18 @@ class Cliente(models.Model):
         blank=True,
         db_index=True
     )
-    
+    token_publico = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        verbose_name='Token Público del Cliente'
+    )
+    token_activo = models.BooleanField(
+        default=True,
+        verbose_name='Link Público del Cliente Activo'
+    )
+
     class Meta:
         verbose_name = 'Cliente'
         verbose_name_plural = 'Clientes'

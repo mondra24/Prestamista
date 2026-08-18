@@ -71,6 +71,13 @@ urlpatterns = [
     path('api/prestamo/<int:pk>/regenerar-token/', views.regenerar_token_prestamo, name='regenerar_token'),
     path('api/prestamo/<int:pk>/toggle-token/', views.toggle_token_prestamo, name='toggle_token'),
 
+    # Estado público de cliente: resumen de todos sus créditos (sin auth)
+    path('cliente-publico/<uuid:token>/', views.estado_cliente_publico, name='estado_cliente_publico'),
+
+    # Gestión de token público del cliente (AJAX)
+    path('api/cliente/<int:pk>/regenerar-token/', views.regenerar_token_cliente, name='regenerar_token_cliente'),
+    path('api/cliente/<int:pk>/toggle-token/', views.toggle_token_cliente, name='toggle_token_cliente'),
+
     # Auditoría
     path('auditoria/', views.AuditoriaListView.as_view(), name='auditoria_list'),
     

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#198754">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Mis Créditos</title>
+
+    <!-- Bootstrap 5.3 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --ep-bg: #f0fdf4;
+            --ep-card: #ffffff;
+            --ep-text: #1a1a2e;
+            --ep-text-muted: #6b7280;
+            --ep-border: #e5e7eb;
+            --ep-green: #198754;
+            --ep-green-light: #d1f5e0;
+            --ep-red: #dc3545;
+            --ep-red-light: #fde8e8;
+            --ep-orange: #f59e0b;
+            --ep-orange-light: #fef3c7;
+            --ep-blue: #3b82f6;
+            --ep-blue-light: #dbeafe;
+            --ep-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+            --ep-shadow-lg: 0 4px 16px rgba(0,0,0,0.1), 0 8px 32px rgba(0,0,0,0.06);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ep-bg: #0f1117;
+                --ep-card: #1a1d27;
+                --ep-text: #e5e7eb;
+                --ep-text-muted: #9ca3af;
+                --ep-border: #2d3142;
+                --ep-green-light: #052e16;
+                --ep-red-light: #450a0a;
+                --ep-orange-light: #451a03;
+                --ep-blue-light: #172554;
+                --ep-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+                --ep-shadow-lg: 0 4px 16px rgba(0,0,0,0.4), 0 8px 32px rgba(0,0,0,0.3);
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--ep-bg);
+            color: var(--ep-text);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .ep-container {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 16px;
+            padding-bottom: 40px;
+        }
+
+        /* Header con gradiente */
+        .ep-header {
+            background: linear-gradient(135deg, #198754, #157347);
+            border-radius: 20px;
+            padding: 28px 24px;
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(25, 135, 84, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        .ep-header::before {
+            content: '';
+            position: absolute;
+            top: -40%;
+            right: -20%;
+            width: 200px;
+            height: 200px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 50%;
+        }
+        .ep-header::after {
+            content: '';
+            position: absolute;
+            bottom: -30%;
+            left: -15%;
+            width: 150px;
+            height: 150px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 50%;
+        }
+        .ep-header-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            margin-bottom: 12px;
+            backdrop-filter: blur(4px);
+        }
+        .ep-header h1 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+            position: relative;
+        }
+        .ep-header p {
+            font-size: 0.85rem;
+            margin: 0;
+            opacity: 0.85;
+            position: relative;
+        }
+
+        .ep-section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--ep-text-muted);
+            margin: 20px 4px 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Cards */
+        .ep-card {
+            background: var(--ep-card);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 12px;
+            box-shadow: var(--ep-shadow);
+            border: 1px solid var(--ep-border);
+            animation: fadeUp 0.4s ease both;
+        }
+
+        .ep-loan-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        .ep-loan-num {
+            font-size: 0.72rem;
+            color: var(--ep-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .ep-loan-saldo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--ep-orange);
+        }
+        .ep-loan-saldo-label {
+            font-size: 0.7rem;
+            color: var(--ep-text-muted);
+            font-weight: 500;
+        }
+
+        .ep-estado-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .ep-estado-activo { background: var(--ep-green-light); color: var(--ep-green); }
+        .ep-estado-finalizado { background: var(--ep-blue-light); color: var(--ep-blue); }
+        .ep-estado-otro { background: var(--ep-border); color: var(--ep-text-muted); }
+
+        .ep-progress-bar {
+            height: 8px;
+            background: var(--ep-border);
+            border-radius: 99px;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+        .ep-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #198754, #20c997);
+            border-radius: 99px;
+            transition: width 1s ease;
+        }
+        .ep-progress-detail {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--ep-text-muted);
+        }
+
+        .ep-loan-next {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--ep-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .ep-loan-next-label {
+            font-size: 0.75rem;
+            color: var(--ep-text-muted);
+        }
+        .ep-loan-next-value {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--ep-green);
+        }
+        .ep-loan-vencida {
+            color: var(--ep-red) !important;
+        }
+
+        .ep-empty {
+            text-align: center;
+            padding: 30px 16px;
+            color: var(--ep-text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Footer */
+        .ep-footer {
+            text-align: center;
+            padding: 20px 0 8px;
+            font-size: 0.72rem;
+            color: var(--ep-text-muted);
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+{% load currency_filters %}
+
+<div class="ep-container">
+
+    <!-- Header -->
+    <div class="ep-header">
+        <div class="ep-header-icon">
+            <i class="bi bi-person-badge"></i>
+        </div>
+        <h1>{{ cliente.nombre_completo }}</h1>
+        <p>Resumen de tus créditos</p>
+    </div>
+
+    <!-- Créditos activos -->
+    <div class="ep-section-title">
+        <i class="bi bi-wallet2"></i> Créditos activos
+    </div>
+    {% if prestamos_activos %}
+        {% for prestamo in prestamos_activos %}
+        <div class="ep-card">
+            <div class="ep-loan-top">
+                <div>
+                    <div class="ep-loan-num">Crédito #{{ prestamo.pk }}</div>
+                    <span class="ep-estado-badge ep-estado-activo">
+                        <i class="bi bi-circle-fill" style="font-size:0.5rem;"></i> Activo
+                    </span>
+                </div>
+                <div style="text-align:right;">
+                    <div class="ep-loan-saldo">{{ prestamo.monto_pendiente|dinero }}</div>
+                    <div class="ep-loan-saldo-label">saldo pendiente</div>
+                </div>
+            </div>
+            <div class="ep-progress-bar">
+                <div class="ep-progress-fill" style="width: {{ prestamo.progreso_porcentaje }}%;"></div>
+            </div>
+            <div class="ep-progress-detail">
+                <span>{{ prestamo.cuotas_pagadas }} de {{ prestamo.cuotas_pactadas }} cuotas</span>
+                <span>{{ prestamo.progreso_porcentaje }}%</span>
+            </div>
+            {% with cuota=prestamo.proxima_cuota %}
+            {% if cuota %}
+            <div class="ep-loan-next">
+                <span class="ep-loan-next-label">
+                    <i class="bi bi-calendar-event me-1"></i>
+                    Próxima cuota {% if cuota.esta_vencida %}<span class="ep-loan-vencida">(vencida)</span>{% else %}{{ cuota.fecha_vencimiento|date:"d/m/Y" }}{% endif %}
+                </span>
+                <span class="ep-loan-next-value {% if cuota.esta_vencida %}ep-loan-vencida{% endif %}">
+                    {% if cuota.estado == 'PC' %}{{ cuota.monto_restante|dinero }}{% else %}{{ cuota.monto_cuota|dinero }}{% endif %}
+                </span>
+            </div>
+            {% endif %}
+            {% endwith %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="ep-empty">
+            <i class="bi bi-emoji-smile" style="font-size:1.5rem;"></i>
+            <p class="mb-0 mt-2">No tenés créditos activos en este momento.</p>
+        </div>
+    {% endif %}
+
+    <!-- Historial -->
+    {% if prestamos_historial %}
+    <div class="ep-section-title">
+        <i class="bi bi-clock-history"></i> Historial
+    </div>
+        {% for prestamo in prestamos_historial %}
+        <div class="ep-card">
+            <div class="ep-loan-top">
+                <div>
+                    <div class="ep-loan-num">Crédito #{{ prestamo.pk }}</div>
+                    <span class="ep-estado-badge {% if prestamo.estado == 'FI' %}ep-estado-finalizado{% else %}ep-estado-otro{% endif %}">
+                        {% if prestamo.estado == 'FI' %}<i class="bi bi-check-circle-fill"></i> Finalizado{% else %}{{ prestamo.get_estado_display }}{% endif %}
+                    </span>
+                </div>
+                <div style="text-align:right;">
+                    <div class="ep-loan-saldo" style="color: var(--ep-text-muted); font-size: 1.05rem;">{{ prestamo.monto_total_a_pagar|dinero }}</div>
+                    <div class="ep-loan-saldo-label">{{ prestamo.fecha_inicio|date:"d/m/Y" }}</div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- Footer -->
+    <div class="ep-footer">
+        <i class="bi bi-shield-lock me-1"></i>
+        Información actualizada al {{ hoy|date:"d/m/Y" }}
+        <br>
+        <small>Este enlace es personal e intransferible.</small>
+    </div>
+
+</div>
+
+</body>
+</html>

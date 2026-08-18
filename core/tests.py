@@ -2895,6 +2895,169 @@ class EstadoPublicoPrestamoTest(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class LinkRapidoClienteDetailTest(TestCase):
+    """Tests para el link rápido de copiar/mandar el link público desde el perfil de cliente"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='link_rapido_cliente_user', password='x')
+        self.client = TestClient()
+        self.client.login(username='link_rapido_cliente_user', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Link', apellido='RapidoCliente', telefono='1122334455', direccion='x',
+            usuario=self.user
+        )
+
+    def test_muestra_los_botones_si_el_link_esta_activo(self):
+        """
+        Nota: igual que en el listado de préstamos, no alcanza con buscar
+        'link-rapido-btn' porque el <script> de la página nombra esa clase
+        en el selector JS; se busca el atributo data-link del botón real.
+        """
+        self.cliente.token_activo = True
+        self.cliente.save()
+
+        response = self.client.get(reverse('core:cliente_detail', kwargs={'pk': self.cliente.pk}))
+        self.assertContains(response, 'class="link-rapido-btn"')
+        self.assertContains(response, str(self.cliente.token_publico))
+
+    def test_oculta_los_botones_si_el_link_esta_desactivado(self):
+        self.cliente.token_activo = False
+        self.cliente.save()
+
+        response = self.client.get(reverse('core:cliente_detail', kwargs={'pk': self.cliente.pk}))
+        self.assertNotContains(response, 'class="link-rapido-btn"')
+
+
+class EstadoPublicoClienteTest(TestCase):
+    """Tests para el link público de estado de cliente (resumen de todos sus créditos)"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.admin = User.objects.create_superuser(
+            username='admin_token_cli', password='test123', email='a2@test.com'
+        )
+        self.cobrador = User.objects.create_user(
+            username='cob_token_cli', password='test123'
+        )
+        self.otro_cobrador = User.objects.create_user(
+            username='otro_cob_token_cli', password='test123'
+        )
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Gómez',
+            telefono='1122334455', direccion='Calle 1',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=10,
+            frecuencia='DI',
+            fecha_inicio=date.today(),
+            cobrador=self.cobrador
+        )
+
+    def test_cliente_tiene_token_publico_automatico(self):
+        """Un cliente nuevo debe tener un token_publico generado"""
+        self.assertIsNotNone(self.cliente.token_publico)
+        self.assertTrue(self.cliente.token_activo)
+
+    def test_tokens_son_unicos_entre_clientes(self):
+        """Dos clientes distintos deben tener tokens distintos"""
+        cliente2 = Cliente.objects.create(
+            nombre='Beto', apellido='Ruiz', telefono='1133445566', direccion='Calle 2',
+            usuario=self.cobrador
+        )
+        self.assertNotEqual(self.cliente.token_publico, cliente2.token_publico)
+
+    def test_vista_publica_accesible_sin_login(self):
+        """El link público debe ser accesible sin autenticación"""
+        url = reverse('core:estado_cliente_publico', kwargs={'token': self.cliente.token_publico})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Mis Créditos')
+
+    def test_vista_publica_muestra_credito_activo(self):
+        """La vista pública debe listar el préstamo activo con su saldo"""
+        url = reverse('core:estado_cliente_publico', kwargs={'token': self.cliente.token_publico})
+        response = self.client_http.get(url)
+        self.assertContains(response, f'Crédito #{self.prestamo.pk}')
+        self.assertContains(response, 'saldo pendiente')
+
+    def test_vista_publica_no_muestra_datos_sensibles(self):
+        """La vista pública NO debe mostrar teléfono, dirección ni apellido completo"""
+        url = reverse('core:estado_cliente_publico', kwargs={'token': self.cliente.token_publico})
+        response = self.client_http.get(url)
+        content = response.content.decode('utf-8')
+        self.assertNotIn('1122334455', content)
+        self.assertNotIn('Calle 1', content)
+
+    def test_vista_publica_token_inexistente_404(self):
+        """Un token que no existe debe devolver 404"""
+        import uuid
+        url = reverse('core:estado_cliente_publico', kwargs={'token': uuid.uuid4()})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_vista_publica_token_desactivado_404(self):
+        """Un token desactivado no debe ser accesible públicamente"""
+        self.cliente.token_activo = False
+        self.cliente.save()
+        url = reverse('core:estado_cliente_publico', kwargs={'token': self.cliente.token_publico})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_regenerar_token_cambia_valor(self):
+        """Regenerar debe cambiar el token y mantenerlo activo"""
+        self.client_http.login(username='cob_token_cli', password='test123')
+        token_original = self.cliente.token_publico
+        url = reverse('core:regenerar_token_cliente', kwargs={'pk': self.cliente.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.cliente.refresh_from_db()
+        self.assertNotEqual(self.cliente.token_publico, token_original)
+        self.assertTrue(self.cliente.token_activo)
+
+    def test_toggle_token_desactiva_y_reactiva(self):
+        """Toggle debe alternar token_activo"""
+        self.client_http.login(username='cob_token_cli', password='test123')
+        url = reverse('core:toggle_token_cliente', kwargs={'pk': self.cliente.pk})
+
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.cliente.refresh_from_db()
+        self.assertFalse(self.cliente.token_activo)
+
+        response = self.client_http.post(url)
+        self.cliente.refresh_from_db()
+        self.assertTrue(self.cliente.token_activo)
+
+    def test_otro_cobrador_no_puede_regenerar_token(self):
+        """Un cobrador no debe poder regenerar token de cliente ajeno"""
+        self.client_http.login(username='otro_cob_token_cli', password='test123')
+        url = reverse('core:regenerar_token_cliente', kwargs={'pk': self.cliente.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_admin_puede_regenerar_cualquier_token(self):
+        """Admin puede regenerar token de cualquier cliente"""
+        self.client_http.login(username='admin_token_cli', password='test123')
+        url = reverse('core:regenerar_token_cliente', kwargs={'pk': self.cliente.pk})
+        response = self.client_http.post(url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+
+    def test_regenerar_requiere_post(self):
+        """Regenerar solo debe aceptar POST"""
+        self.client_http.login(username='cob_token_cli', password='test123')
+        url = reverse('core:regenerar_token_cliente', kwargs={'pk': self.cliente.pk})
+        response = self.client_http.get(url)
+        self.assertEqual(response.status_code, 405)
+
+
 class BugFixMoraPendienteTest(TestCase):
     """Tests que cubren BUG 1 (mora inflada) y BUG 2 (filtro de estados)"""
 

@@ -3192,3 +3192,79 @@ def toggle_token_prestamo(request, pk):
         })
     except Prestamo.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
+
+
+# ==================== ESTADO PÚBLICO DE CLIENTE (todos sus créditos) ====================
+
+def estado_cliente_publico(request, token):
+    """Vista pública (sin auth) que muestra un resumen de todos los créditos de un cliente vía token UUID"""
+    try:
+        token_uuid = uuid.UUID(str(token))
+    except (ValueError, AttributeError):
+        from django.http import Http404
+        raise Http404
+
+    cliente = get_object_or_404(Cliente, token_publico=token_uuid, token_activo=True)
+
+    prestamos = cliente.prestamos.order_by('-fecha_inicio')
+    prestamos_activos = [p for p in prestamos if p.estado == 'AC']
+    prestamos_historial = [p for p in prestamos if p.estado != 'AC']
+
+    context = {
+        'cliente': cliente,
+        'prestamos_activos': prestamos_activos,
+        'prestamos_historial': prestamos_historial,
+        'hoy': fecha_local_hoy(),
+    }
+
+    return render(request, 'core/estado_cliente_publico.html', context)
+
+
+@login_required
+def regenerar_token_cliente(request, pk):
+    """Regenerar el token público de un cliente (solo admin/cobrador dueño)"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        if es_usuario_admin(request.user):
+            cliente = Cliente.objects.get(pk=pk)
+        else:
+            cliente = Cliente.objects.get(pk=pk, usuario=request.user)
+
+        cliente.token_publico = uuid.uuid4()
+        cliente.token_activo = True
+        cliente.save(update_fields=['token_publico', 'token_activo'])
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Link regenerado correctamente',
+            'data': {'token': str(cliente.token_publico)}
+        })
+    except Cliente.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Cliente no encontrado'}, status=404)
+
+
+@login_required
+def toggle_token_cliente(request, pk):
+    """Activar/desactivar el link público de un cliente"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        if es_usuario_admin(request.user):
+            cliente = Cliente.objects.get(pk=pk)
+        else:
+            cliente = Cliente.objects.get(pk=pk, usuario=request.user)
+
+        cliente.token_activo = not cliente.token_activo
+        cliente.save(update_fields=['token_activo'])
+
+        estado = 'activado' if cliente.token_activo else 'desactivado'
+        return JsonResponse({
+            'success': True,
+            'message': f'Link {estado} correctamente',
+            'data': {'activo': cliente.token_activo}
+        })
+    except Cliente.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Cliente no encontrado'}, status=404)
