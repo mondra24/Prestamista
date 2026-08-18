@@ -1,1 +1,1 @@
-web: python manage.py db_check && python manage.py migrate && python manage.py init_data && python manage.py create_superuser_if_not_exists && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi
+web: python manage.py db_check && python manage.py migrate && python manage.py init_data && python manage.py create_superuser_if_not_exists && python manage.py collectstatic --noinput && gunicorn prestamos_config.wsgi --workers 3 --threads 2 --timeout 60 --access-logfile - --error-logfile -

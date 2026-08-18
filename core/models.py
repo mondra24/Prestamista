@@ -1138,6 +1138,10 @@ class Cuota(models.Model):
         verbose_name_plural = 'Cuotas'
         ordering = ['prestamo', 'numero_cuota']
         unique_together = ['prestamo', 'numero_cuota']
+        indexes = [
+            models.Index(fields=['estado', 'fecha_vencimiento']),
+            models.Index(fields=['fecha_pago_real']),
+        ]
     
     def __str__(self):
         return f"Cuota {self.numero_cuota}/{self.prestamo.cuotas_pactadas} - {self.prestamo.cliente}"
