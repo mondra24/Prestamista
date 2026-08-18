@@ -179,6 +179,29 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         # Separar próxima semana de resto del mes
         cuotas_semana = [c for c in cuotas_proximas if c.fecha_vencimiento <= hoy + timedelta(days=7)]
         cuotas_mes = [c for c in cuotas_proximas if c.fecha_vencimiento > hoy + timedelta(days=7)]
+
+        # Próximos 7 días desglosados día por día (con subtotal), para que el
+        # cobrador vea de un vistazo cuánto vence cada día sin abrir todo junto.
+        # Nota: se arma el nombre del día a mano (no con |date:"D") porque el
+        # catálogo de traducción es-ar de Django devuelve el abreviado sin
+        # tilde ("Mie" en vez de "Mié") aunque el nombre completo sí traduce bien.
+        from collections import OrderedDict
+        DIAS_ABREV = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+        dias_semana_map = OrderedDict()
+        for i in range(1, 8):
+            fecha_dia = hoy + timedelta(days=i)
+            dias_semana_map[fecha_dia] = {
+                'fecha': fecha_dia,
+                'nombre_dia': DIAS_ABREV[fecha_dia.weekday()],
+                'cuotas': [],
+                'total': Decimal('0.00'),
+            }
+        for c in cuotas_semana:
+            dia = dias_semana_map.get(c.fecha_vencimiento)
+            if dia is not None:
+                dia['cuotas'].append(c)
+                dia['total'] += c.monto_restante
+        dias_semana_list = [d for d in dias_semana_map.values() if d['cuotas']]
         
         # Estadísticas del día
         cobros_filter = {'fecha_pago_real': hoy, 'estado__in': ['PA', 'PC']}
@@ -241,9 +264,11 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'cuotas_proximas': cuotas_proximas,
             'cuotas_semana': cuotas_semana,
             'cuotas_mes': cuotas_mes,
+            'dias_semana_list': dias_semana_list,
             'total_cobrado_hoy': total_cobrado_hoy,
             'cantidad_cobros_hoy': cobros_realizados_hoy['cantidad'] or 0,
             'total_por_cobrar': total_por_cobrar,
+            'total_dia_completo': total_cobrado_hoy + total_por_cobrar,
             'total_proximas': total_proximas,
             'total_vencidas': total_vencidas,
             'fecha_hoy': hoy,
@@ -949,6 +974,11 @@ def cobrar_cuota(request, pk):
                 **stats_filter
             ).count()
 
+            # Cuánto bajó el capital pendiente de ESTA cuota con este pago (permite
+            # actualizar los totales "Por Cobrar"/"Vencidas" en la pantalla sin recargar).
+            capital_cobrado_ahora = monto_restante_antes - float(cuota.monto_restante)
+            era_vencida = cuota.fecha_vencimiento < hoy
+
             return JsonResponse({
                 'success': True,
                 'message': mensaje,
@@ -968,6 +998,8 @@ def cobrar_cuota(request, pk):
                 'estadisticas': {
                     'total_cobrado_hoy': int(total_cobrado_hoy),  # Sin decimales
                     'cantidad_cobros_hoy': cantidad_cobros_hoy,
+                    'capital_cobrado_ahora': int(round(capital_cobrado_ahora)),
+                    'era_vencida': era_vencida,
                 }
             })
         except Exception as e:

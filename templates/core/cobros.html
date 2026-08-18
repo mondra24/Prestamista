@@ -47,7 +47,7 @@
                 <div class="stat-icon bg-warning bg-opacity-10 text-warning">
                     <i class="bi bi-clock-history"></i>
                 </div>
-                <div class="stat-value">{{ total_por_cobrar|dinero }}</div>
+                <div class="stat-value" id="stat-por-cobrar">{{ total_por_cobrar|dinero }}</div>
                 <div class="stat-label">Por Cobrar</div>
             </div>
         </div>
@@ -56,12 +56,23 @@
                 <div class="stat-icon bg-danger bg-opacity-10 text-danger">
                     <i class="bi bi-exclamation-triangle"></i>
                 </div>
-                <div class="stat-value">{{ total_vencidas|dinero }}</div>
+                <div class="stat-value" id="stat-vencidas">{{ total_vencidas|dinero }}</div>
                 <div class="stat-label">Vencidas</div>
             </div>
         </div>
     </div>
-    
+
+    <!-- Progreso del día: cuánto se cobró vs. cuánto falta de lo de hoy -->
+    <div class="cobros-progreso-dia mb-4" id="cobros-progreso-dia" data-cobrado="{{ total_cobrado_hoy|numero_raw }}" data-total-hoy="{{ total_dia_completo|numero_raw }}">
+        <div class="cobros-progreso-dia-label">
+            <span><i class="bi bi-graph-up-arrow me-1"></i>Progreso del día</span>
+            <span id="cobros-progreso-dia-pct">0%</span>
+        </div>
+        <div class="progress">
+            <div class="progress-bar bg-success" id="cobros-progreso-dia-bar" style="width: 0%"></div>
+        </div>
+    </div>
+
     <!-- Accordion de secciones -->
     <div class="accordion" id="accordionCobros">
         
@@ -69,14 +80,14 @@
         {% if cuotas_vencidas %}
         <div class="accordion-item border-danger">
             <h2 class="accordion-header">
-                <button class="accordion-button bg-danger bg-opacity-10 text-danger" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVencidas" aria-expanded="true">
+                <button class="accordion-button bg-danger bg-opacity-10 text-danger collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVencidas" aria-expanded="false">
                     <i class="bi bi-exclamation-circle-fill me-2"></i>
                     <strong>Cuotas Vencidas</strong>
                     <span class="badge bg-danger ms-2">{{ cuotas_vencidas|length }}</span>
-                    <span class="ms-2 small">{{ total_vencidas|dinero }}</span>
+                    <span class="ms-2 small" id="total-vencidas">{{ total_vencidas|dinero }}</span>
                 </button>
             </h2>
-            <div id="collapseVencidas" class="accordion-collapse collapse show" data-bs-parent="#accordionCobros">
+            <div id="collapseVencidas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% for cuota in cuotas_vencidas %}
                     <div class="payment-card vencida filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
@@ -175,14 +186,14 @@
         <!-- Cobros del día -->
         <div class="accordion-item">
             <h2 class="accordion-header">
-                <button class="accordion-button {% if cuotas_vencidas %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapseHoy" aria-expanded="{% if not cuotas_vencidas %}true{% else %}false{% endif %}">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseHoy" aria-expanded="true">
                     <i class="bi bi-calendar-check me-2"></i>
                     <strong>Cobros de Hoy</strong>
                     <span class="badge bg-primary ms-2">{{ cuotas_hoy|length }}</span>
-                    <span class="ms-2 small">{{ total_por_cobrar|dinero }}</span>
+                    <span class="ms-2 small" id="total-por-cobrar">{{ total_por_cobrar|dinero }}</span>
                 </button>
             </h2>
-            <div id="collapseHoy" class="accordion-collapse collapse {% if not cuotas_vencidas %}show{% endif %}" data-bs-parent="#accordionCobros">
+            <div id="collapseHoy" class="accordion-collapse collapse show" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% if cuotas_hoy %}
                         {% for cuota in cuotas_hoy %}
@@ -272,8 +283,8 @@
             </div>
         </div>
         
-        <!-- Cuotas Próximas (7 días) -->
-        {% if cuotas_semana %}
+        <!-- Cuotas Próximas (7 días), desglosadas día por día con subtotal -->
+        {% if dias_semana_list %}
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseProximas" aria-expanded="false">
@@ -284,55 +295,69 @@
             </h2>
             <div id="collapseProximas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
-                    {% for cuota in cuotas_semana %}
-                    <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
-                        <div class="payment-card-header">
-                            <div class="client-info">
-                                <div class="client-avatar proxima">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
-                                <div class="client-details">
-                                    <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
-                                    <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
-                                </div>
-                            </div>
-                            <div class="amount-section proxima">
-                                <span class="amount">{{ cuota.monto_restante|dinero }}</span>
-                                <span class="date-badge">{{ cuota.fecha_vencimiento|date:"d/m" }}</span>
-                            </div>
-                        </div>
-                        <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
-                            <div class="info-chips">
-                                {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
-                                {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
-                                <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
-                                <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
-                                <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
-                                {% if cuota.historial_list %}<span class="chip" style="background:#fff3cd;color:#856404;cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#historial-cobro-{{ cuota.pk }}"><i class="bi bi-clock-history"></i> Modificada</span>{% endif %}
-                            </div>
-                        </div>
-                        {% if cuota.historial_list %}
-                        <div class="collapse" id="historial-cobro-{{ cuota.pk }}">
-                            <div class="card card-body border-warning mx-2 mb-2 p-2" style="font-size:0.78rem; background: var(--bg-card);">
-                                <h6 class="mb-2 text-warning" style="font-size:0.8rem;"><i class="bi bi-clock-history me-1"></i>Historial de Modificaciones</h6>
-                                {% for h in cuota.historial_list %}
-                                <div class="d-flex justify-content-between align-items-start border-bottom py-1">
-                                    <div>
-                                        <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% elif h.tipo_modificacion == 'RM' %}bg-warning{% elif h.tipo_modificacion == 'ED' %}bg-info{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
-                                        <span>{{ h.resumen }}</span>
-                                        {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
+                    {% for dia in dias_semana_list %}
+                    <div class="proximas-day-group">
+                        <button type="button" class="proximas-day-header" data-bs-toggle="collapse" data-bs-target="#proxDia{{ forloop.counter }}" aria-expanded="false">
+                            <span class="proximas-day-date">{{ dia.nombre_dia }} {{ dia.fecha|date:"d/m" }}</span>
+                            <span class="proximas-day-count">{{ dia.cuotas|length }} cuota{{ dia.cuotas|length|pluralize }}</span>
+                            <span class="proximas-day-total">{{ dia.total|dinero }}</span>
+                            <i class="bi bi-chevron-down"></i>
+                        </button>
+                        <div class="collapse" id="proxDia{{ forloop.counter }}">
+                            <div class="pt-2">
+                            {% for cuota in dia.cuotas %}
+                            <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                                <div class="payment-card-header">
+                                    <div class="client-info">
+                                        <div class="client-avatar proxima">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+                                        <div class="client-details">
+                                            <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
+                                            <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                                        </div>
                                     </div>
-                                    <div class="text-muted text-end" style="white-space:nowrap;font-size:0.72rem;">
-                                        {{ h.fecha_modificacion|date:"d/m/Y H:i" }}
-                                        {% if h.usuario %}<br><small>{{ h.usuario.get_full_name|default:h.usuario.username }}</small>{% endif %}
+                                    <div class="amount-section proxima">
+                                        <span class="amount">{{ cuota.monto_restante|dinero }}</span>
+                                        <span class="date-badge">{{ cuota.fecha_vencimiento|date:"d/m" }}</span>
                                     </div>
                                 </div>
-                                {% endfor %}
+                                <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
+                                    <div class="info-chips">
+                                        {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
+                                        {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
+                                        <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
+                                        <span class="chip"><i class="bi bi-calendar-check"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+                                        <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
+                                        {% if cuota.historial_list %}<span class="chip" style="background:#fff3cd;color:#856404;cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#historial-cobro-{{ cuota.pk }}"><i class="bi bi-clock-history"></i> Modificada</span>{% endif %}
+                                    </div>
+                                </div>
+                                {% if cuota.historial_list %}
+                                <div class="collapse" id="historial-cobro-{{ cuota.pk }}">
+                                    <div class="card card-body border-warning mx-2 mb-2 p-2" style="font-size:0.78rem; background: var(--bg-card);">
+                                        <h6 class="mb-2 text-warning" style="font-size:0.8rem;"><i class="bi bi-clock-history me-1"></i>Historial de Modificaciones</h6>
+                                        {% for h in cuota.historial_list %}
+                                        <div class="d-flex justify-content-between align-items-start border-bottom py-1">
+                                            <div>
+                                                <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% elif h.tipo_modificacion == 'RM' %}bg-warning{% elif h.tipo_modificacion == 'ED' %}bg-info{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                                                <span>{{ h.resumen }}</span>
+                                                {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
+                                            </div>
+                                            <div class="text-muted text-end" style="white-space:nowrap;font-size:0.72rem;">
+                                                {{ h.fecha_modificacion|date:"d/m/Y H:i" }}
+                                                {% if h.usuario %}<br><small>{{ h.usuario.get_full_name|default:h.usuario.username }}</small>{% endif %}
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                <div class="payment-card-expand">
+                                    <div class="expand-content">
+                                        <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
+                                        <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        {% endif %}
-                        <div class="payment-card-expand">
-                            <div class="expand-content">
-                                <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
-                                <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
+                            {% endfor %}
                             </div>
                         </div>
                     </div>
@@ -729,6 +754,9 @@
 
 {% block extra_js %}
 <script>
+// ============ PROGRESO DEL DÍA (inicial) ============
+document.addEventListener('DOMContentLoaded', actualizarProgresoDia);
+
 // ============ FILTRO POR ZONA ============
 document.getElementById('filtro-zona').addEventListener('change', function() {
     const zonaSeleccionada = this.value.toLowerCase();
@@ -982,6 +1010,50 @@ function formatearMoneda(num) {
     return '$ ' + formatearNumero(num);
 }
 
+// ============ ACTUALIZACIÓN EN VIVO DE TOTALES (sin recargar) ============
+function leerMonto(id) {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    return parseFloat(el.textContent.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function actualizarProgresoDia() {
+    const cont = document.getElementById('cobros-progreso-dia');
+    if (!cont) return;
+    const totalHoy = parseFloat(cont.dataset.totalHoy) || 0;
+    const cobrado = leerMonto('total-cobrado-hoy');
+    const pct = totalHoy > 0 ? Math.min(100, Math.round((cobrado / totalHoy) * 100)) : 0;
+    document.getElementById('cobros-progreso-dia-bar').style.width = pct + '%';
+    document.getElementById('cobros-progreso-dia-pct').textContent = pct + '%';
+}
+
+function actualizarEstadisticasCobro(estadisticas, card) {
+    if (!estadisticas) return;
+
+    document.getElementById('total-cobrado-hoy').textContent = formatearMoneda(estadisticas.total_cobrado_hoy);
+
+    const delta = estadisticas.capital_cobrado_ahora || 0;
+    if (delta > 0 && card) {
+        const esVencida = card.classList.contains('vencida');
+        const esDeHoy = card.classList.contains('pendiente');
+        if (esVencida) {
+            const idsVencidas = ['total-vencidas', 'stat-vencidas'];
+            idsVencidas.forEach(id => {
+                const nuevo = Math.max(0, leerMonto(id) - delta);
+                document.getElementById(id).textContent = formatearMoneda(nuevo);
+            });
+        } else if (esDeHoy) {
+            const idsHoy = ['total-por-cobrar', 'stat-por-cobrar'];
+            idsHoy.forEach(id => {
+                const nuevo = Math.max(0, leerMonto(id) - delta);
+                document.getElementById(id).textContent = formatearMoneda(nuevo);
+            });
+        }
+    }
+
+    actualizarProgresoDia();
+}
+
 // ============ CONFIRMACIÓN DE COBRO RÁPIDO ============
 function mostrarConfirmacion(cuotaId, monto, cliente, mora) {
     mora = mora || 0;
@@ -1064,13 +1136,10 @@ async function ejecutarCobro() {
                 card.style.padding = '0';
                 setTimeout(() => card.remove(), 400);
             }
-            
+
             // Actualizar estadísticas
-            if (result.estadisticas) {
-                document.getElementById('total-cobrado-hoy').textContent = 
-                    formatearMoneda(result.estadisticas.total_cobrado_hoy);
-            }
-            
+            actualizarEstadisticasCobro(result.estadisticas, card);
+
             // Cerrar modal con delay para mostrar éxito
             setTimeout(() => cerrarConfirmacion(), 1200);
             
@@ -1168,13 +1237,10 @@ async function confirmarPagoParcial() {
                 card.style.padding = '0';
                 setTimeout(() => card.remove(), 400);
             }
-            
+
             // Actualizar estadísticas
-            if (result.estadisticas) {
-                document.getElementById('total-cobrado-hoy').textContent = 
-                    formatearMoneda(result.estadisticas.total_cobrado_hoy);
-            }
-            
+            actualizarEstadisticasCobro(result.estadisticas, card);
+
             // Cerrar confirmación de éxito
             setTimeout(() => cerrarConfirmacion(), 1200);
         } else {
