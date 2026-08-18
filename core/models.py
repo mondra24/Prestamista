@@ -473,17 +473,29 @@ class Cliente(models.Model):
         return self.prestamos.filter(estado='AC').exists()
     
     @property
+    def prestamos_activos(self):
+        """Retorna TODOS los préstamos activos del cliente (puede tener más de uno)"""
+        return self.prestamos.filter(estado='AC')
+
+    @property
     def prestamo_activo(self):
-        """Retorna el préstamo activo del cliente"""
-        return self.prestamos.filter(estado='AC').first()
-    
+        """
+        Retorna un préstamo activo del cliente para los lugares que solo
+        necesitan 'el' préstamo activo (ej. renovación individual). Si tiene
+        más de uno, se toma el más reciente.
+        """
+        return self.prestamos_activos.order_by('-fecha_inicio').first()
+
     @property
     def credito_usado(self):
-        """Retorna el monto total de crédito actualmente en uso"""
-        prestamo = self.prestamo_activo
-        if prestamo:
-            return prestamo.monto_pendiente
-        return Decimal('0.00')
+        """
+        Retorna el monto total de crédito actualmente en uso, sumando TODOS
+        los préstamos activos (un cliente puede tener más de uno a la vez).
+        """
+        return sum(
+            (p.monto_pendiente for p in self.prestamos_activos),
+            Decimal('0.00')
+        )
     
     @property
     def deuda_total(self):

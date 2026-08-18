@@ -292,16 +292,15 @@ class PrestamoForm(forms.ModelForm):
             raise forms.ValidationError('Ingrese un monto válido')
     
     def clean(self):
-        """Validar que el cliente no tenga ya un préstamo activo y el límite de crédito"""
+        """
+        Validar el límite de crédito disponible. Un cliente puede tener más de
+        un préstamo activo a la vez (pedido explícito del cliente): lo único
+        que se sigue limitando es el crédito disponible, que ya suma la deuda
+        de TODOS sus préstamos activos (ver Cliente.credito_usado).
+        """
         cleaned_data = super().clean()
         cliente = cleaned_data.get('cliente')
         monto = cleaned_data.get('monto_solicitado')
-
-        if cliente and cliente.tiene_prestamo_activo:
-            raise forms.ValidationError(
-                f'{cliente.nombre_completo} ya tiene un préstamo activo. '
-                f'Para sumarle un monto nuevo, usá "Renovar" desde su préstamo actual.'
-            )
 
         if cliente and monto:
             # En edición, no validar límite contra el mismo préstamo

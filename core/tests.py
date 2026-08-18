@@ -616,8 +616,12 @@ class PrestamoFormTest(TestCase):
             'fecha_inicio': date.today().isoformat(),
         }
 
-    def test_bloquea_segundo_prestamo_si_cliente_ya_tiene_uno_activo(self):
-        """A2: no se puede crear un préstamo nuevo si el cliente ya tiene uno activo"""
+    def test_permite_segundo_prestamo_si_cliente_ya_tiene_uno_activo(self):
+        """
+        Pedido explícito del cliente: quiere poder darle un segundo crédito
+        distinto a alguien que ya tiene uno activo (antes esto se bloqueaba
+        y solo se podía "Renovar"; ahora conviven ambos préstamos activos).
+        """
         Prestamo.objects.create(
             cliente=self.cliente,
             monto_solicitado=Decimal('5000'),
@@ -626,19 +630,36 @@ class PrestamoFormTest(TestCase):
             frecuencia='SE',
             fecha_inicio=date.today()
         )
-        count_before = Prestamo.objects.count()
 
         response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
 
-        self.assertEqual(response.status_code, 200)  # se queda en el form, no redirige
-        self.assertEqual(Prestamo.objects.count(), count_before)
-        self.assertContains(response, 'ya tiene un préstamo activo')
+        self.assertEqual(response.status_code, 302)  # redirige: se creó bien
+        self.assertEqual(Prestamo.objects.filter(cliente=self.cliente, estado='AC').count(), 2)
 
     def test_permite_prestamo_si_cliente_no_tiene_uno_activo(self):
         """Sin préstamo activo previo, la creación funciona normalmente"""
         response = self.client.post(reverse('core:prestamo_create'), self._datos_prestamo())
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Prestamo.objects.filter(cliente=self.cliente).count(), 1)
+
+    def test_credito_usado_suma_todos_los_prestamos_activos(self):
+        """
+        Cliente.credito_usado (usado para el límite de crédito disponible) debe
+        sumar la deuda de TODOS los préstamos activos, no solo del primero,
+        ahora que puede haber más de uno a la vez.
+        """
+        p1 = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('5000'),
+            tasa_interes_porcentaje=Decimal('10'), cuotas_pactadas=2,
+            frecuencia='SE', fecha_inicio=date.today()
+        )
+        p2 = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('3000'),
+            tasa_interes_porcentaje=Decimal('10'), cuotas_pactadas=2,
+            frecuencia='SE', fecha_inicio=date.today()
+        )
+        esperado = p1.monto_pendiente + p2.monto_pendiente
+        self.assertEqual(self.cliente.credito_usado, esperado)
 
 
 class RepasoSemanaCobrosViewTest(TestCase):

@@ -214,6 +214,10 @@
             </div>
         </div>
         {% endfor %}
+
+        <a href="{% url 'core:prestamo_create' %}?cliente={{ cliente.pk }}" class="btn btn-outline-success w-100 mt-1">
+            <i class="bi bi-plus-circle me-2"></i>Otro Préstamo
+        </a>
     </section>
     {% else %}
     <div class="text-center py-4">
