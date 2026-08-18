@@ -1961,6 +1961,14 @@ body {
 .pf-toast-icon {
     width: 32px;
     height: 32px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    color: white;
+}
 
 /* ============ REPASO DE LA SEMANA (A5) ============ */
 .week-review-summary {
@@ -2100,9 +2108,10 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+    text-decoration: none;
     flex-shrink: 0;
-    font-size: 1.1rem;
-    color: white;
 }
 
 .pf-toast-message {
@@ -2615,11 +2624,9 @@ body {
 }
 
 .link-rapido-btn:hover {
-
-    background: var(--bg-card-hover);
-    color: var(--text-primary);
-    text-decoration: none;
-    flex-shrink: 0;
+    background: var(--color-nuevo);
+    border-color: var(--color-nuevo);
+    color: #fff;
 }
 
 .calendar-nav-btn:hover {
