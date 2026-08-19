@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, F
+from django.db.models import Sum, Count, Q, F, Prefetch
 from django.db import transaction
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -602,15 +602,22 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Pasar datos de clientes para mostrar límite de crédito
+        # Pasar datos de clientes para mostrar límite de crédito. El template
+        # calcula credito_usado/prestamo_activo/etc. para CADA cliente activo
+        # (para el JS de "Nuevo Préstamo"); sin este prefetch eso dispara
+        # varias queries por cliente y con muchos clientes activos termina en
+        # timeout (Internal Server Error) en producción.
+        prestamos_prefetch = Prefetch(
+            'prestamos', queryset=Prestamo.objects.all().prefetch_related('cuotas')
+        )
         if not es_usuario_admin(self.request.user):
             context['clientes'] = Cliente.objects.filter(
                 estado='AC', usuario=self.request.user
-            ).order_by('apellido', 'nombre')
+            ).order_by('apellido', 'nombre').select_related('tipo_negocio').prefetch_related(prestamos_prefetch)
         else:
             context['clientes'] = Cliente.objects.filter(
                 estado='AC'
-            ).order_by('apellido', 'nombre')
+            ).order_by('apellido', 'nombre').select_related('tipo_negocio').prefetch_related(prestamos_prefetch)
         return context
     
     def form_valid(self, form):
@@ -2697,7 +2704,10 @@ def exportar_prestamos_excel(request):
         return redirect('core:prestamo_list')
     
     estado = request.GET.get('estado', '')
-    prestamos = Prestamo.objects.select_related('cliente')
+    # prefetch_related('cuotas'): monto_pagado/monto_pendiente/cuotas_pagadas
+    # hacen una query por préstamo si no está prefetched - con muchos
+    # préstamos eso termina en timeout (Internal Server Error) en producción.
+    prestamos = Prestamo.objects.select_related('cliente').prefetch_related('cuotas')
     if not es_usuario_admin(request.user):
         prestamos = prestamos.filter(cobrador=request.user)
     if estado:

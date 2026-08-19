@@ -2,6 +2,7 @@
 Modelos del Sistema de Gestión de Préstamos
 """
 from django.db import models, transaction
+from django.core.cache import cache
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -184,11 +185,22 @@ class ConfiguracionCredito(models.Model):
     
     @classmethod
     def obtener_config(cls, categoria):
-        """Obtiene la configuración para una categoría específica"""
+        """
+        Obtiene la configuración para una categoría específica.
+        Cacheada 60s: esta consulta se repite varias veces por cliente en
+        listados grandes (ver Cliente.puede_renovar y afines) y solo hay un
+        puñado de categorías posibles, así que cachear evita un N+1 severo.
+        """
+        cache_key = f'config_credito_{categoria}'
+        config = cache.get(cache_key)
+        if config is not None:
+            return config
         try:
-            return cls.objects.get(categoria=categoria, activo=True)
+            config = cls.objects.get(categoria=categoria, activo=True)
         except cls.DoesNotExist:
             return None
+        cache.set(cache_key, config, 60)
+        return config
 
 
 class ConfiguracionCategorizacion(models.Model):
@@ -474,7 +486,14 @@ class Cliente(models.Model):
     
     @property
     def prestamos_activos(self):
-        """Retorna TODOS los préstamos activos del cliente (puede tener más de uno)"""
+        """
+        Retorna TODOS los préstamos activos del cliente (puede tener más de uno).
+        Si 'prestamos' viene prefetched (ver PrestamoCreateView, exportar_prestamos_excel),
+        filtra en Python sobre esa caché en vez de disparar una query nueva -
+        evita un N+1 severo en listados que recorren muchos clientes.
+        """
+        if 'prestamos' in getattr(self, '_prefetched_objects_cache', {}):
+            return [p for p in self.prestamos.all() if p.estado == 'AC']
         return self.prestamos.filter(estado='AC')
 
     @property
@@ -484,7 +503,12 @@ class Cliente(models.Model):
         necesitan 'el' préstamo activo (ej. renovación individual). Si tiene
         más de uno, se toma el más reciente.
         """
-        return self.prestamos_activos.order_by('-fecha_inicio').first()
+        activos = self.prestamos_activos
+        if not activos:
+            return None
+        if hasattr(activos, 'order_by'):
+            return activos.order_by('-fecha_inicio').first()
+        return max(activos, key=lambda p: p.fecha_inicio)
 
     @property
     def credito_usado(self):
@@ -959,7 +983,17 @@ class Prestamo(models.Model):
 
     @property
     def monto_pagado(self):
-        """Suma de todos los pagos realizados"""
+        """
+        Suma de todos los pagos realizados. Si 'cuotas' viene prefetched
+        (ver exportar_prestamos_excel, PrestamoCreateView), suma en Python
+        sobre esa caché en vez de un aggregate() nuevo por préstamo - evita
+        un N+1 severo en listados/exportaciones con muchos préstamos.
+        """
+        if 'cuotas' in getattr(self, '_prefetched_objects_cache', {}):
+            return sum(
+                (c.monto_pagado for c in self.cuotas.all() if c.estado in ('PA', 'PC')),
+                Decimal('0.00')
+            )
         return self.cuotas.filter(
             estado__in=['PA', 'PC']
         ).aggregate(
@@ -987,6 +1021,8 @@ class Prestamo(models.Model):
     @property
     def cuotas_pagadas(self):
         """Número de cuotas completamente pagadas"""
+        if 'cuotas' in getattr(self, '_prefetched_objects_cache', {}):
+            return sum(1 for c in self.cuotas.all() if c.estado == 'PA')
         return self.cuotas.filter(estado='PA').count()
     
     @property
