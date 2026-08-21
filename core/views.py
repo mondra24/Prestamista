@@ -301,7 +301,9 @@ class CobrosView(LoginRequiredMixin, TemplateView):
 
 
 class CalendarioCobrosView(LoginRequiredMixin, TemplateView):
-    """Calendario visual de cobros (A6): un vistazo del mes completo, día por día."""
+    """Calendario visual de cobros (A6): un vistazo del mes completo, día por día.
+    También soporta una vista semanal (?vista=semana), pedida por el cliente:
+    los días de la semana uno abajo del otro, con cliente/monto/cuota de un vistazo."""
     template_name = 'core/calendario_cobros.html'
 
     def get_context_data(self, **kwargs):
@@ -311,16 +313,25 @@ class CalendarioCobrosView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         hoy = fecha_local_hoy()
 
+        vista = self.request.GET.get('vista', 'mes')
+        if vista not in ('mes', 'semana'):
+            vista = 'mes'
+        context['vista'] = vista
+
+        base_filter = {}
+        if not es_usuario_admin(self.request.user):
+            base_filter['prestamo__cobrador'] = self.request.user
+
+        if vista == 'semana':
+            self._agregar_contexto_semana(context, hoy, base_filter)
+            return context
+
         try:
             year = int(self.request.GET.get('year', hoy.year))
             month = int(self.request.GET.get('month', hoy.month))
             date(year, month, 1)  # valida que el año/mes sean válidos
         except (ValueError, TypeError):
             year, month = hoy.year, hoy.month
-
-        base_filter = {}
-        if not es_usuario_admin(self.request.user):
-            base_filter['prestamo__cobrador'] = self.request.user
 
         _, ultimo_dia_num = calendar_module.monthrange(year, month)
         primer_dia = date(year, month, 1)
@@ -404,8 +415,88 @@ class CalendarioCobrosView(LoginRequiredMixin, TemplateView):
             'total_mes_cobrado': total_mes_cobrado,
             'total_mes_pendiente': total_mes_pendiente,
             'es_mes_actual': (year == hoy.year and month == hoy.month),
+            'url_vista_semana': '?vista=semana',
         })
         return context
+
+    def _agregar_contexto_semana(self, context, hoy, base_filter):
+        """
+        Vista semanal pedida por el cliente: los días de la semana uno abajo
+        del otro (como Google Calendar), con cliente + monto + número de
+        cuota a la vista sin tener que abrir un modal por día.
+        """
+        from datetime import date, timedelta
+
+        fecha_param = self.request.GET.get('fecha', '')
+        try:
+            fecha_ref = date.fromisoformat(fecha_param) if fecha_param else hoy
+        except ValueError:
+            fecha_ref = hoy
+
+        lunes = fecha_ref - timedelta(days=fecha_ref.weekday())
+        domingo = lunes + timedelta(days=6)
+
+        cuotas_semana = list(Cuota.objects.filter(
+            fecha_vencimiento__gte=lunes,
+            fecha_vencimiento__lte=domingo,
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related('prestamo', 'prestamo__cliente').order_by(
+            'fecha_vencimiento', 'prestamo__cliente__apellido'
+        ))
+
+        cuotas_por_dia = {}
+        for cuota in cuotas_semana:
+            cuotas_por_dia.setdefault(cuota.fecha_vencimiento, []).append(cuota)
+
+        # Nombres cortos en es-ar (ver mismo comentario/solución en CobrosView:
+        # el catálogo de traducción de Django da "Mie" sin tilde con |date:"D")
+        DIAS_ABREV = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+        dias_semana = []
+        total_semana_cobrado = Decimal('0.00')
+        total_semana_pendiente = Decimal('0.00')
+        for i in range(7):
+            fecha_dia = lunes + timedelta(days=i)
+            cuotas_dia = cuotas_por_dia.get(fecha_dia, [])
+            total_dia = Decimal('0.00')
+            entradas = []
+            for c in cuotas_dia:
+                monto = c.monto_cuota if c.estado == 'PA' else c.monto_restante
+                total_dia += monto
+                if c.estado == 'PA':
+                    total_semana_cobrado += monto
+                else:
+                    total_semana_pendiente += monto
+                entradas.append({
+                    'cliente': c.prestamo.cliente.nombre_completo,
+                    'cliente_url': reverse('core:cliente_detail', args=[c.prestamo.cliente.pk]),
+                    'monto': monto,
+                    'cuota_texto': f'Cuota {c.numero_cuota} de {c.prestamo.cuotas_pactadas}',
+                    'cobrado': c.estado == 'PA',
+                })
+            dias_semana.append({
+                'fecha': fecha_dia,
+                'nombre_dia': DIAS_ABREV[i],
+                'es_hoy': fecha_dia == hoy,
+                'entradas': entradas,
+                'total': total_dia,
+            })
+
+        semana_anterior = lunes - timedelta(days=7)
+        semana_siguiente = lunes + timedelta(days=7)
+
+        context.update({
+            'dias_semana': dias_semana,
+            'lunes_semana': lunes,
+            'domingo_semana': domingo,
+            'total_semana_cobrado': total_semana_cobrado,
+            'total_semana_pendiente': total_semana_pendiente,
+            'es_semana_actual': (lunes <= hoy <= domingo),
+            'url_semana_anterior': f'?vista=semana&fecha={semana_anterior.isoformat()}',
+            'url_semana_siguiente': f'?vista=semana&fecha={semana_siguiente.isoformat()}',
+            'url_vista_mes': '?vista=mes',
+        })
 
 
 # ============== VISTAS DE CLIENTES ==============

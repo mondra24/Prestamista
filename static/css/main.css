@@ -3049,6 +3049,10 @@ body {
     color: var(--color-nuevo);
 }
 
+.proximas-day-header.hoy {
+    border: 1px solid var(--color-nuevo);
+}
+
 .proximas-day-header i {
     color: var(--text-secondary);
     transition: transform 0.2s ease;

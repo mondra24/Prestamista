@@ -17,6 +17,83 @@
         </a>
     </div>
 
+    <!-- Toggle Mes / Semana -->
+    <div class="btn-group w-100 mb-3" role="group">
+        <a href="{{ url_vista_mes|default:'?vista=mes' }}" class="btn btn-sm {% if vista == 'mes' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+            <i class="bi bi-calendar3 me-1"></i>Mes
+        </a>
+        <a href="{{ url_vista_semana|default:'?vista=semana' }}" class="btn btn-sm {% if vista == 'semana' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+            <i class="bi bi-calendar-week me-1"></i>Semana
+        </a>
+    </div>
+
+    {% if vista == 'semana' %}
+    <!-- ===== VISTA SEMANAL ===== -->
+
+    <!-- Resumen de la semana -->
+    <div class="row g-2 mb-3">
+        <div class="col-6">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <div class="stat-value text-success">{{ total_semana_cobrado|dinero }}</div>
+                <div class="stat-label">Cobrado en la semana</div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="stat-card">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div class="stat-value">{{ total_semana_pendiente|dinero }}</div>
+                <div class="stat-label">Pendiente en la semana</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navegación de semana -->
+    <div class="calendar-nav mb-3">
+        <a href="{{ url_semana_anterior }}" class="calendar-nav-btn" title="Semana anterior">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+        <div class="calendar-nav-title">
+            {{ lunes_semana|date:"d/m" }} - {{ domingo_semana|date:"d/m/Y" }}
+            {% if es_semana_actual %}<span class="badge bg-primary ms-1">Esta semana</span>{% endif %}
+        </div>
+        <a href="{{ url_semana_siguiente }}" class="calendar-nav-btn" title="Semana siguiente">
+            <i class="bi bi-chevron-right"></i>
+        </a>
+    </div>
+
+    <!-- Días de la semana, uno abajo del otro -->
+    {% for dia in dias_semana %}
+    <div class="proximas-day-group">
+        <div class="proximas-day-header {% if dia.es_hoy %}hoy{% endif %}">
+            <span class="proximas-day-date">{{ dia.nombre_dia }} {{ dia.fecha|date:"d/m" }}{% if dia.es_hoy %} · Hoy{% endif %}</span>
+            <span class="proximas-day-count">{{ dia.entradas|length }} cuota{{ dia.entradas|length|pluralize }}</span>
+            {% if dia.entradas %}<span class="proximas-day-total">{{ dia.total|dinero }}</span>{% endif %}
+        </div>
+        <div class="pt-2">
+            {% for entrada in dia.entradas %}
+            <a href="{{ entrada.cliente_url }}" class="week-review-row{% if not entrada.cobrado %} pendiente{% endif %}">
+                <div class="week-review-avatar">{{ entrada.cliente|slice:":2" }}</div>
+                <div class="week-review-info">
+                    <div class="week-review-name">{{ entrada.cliente }}</div>
+                    <div class="week-review-fecha">{{ entrada.cuota_texto }}</div>
+                </div>
+                <div class="week-review-amount">{{ entrada.monto|dinero }}</div>
+            </a>
+            {% empty %}
+            <div class="week-review-empty">Sin cuotas este día</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <!-- ===== VISTA MENSUAL ===== -->
+
     <!-- Resumen del mes -->
     <div class="row g-2 mb-3">
         <div class="col-6">
@@ -85,6 +162,7 @@
             {% endfor %}
         {% endfor %}
     </div>
+    {% endif %}
 
 </div>
 
