@@ -1036,7 +1036,22 @@ class Prestamo(models.Model):
     def proxima_cuota(self):
         """Retorna la próxima cuota pendiente (incluye parciales, no solo las que no se tocaron)"""
         return self.cuotas.filter(estado__in=['PE', 'PC']).order_by('numero_cuota').first()
-    
+
+    @property
+    def notas_vigentes(self):
+        """
+        Notas de seguimiento activas (no vencidas). Si 'notas_seguimiento'
+        viene prefetched (ver CobrosView), filtra en Python en vez de una
+        query nueva por préstamo - mismo criterio que el resto de las
+        propiedades que evitan N+1 en listados grandes.
+        """
+        if 'notas_seguimiento' in getattr(self, '_prefetched_objects_cache', {}):
+            return [n for n in self.notas_seguimiento.all() if n.vigente]
+        hoy = fecha_local_hoy()
+        return list(self.notas_seguimiento.filter(
+            models.Q(fecha_vencimiento__isnull=True) | models.Q(fecha_vencimiento__gte=hoy)
+        ))
+
     def liquidar_prestamo(self):
         """Liquida el préstamo marcando todas las cuotas como pagadas"""
         self.cuotas.filter(estado='PE').update(
@@ -1095,8 +1110,68 @@ class Prestamo(models.Model):
             create_kwargs['fecha_finalizacion_manual'] = True
         
         nuevo_prestamo = cls.objects.create(**create_kwargs)
-        
+
         return nuevo_prestamo
+
+
+class NotaSeguimiento(models.Model):
+    """
+    Recordatorio corto atado a un préstamo (ej. "hablé con el cliente por
+    WhatsApp, paga el 25") para que no se pierda en el chat. Pensado para
+    durar poco: vence sola después de un tiempo o se borra a mano cuando ya
+    se resolvió, no es un historial permanente.
+    """
+
+    class Duracion(models.TextChoices):
+        TRES_DIAS = '3D', '3 días'
+        UNA_SEMANA = '7D', '1 semana'
+        QUINCE_DIAS = '15D', '15 días'
+        PROXIMA_CUOTA = 'PC', 'Hasta la próxima cuota'
+        SIN_VENCIMIENTO = 'SV', 'Sin vencimiento'
+
+    prestamo = models.ForeignKey(
+        Prestamo,
+        on_delete=models.CASCADE,
+        related_name='notas_seguimiento',
+        verbose_name='Préstamo'
+    )
+    texto = models.CharField(max_length=280, verbose_name='Nota')
+    creado_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Creado por'
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+    fecha_vencimiento = models.DateField(
+        null=True, blank=True,
+        verbose_name='Vence el',
+        help_text='Vacío = no vence sola, hay que borrarla a mano'
+    )
+
+    class Meta:
+        verbose_name = 'Nota de Seguimiento'
+        verbose_name_plural = 'Notas de Seguimiento'
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return f'{self.prestamo} - {self.texto[:40]}'
+
+    @property
+    def vigente(self):
+        return self.fecha_vencimiento is None or self.fecha_vencimiento >= fecha_local_hoy()
+
+    @classmethod
+    def calcular_vencimiento(cls, duracion, prestamo):
+        """Traduce la opción de duración elegida a una fecha concreta (o None = sin vencer)."""
+        hoy = fecha_local_hoy()
+        if duracion == cls.Duracion.TRES_DIAS:
+            return hoy + timedelta(days=3)
+        if duracion == cls.Duracion.UNA_SEMANA:
+            return hoy + timedelta(days=7)
+        if duracion == cls.Duracion.QUINCE_DIAS:
+            return hoy + timedelta(days=15)
+        if duracion == cls.Duracion.PROXIMA_CUOTA:
+            proxima = prestamo.proxima_cuota
+            return proxima.fecha_vencimiento if proxima else None
+        return None  # SIN_VENCIMIENTO o valor desconocido
 
 
 class Cuota(models.Model):

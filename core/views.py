@@ -15,7 +15,7 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago, fecha_local_hoy
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 
 
@@ -141,12 +141,12 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             **base_filter
         ).select_related(
             'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
-        ).order_by(
+        ).prefetch_related('prestamo__notas_seguimiento').order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
             'prestamo__cliente__apellido'
         )
-        
+
         # Cuotas vencidas (días anteriores) - ordenadas por ruta y fecha
         cuotas_vencidas = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
@@ -155,12 +155,12 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             **base_filter
         ).select_related(
             'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
-        ).order_by(
+        ).prefetch_related('prestamo__notas_seguimiento').order_by(
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre',
             'fecha_vencimiento'
         )
-        
+
         # Cuotas próximas (próximos 30 días) - ordenadas por fecha y ruta
         cuotas_proximas = Cuota.objects.filter(
             fecha_vencimiento__gt=hoy,
@@ -170,7 +170,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             **base_filter
         ).select_related(
             'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
-        ).order_by(
+        ).prefetch_related('prestamo__notas_seguimiento').order_by(
             'fecha_vencimiento',
             'prestamo__cliente__ruta__orden',
             'prestamo__cliente__ruta__nombre'
@@ -753,6 +753,7 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
             cuota.historial_list = historial_por_cuota.get(cuota.id, [])
         
         context['cuotas'] = cuotas
+        context['notas_seguimiento'] = self.object.notas_seguimiento.select_related('creado_por').all()
         return context
 
 
@@ -3369,3 +3370,72 @@ def toggle_token_cliente(request, pk):
         })
     except Cliente.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Cliente no encontrado'}, status=404)
+
+
+# ==================== NOTAS DE SEGUIMIENTO (recordatorios cortos por préstamo) ====================
+
+def _prestamo_visible_o_404(pk, user):
+    """Mismo criterio de permisos que el resto de acciones sobre un préstamo puntual."""
+    if es_usuario_admin(user):
+        return get_object_or_404(Prestamo, pk=pk)
+    return get_object_or_404(Prestamo, pk=pk, cobrador=user)
+
+
+def _nota_a_json(nota):
+    return {
+        'id': nota.pk,
+        'texto': nota.texto,
+        'creado_por': (nota.creado_por.get_full_name() or nota.creado_por.username) if nota.creado_por else '',
+        'fecha_creacion': nota.fecha_creacion.strftime('%d/%m/%Y %H:%M'),
+        'fecha_vencimiento': nota.fecha_vencimiento.strftime('%d/%m/%Y') if nota.fecha_vencimiento else None,
+        'vigente': nota.vigente,
+    }
+
+
+@login_required
+def crear_nota_prestamo(request, pk):
+    """Crea una nota de seguimiento corta sobre un préstamo (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    prestamo = _prestamo_visible_o_404(pk, request.user)
+
+    texto = (request.POST.get('texto') or '').strip()
+    if not texto:
+        return JsonResponse({'success': False, 'message': 'Escribí una nota antes de guardar.'}, status=400)
+    if len(texto) > 280:
+        return JsonResponse({'success': False, 'message': 'La nota es muy larga (máximo 280 caracteres).'}, status=400)
+
+    duracion = request.POST.get('duracion', NotaSeguimiento.Duracion.UNA_SEMANA)
+    if duracion not in NotaSeguimiento.Duracion.values:
+        duracion = NotaSeguimiento.Duracion.UNA_SEMANA
+
+    fecha_vencimiento = NotaSeguimiento.calcular_vencimiento(duracion, prestamo)
+
+    nota = NotaSeguimiento.objects.create(
+        prestamo=prestamo,
+        texto=texto,
+        creado_por=request.user,
+        fecha_vencimiento=fecha_vencimiento,
+    )
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Nota guardada.',
+        'data': _nota_a_json(nota),
+    })
+
+
+@login_required
+def eliminar_nota_prestamo(request, pk):
+    """Borra una nota de seguimiento (el cobrador la resuelve/descarta a mano)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    if es_usuario_admin(request.user):
+        nota = get_object_or_404(NotaSeguimiento, pk=pk)
+    else:
+        nota = get_object_or_404(NotaSeguimiento, pk=pk, prestamo__cobrador=request.user)
+
+    nota.delete()
+    return JsonResponse({'success': True, 'message': 'Nota eliminada.'})

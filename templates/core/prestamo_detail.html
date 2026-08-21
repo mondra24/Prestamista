@@ -187,6 +187,60 @@
         </div>
     </div>
 
+    <!-- Notas de Seguimiento: recordatorios cortos para no perder cosas del día a día -->
+    <div class="card border-0 shadow-sm mb-4 nota-seguimiento-card">
+        <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="mb-0">
+                    <i class="bi bi-sticky-fill me-1 text-warning"></i>Notas de Seguimiento
+                </h6>
+                <button type="button" class="btn btn-sm btn-outline-warning" id="btn-mostrar-form-nota">
+                    <i class="bi bi-plus-lg me-1"></i>Nueva nota
+                </button>
+            </div>
+
+            <div id="form-nueva-nota" class="d-none mb-3">
+                <textarea class="form-control form-control-sm mb-2" id="input-texto-nota" maxlength="280" rows="2"
+                          placeholder="Ej: Hablé con el cliente por WhatsApp, tuvo un problema, paga el 25."></textarea>
+                <div class="d-flex gap-2 flex-wrap align-items-center">
+                    <select class="form-select form-select-sm w-auto" id="select-duracion-nota">
+                        <option value="3D">Vence en 3 días</option>
+                        <option value="7D" selected>Vence en 1 semana</option>
+                        <option value="15D">Vence en 15 días</option>
+                        <option value="PC">Hasta la próxima cuota</option>
+                        <option value="SV">Sin vencimiento</option>
+                    </select>
+                    <button type="button" class="btn btn-sm btn-warning" id="btn-guardar-nota" data-prestamo-id="{{ prestamo.pk }}">
+                        <i class="bi bi-check-lg me-1"></i>Guardar
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-cancelar-nota">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+
+            <div id="lista-notas">
+                {% for nota in notas_seguimiento %}
+                <div class="nota-item{% if not nota.vigente %} vencida{% endif %}" data-nota-id="{{ nota.pk }}">
+                    <div class="nota-item-texto">{{ nota.texto }}</div>
+                    <div class="nota-item-meta">
+                        <span>{{ nota.creado_por.get_full_name|default:nota.creado_por.username|default:"—" }} · {{ nota.fecha_creacion|date:"d/m H:i" }}</span>
+                        {% if nota.fecha_vencimiento %}
+                        <span class="nota-item-vence">{% if nota.vigente %}Vence {{ nota.fecha_vencimiento|date:"d/m" }}{% else %}Vencida{% endif %}</span>
+                        {% endif %}
+                    </div>
+                    <button type="button" class="btn-borrar-nota" data-nota-id="{{ nota.pk }}" title="Eliminar nota">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="text-muted small text-center py-2{% if notas_seguimiento %} d-none{% endif %}" id="notas-vacio">
+                Sin notas por ahora.
+            </div>
+        </div>
+    </div>
+
     <!-- Botón enviar resumen de crédito por WhatsApp -->
     <div class="d-grid mb-3">
         <button class="btn btn-success btn-lg btn-resumen-credito-wp" data-cuota-destacada="0">
@@ -1570,6 +1624,123 @@ async function confirmarEditarCobro() {
             if (icon) icon.className = 'bi ' + (activo ? 'bi-pause-circle' : 'bi-play-circle') + ' me-1';
         }
     }
+})();
+
+// ============ NOTAS DE SEGUIMIENTO ============
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+        || document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('csrftoken='))?.split('=')[1]
+        || '';
+
+    const btnMostrar = document.getElementById('btn-mostrar-form-nota');
+    const btnCancelar = document.getElementById('btn-cancelar-nota');
+    const btnGuardar = document.getElementById('btn-guardar-nota');
+    const formNota = document.getElementById('form-nueva-nota');
+    const inputTexto = document.getElementById('input-texto-nota');
+    const selectDuracion = document.getElementById('select-duracion-nota');
+    const listaNotas = document.getElementById('lista-notas');
+    const notasVacio = document.getElementById('notas-vacio');
+
+    if (!btnMostrar) return; // permiso de admin/cobrador dueño no incluyó esta tarjeta
+
+    function abrirForm() {
+        formNota.classList.remove('d-none');
+        inputTexto.focus();
+    }
+    function cerrarForm() {
+        formNota.classList.add('d-none');
+        inputTexto.value = '';
+        selectDuracion.value = '7D';
+    }
+
+    btnMostrar.addEventListener('click', abrirForm);
+    btnCancelar.addEventListener('click', cerrarForm);
+
+    function crearFilaNota(nota) {
+        const div = document.createElement('div');
+        div.className = 'nota-item nueva';
+        div.dataset.notaId = nota.id;
+        const venceHtml = nota.fecha_vencimiento
+            ? `<span class="nota-item-vence">Vence ${nota.fecha_vencimiento}</span>` : '';
+        div.innerHTML = `
+            <div class="nota-item-texto"></div>
+            <div class="nota-item-meta">
+                <span>${nota.creado_por || '—'} · ${nota.fecha_creacion}</span>
+                ${venceHtml}
+            </div>
+            <button type="button" class="btn-borrar-nota" data-nota-id="${nota.id}" title="Eliminar nota">
+                <i class="bi bi-x-lg"></i>
+            </button>`;
+        div.querySelector('.nota-item-texto').textContent = nota.texto; // evitar XSS con texto libre
+        return div;
+    }
+
+    async function guardarNota() {
+        const texto = inputTexto.value.trim();
+        if (!texto) {
+            inputTexto.classList.add('is-invalid');
+            return;
+        }
+        inputTexto.classList.remove('is-invalid');
+        btnGuardar.disabled = true;
+        try {
+            const resp = await fetch(`/api/prestamo/${btnGuardar.dataset.prestamoId}/notas/crear/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({ texto: texto, duracion: selectDuracion.value })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                listaNotas.prepend(crearFilaNota(data.data));
+                if (notasVacio) notasVacio.classList.add('d-none');
+                cerrarForm();
+                showToast('Nota guardada', 'success');
+            } else {
+                showToast(data.message || 'No se pudo guardar la nota', 'danger');
+            }
+        } catch (e) {
+            showToast('Error de conexión', 'danger');
+        } finally {
+            btnGuardar.disabled = false;
+        }
+    }
+    btnGuardar.addEventListener('click', guardarNota);
+    inputTexto.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) guardarNota();
+    });
+
+    listaNotas.addEventListener('click', async function(e) {
+        const btn = e.target.closest('.btn-borrar-nota');
+        if (!btn) return;
+        if (!confirm('¿Eliminar esta nota?')) return;
+        btn.disabled = true;
+        try {
+            const resp = await fetch(`/api/notas/${btn.dataset.notaId}/eliminar/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                const fila = btn.closest('.nota-item');
+                fila.style.opacity = '0';
+                setTimeout(() => {
+                    fila.remove();
+                    if (!listaNotas.querySelector('.nota-item') && notasVacio) {
+                        notasVacio.classList.remove('d-none');
+                    }
+                }, 150);
+            } else {
+                showToast(data.message || 'No se pudo eliminar', 'danger');
+                btn.disabled = false;
+            }
+        } catch (e2) {
+            showToast('Error de conexión', 'danger');
+            btn.disabled = false;
+        }
+    });
 })();
 </script>
 {% endblock %}

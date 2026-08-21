@@ -78,6 +78,10 @@ urlpatterns = [
     path('api/cliente/<int:pk>/regenerar-token/', views.regenerar_token_cliente, name='regenerar_token_cliente'),
     path('api/cliente/<int:pk>/toggle-token/', views.toggle_token_cliente, name='toggle_token_cliente'),
 
+    # Notas de seguimiento (recordatorios cortos por préstamo, AJAX)
+    path('api/prestamo/<int:pk>/notas/crear/', views.crear_nota_prestamo, name='crear_nota_prestamo'),
+    path('api/notas/<int:pk>/eliminar/', views.eliminar_nota_prestamo, name='eliminar_nota_prestamo'),
+
     # Auditoría
     path('auditoria/', views.AuditoriaListView.as_view(), name='auditoria_list'),
     

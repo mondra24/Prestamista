@@ -2084,6 +2084,81 @@ body {
     text-align: center;
 }
 
+/* ============ NOTAS DE SEGUIMIENTO ============ */
+.nota-seguimiento-card {
+    border-left: 3px solid #ffc107 !important;
+}
+
+.nota-item {
+    position: relative;
+    background: var(--bg-card);
+    border-left: 3px solid #ffc107;
+    border-radius: 8px;
+    padding: 10px 34px 10px 12px;
+    margin-bottom: 8px;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nota-item.nueva {
+    animation: nota-aparece 0.35s ease;
+}
+
+@keyframes nota-aparece {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.nota-item.vencida {
+    opacity: 0.55;
+    border-left-color: var(--text-secondary);
+}
+
+.nota-item-texto {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding-right: 4px;
+}
+
+.nota-item-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.nota-item-vence {
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
+.nota-item.vencida .nota-item-vence {
+    color: var(--color-moroso);
+}
+
+.btn-borrar-nota {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    padding: 3px 7px;
+    border-radius: 6px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.btn-borrar-nota:hover {
+    background: rgba(220, 53, 69, 0.12);
+    color: #dc3545;
+}
+
 /* ============ CALENDARIO VISUAL DE COBROS (A6) ============ */
 .calendar-nav {
     display: flex;
@@ -2383,6 +2458,94 @@ body {
 [data-theme="dark"] .mora-total-banner .mora-total-label,
 [data-theme="dark"] .mora-total-banner .mora-total-value {
     color: #fca5a5;
+}
+
+/* Nota de seguimiento visible directamente en la tarjeta de cobro */
+.nota-cobro-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, rgba(255,193,7,0.16), rgba(255,193,7,0.05));
+    border-top: 1px solid rgba(255,193,7,0.3);
+    border-bottom: 1px solid rgba(255,193,7,0.3);
+}
+
+.nota-cobro-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 0.8rem;
+}
+
+.nota-cobro-item.nota-cobro-nueva {
+    animation: nota-aparece 0.35s ease;
+}
+
+.nota-cobro-item i.bi-sticky-fill {
+    color: #b8860b;
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 0.75rem;
+}
+
+.nota-cobro-texto {
+    flex: 1;
+    color: #6b4800;
+    word-break: break-word;
+}
+
+.btn-borrar-nota-cobro {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #6b4800;
+    opacity: 0.55;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.btn-borrar-nota-cobro:hover {
+    opacity: 1;
+    background: rgba(220,53,69,0.15);
+    color: #dc3545;
+}
+
+[data-theme="dark"] .nota-cobro-banner {
+    background: linear-gradient(135deg, rgba(255,213,79,0.14), rgba(255,213,79,0.04));
+    border-top-color: rgba(255,213,79,0.25);
+    border-bottom-color: rgba(255,213,79,0.25);
+}
+
+[data-theme="dark"] .nota-cobro-texto,
+[data-theme="dark"] .nota-cobro-item i.bi-sticky-fill,
+[data-theme="dark"] .btn-borrar-nota-cobro {
+    color: #ffd54f;
+}
+
+/* Botón compacto para agregar una nota desde la tarjeta de cobro */
+.btn-add-nota-cobro {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    padding: 1px 0;
+    cursor: pointer;
+}
+
+.btn-add-nota-cobro:hover {
+    color: #b8860b;
+}
+
+[data-theme="dark"] .btn-add-nota-cobro:hover {
+    color: #ffd54f;
 }
 
 

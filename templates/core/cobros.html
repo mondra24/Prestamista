@@ -90,13 +90,14 @@
             <div id="collapseVencidas" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% for cuota in cuotas_vencidas %}
-                    <div class="payment-card vencida filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                    <div class="payment-card vencida filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}" data-prestamo-id="{{ cuota.prestamo.pk }}">
                         <div class="payment-card-header">
                             <div class="client-info">
                                 <div class="client-avatar vencida">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
                                 <div class="client-details">
                                     <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
                                     <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                                    <button type="button" class="btn-add-nota-cobro" data-prestamo-id="{{ cuota.prestamo.pk }}" data-cliente-nombre="{{ cuota.prestamo.cliente.nombre_completo|escapejs }}" title="Agregar nota de seguimiento"><i class="bi bi-sticky"></i> Nota</button>
                                 </div>
                             </div>
                             <div class="amount-section vencida">
@@ -104,6 +105,17 @@
                                 <span class="overdue-badge">{{ cuota.dias_vencida }} días</span>
                             </div>
                         </div>
+                        {% with notas=cuota.prestamo.notas_vigentes %}{% if notas %}
+                        <div class="nota-cobro-banner">
+                            {% for nota in notas %}
+                            <div class="nota-cobro-item" data-nota-id="{{ nota.pk }}">
+                                <i class="bi bi-sticky-fill"></i>
+                                <span class="nota-cobro-texto">{{ nota.texto }}</span>
+                                <button type="button" class="btn-borrar-nota-cobro" data-nota-id="{{ nota.pk }}" title="Resolver nota"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}{% endwith %}
                         {% if cuota.interes_mora_pendiente > 0 %}
                         <div class="mora-total-banner">
                             <span class="mora-total-label">
@@ -197,19 +209,31 @@
                 <div class="accordion-body p-2">
                     {% if cuotas_hoy %}
                         {% for cuota in cuotas_hoy %}
-                        <div class="payment-card pendiente filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                        <div class="payment-card pendiente filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}" data-prestamo-id="{{ cuota.prestamo.pk }}">
                             <div class="payment-card-header">
                                 <div class="client-info">
                                     <div class="client-avatar">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
                                     <div class="client-details">
                                         <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
                                         <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}{% if cuota.estado == 'PC' %} <span class="partial-dot"></span>{% endif %}</span>
+                                        <button type="button" class="btn-add-nota-cobro" data-prestamo-id="{{ cuota.prestamo.pk }}" data-cliente-nombre="{{ cuota.prestamo.cliente.nombre_completo|escapejs }}" title="Agregar nota de seguimiento"><i class="bi bi-sticky"></i> Nota</button>
                                     </div>
                                 </div>
                                 <div class="amount-section">
                                     <span class="amount">{{ cuota.monto_restante|dinero }}</span>
                                 </div>
                             </div>
+                            {% with notas=cuota.prestamo.notas_vigentes %}{% if notas %}
+                            <div class="nota-cobro-banner">
+                                {% for nota in notas %}
+                                <div class="nota-cobro-item" data-nota-id="{{ nota.pk }}">
+                                    <i class="bi bi-sticky-fill"></i>
+                                    <span class="nota-cobro-texto">{{ nota.texto }}</span>
+                                    <button type="button" class="btn-borrar-nota-cobro" data-nota-id="{{ nota.pk }}" title="Resolver nota"><i class="bi bi-x-lg"></i></button>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}{% endwith %}
                             <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                                 <div class="info-chips">
                                     {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
@@ -306,13 +330,14 @@
                         <div class="collapse" id="proxDia{{ forloop.counter }}">
                             <div class="pt-2">
                             {% for cuota in dia.cuotas %}
-                            <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                            <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}" data-prestamo-id="{{ cuota.prestamo.pk }}">
                                 <div class="payment-card-header">
                                     <div class="client-info">
                                         <div class="client-avatar proxima">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
                                         <div class="client-details">
                                             <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
                                             <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                                            <button type="button" class="btn-add-nota-cobro" data-prestamo-id="{{ cuota.prestamo.pk }}" data-cliente-nombre="{{ cuota.prestamo.cliente.nombre_completo|escapejs }}" title="Agregar nota de seguimiento"><i class="bi bi-sticky"></i> Nota</button>
                                         </div>
                                     </div>
                                     <div class="amount-section proxima">
@@ -320,6 +345,17 @@
                                         <span class="date-badge">{{ cuota.fecha_vencimiento|date:"d/m" }}</span>
                                     </div>
                                 </div>
+                                {% with notas=cuota.prestamo.notas_vigentes %}{% if notas %}
+                                <div class="nota-cobro-banner">
+                                    {% for nota in notas %}
+                                    <div class="nota-cobro-item" data-nota-id="{{ nota.pk }}">
+                                        <i class="bi bi-sticky-fill"></i>
+                                        <span class="nota-cobro-texto">{{ nota.texto }}</span>
+                                        <button type="button" class="btn-borrar-nota-cobro" data-nota-id="{{ nota.pk }}" title="Resolver nota"><i class="bi bi-x-lg"></i></button>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}{% endwith %}
                                 <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                                     <div class="info-chips">
                                         {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
@@ -380,13 +416,14 @@
             <div id="collapseMes" class="accordion-collapse collapse" data-bs-parent="#accordionCobros">
                 <div class="accordion-body p-2">
                     {% for cuota in cuotas_mes %}
-                    <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}">
+                    <div class="payment-card proxima filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}" data-prestamo-id="{{ cuota.prestamo.pk }}">
                         <div class="payment-card-header">
                             <div class="client-info">
                                 <div class="client-avatar" style="background: #6c757d;">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
                                 <div class="client-details">
                                     <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
                                     <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                                    <button type="button" class="btn-add-nota-cobro" data-prestamo-id="{{ cuota.prestamo.pk }}" data-cliente-nombre="{{ cuota.prestamo.cliente.nombre_completo|escapejs }}" title="Agregar nota de seguimiento"><i class="bi bi-sticky"></i> Nota</button>
                                 </div>
                             </div>
                             <div class="amount-section">
@@ -394,6 +431,17 @@
                                 <span class="date-badge" style="background: #e9ecef; color: #495057;">{{ cuota.fecha_vencimiento|date:"d M" }}</span>
                             </div>
                         </div>
+                        {% with notas=cuota.prestamo.notas_vigentes %}{% if notas %}
+                        <div class="nota-cobro-banner">
+                            {% for nota in notas %}
+                            <div class="nota-cobro-item" data-nota-id="{{ nota.pk }}">
+                                <i class="bi bi-sticky-fill"></i>
+                                <span class="nota-cobro-texto">{{ nota.texto }}</span>
+                                <button type="button" class="btn-borrar-nota-cobro" data-nota-id="{{ nota.pk }}" title="Resolver nota"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}{% endwith %}
                         <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
                             <div class="info-chips">
                                 {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
@@ -746,6 +794,35 @@
                         <i class="bi bi-person-plus me-2"></i>Nuevo
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: agregar nota de seguimiento rápida (sin salir de Cobros) -->
+<div class="modal fade" id="modal-nota-prestamo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-3" style="background: #ffc107;">
+                <h5 class="modal-title"><i class="bi bi-sticky-fill me-2"></i>Nota de Seguimiento</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="nota-prestamo-id">
+                <p class="text-muted small mb-2" id="nota-cliente-nombre"></p>
+                <textarea class="form-control mb-2" id="nota-texto-input" maxlength="280" rows="3"
+                          placeholder="Ej: Hablé con el cliente por WhatsApp, tuvo un problema, paga el 25."></textarea>
+                <label class="form-label small fw-semibold mb-1">¿Cuánto tiempo la dejamos?</label>
+                <select class="form-select mb-3" id="nota-duracion-input">
+                    <option value="3D">3 días</option>
+                    <option value="7D" selected>1 semana</option>
+                    <option value="15D">15 días</option>
+                    <option value="PC">Hasta la próxima cuota</option>
+                    <option value="SV">Sin vencimiento</option>
+                </select>
+                <button type="button" class="btn btn-warning w-100" id="btn-guardar-nota-cobro">
+                    <i class="bi bi-check-lg me-1"></i>Guardar nota
+                </button>
             </div>
         </div>
     </div>
@@ -1364,5 +1441,126 @@ document.querySelectorAll('.btn-categoria-opcion').forEach(btn => {
         }
     });
 });
+
+// ============ NOTAS DE SEGUIMIENTO ============
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const modalEl = document.getElementById('modal-nota-prestamo');
+    const modalNota = new bootstrap.Modal(modalEl);
+    const inputPrestamoId = document.getElementById('nota-prestamo-id');
+    const clienteNombreEl = document.getElementById('nota-cliente-nombre');
+    const textoInput = document.getElementById('nota-texto-input');
+    const duracionInput = document.getElementById('nota-duracion-input');
+    const btnGuardar = document.getElementById('btn-guardar-nota-cobro');
+
+    function crearBannerNota(nota) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'nota-cobro-banner';
+        const item = document.createElement('div');
+        item.className = 'nota-cobro-item nota-cobro-nueva';
+        item.dataset.notaId = nota.id;
+        const icon = document.createElement('i');
+        icon.className = 'bi bi-sticky-fill';
+        const texto = document.createElement('span');
+        texto.className = 'nota-cobro-texto';
+        texto.textContent = nota.texto; // texto vía textContent, no innerHTML (evita XSS)
+        const btnBorrar = document.createElement('button');
+        btnBorrar.type = 'button';
+        btnBorrar.className = 'btn-borrar-nota-cobro';
+        btnBorrar.title = 'Resolver nota';
+        btnBorrar.dataset.notaId = nota.id;
+        btnBorrar.innerHTML = '<i class="bi bi-x-lg"></i>';
+        item.append(icon, texto, btnBorrar);
+        wrapper.appendChild(item);
+        return wrapper;
+    }
+
+    // Abrir modal desde cualquier tarjeta de cobro
+    document.querySelectorAll('.btn-add-nota-cobro').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            inputPrestamoId.value = this.dataset.prestamoId;
+            clienteNombreEl.textContent = this.dataset.clienteNombre || '';
+            textoInput.value = '';
+            duracionInput.value = '7D';
+            modalNota.show();
+            setTimeout(() => textoInput.focus(), 300);
+        });
+    });
+
+    // Guardar nueva nota (dinámico: se inyecta en la tarjeta sin recargar la página)
+    btnGuardar.addEventListener('click', async function() {
+        const texto = textoInput.value.trim();
+        if (!texto) {
+            textoInput.classList.add('is-invalid');
+            textoInput.focus();
+            return;
+        }
+        textoInput.classList.remove('is-invalid');
+        btnGuardar.disabled = true;
+        try {
+            const resp = await fetch(`/api/prestamo/${inputPrestamoId.value}/notas/crear/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({ texto: texto, duracion: duracionInput.value })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                document.querySelectorAll(`.payment-card[data-prestamo-id="${inputPrestamoId.value}"]`).forEach(function(card) {
+                    // Ya tiene un banner de notas: le agrego el item ahí. Si no, creo el banner.
+                    const bannerExistente = card.querySelector('.nota-cobro-banner');
+                    if (bannerExistente) {
+                        const nuevoBanner = crearBannerNota(data.data);
+                        bannerExistente.appendChild(nuevoBanner.firstElementChild);
+                    } else {
+                        const header = card.querySelector('.payment-card-header');
+                        header.insertAdjacentElement('afterend', crearBannerNota(data.data));
+                    }
+                });
+                modalNota.hide();
+                showToast('Nota guardada', 'success');
+            } else {
+                showToast(data.message || 'No se pudo guardar la nota', 'danger');
+            }
+        } catch (e) {
+            showToast('Error de conexión', 'danger');
+        } finally {
+            btnGuardar.disabled = false;
+        }
+    });
+
+    // Borrar nota (delegado: los banners se agregan dinámicamente)
+    document.addEventListener('click', async function(e) {
+        const btn = e.target.closest('.btn-borrar-nota-cobro');
+        if (!btn) return;
+        if (!confirm('¿Eliminar esta nota?')) return;
+        const notaId = btn.dataset.notaId;
+        btn.disabled = true;
+        try {
+            const resp = await fetch(`/api/notas/${notaId}/eliminar/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                // Puede haber la misma nota repetida en más de una tarjeta (mismo préstamo,
+                // varias cuotas visibles) - se sacan todas las apariciones.
+                document.querySelectorAll(`.nota-cobro-item[data-nota-id="${notaId}"]`).forEach(function(item) {
+                    const banner = item.closest('.nota-cobro-banner');
+                    item.remove();
+                    if (banner && !banner.querySelector('.nota-cobro-item')) banner.remove();
+                });
+            } else {
+                showToast(data.message || 'No se pudo eliminar', 'danger');
+                btn.disabled = false;
+            }
+        } catch (e2) {
+            showToast('Error de conexión', 'danger');
+            btn.disabled = false;
+        }
+    });
+})();
 </script>
 {% endblock %}
