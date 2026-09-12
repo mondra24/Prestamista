@@ -923,6 +923,26 @@ class Prestamo(models.Model):
                 fecha_vencimiento=fecha_vencimiento
             )
     
+    def siguiente_fecha_cuota(self, fecha_actual):
+        """
+        Calcula la fecha de vencimiento de la próxima cuota a partir de una
+        fecha dada, según la frecuencia del préstamo. Misma regla que usa
+        generar_cuotas(), extraída para poder agregar cuotas sueltas al
+        final de un cronograma existente (ver PrestamoUpdateView).
+        """
+        if self.frecuencia == self.Frecuencia.DIARIO:
+            fecha = fecha_actual + timedelta(days=1)
+            while fecha.weekday() == 6:
+                fecha += timedelta(days=1)
+            return fecha
+        elif self.frecuencia == self.Frecuencia.SEMANAL:
+            return fecha_actual + timedelta(weeks=1)
+        elif self.frecuencia == self.Frecuencia.QUINCENAL:
+            return fecha_actual + timedelta(days=14)
+        elif self.frecuencia == self.Frecuencia.MENSUAL:
+            return fecha_actual + timedelta(days=28)
+        return fecha_actual
+
     def _generar_cuota_pago_unico(self):
         """
         Genera la cuota para pago único.

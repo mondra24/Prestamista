@@ -800,21 +800,55 @@ class PrestamoUpdateView(LoginRequiredMixin, UpdateView):
         # Recalcular monto total
         interes = prestamo.monto_solicitado * (prestamo.tasa_interes_porcentaje / 100)
         prestamo.monto_total_a_pagar = prestamo.monto_solicitado + interes
-        
+
         # Recalcular fecha de finalización si no es manual
         if not prestamo.fecha_finalizacion_manual or not prestamo.fecha_finalizacion:
             prestamo.fecha_finalizacion = prestamo.calcular_fecha_finalizacion()
-        
-        prestamo.save()
-        
-        # Redistribuir montos en cuotas pendientes
-        cuotas_pendientes = prestamo.cuotas.filter(estado='PE').order_by('numero_cuota')
-        if cuotas_pendientes.exists():
-            monto_pagado = prestamo.monto_pagado
-            monto_restante = prestamo.monto_total_a_pagar - monto_pagado
-            nueva_cuota_monto = monto_restante / cuotas_pendientes.count() if cuotas_pendientes.count() > 0 else Decimal('0')
-            cuotas_pendientes.update(monto_cuota=round(nueva_cuota_monto, 2))
-        
+
+        with transaction.atomic():
+            prestamo.save()
+
+            # Sincronizar la cantidad de cuotas pendientes con cuotas_pactadas.
+            # Antes esto solo redistribuía el monto entre las cuotas PE que ya
+            # existían: si cuotas_pactadas cambiaba (ej. de 2 a 3), la cuota
+            # nueva nunca se creaba y todo lo que lee las cuotas (el detalle,
+            # los mensajes automáticos) seguía viendo el cronograma viejo.
+            cuotas_resueltas = prestamo.cuotas.filter(estado__in=['PA', 'PC']).count()
+            cuotas_pendientes = list(prestamo.cuotas.filter(estado='PE').order_by('numero_cuota'))
+            necesarias = max(prestamo.cuotas_pactadas - cuotas_resueltas, 0)
+
+            if len(cuotas_pendientes) > necesarias:
+                # Sobran cuotas pendientes: se borran las últimas (nunca las
+                # que ya tienen pago, esas no están en este queryset)
+                for cuota in cuotas_pendientes[necesarias:]:
+                    cuota.delete()
+                cuotas_pendientes = cuotas_pendientes[:necesarias]
+            elif len(cuotas_pendientes) < necesarias:
+                # Faltan cuotas pendientes: se generan continuando el
+                # cronograma desde la última cuota existente
+                ultima_cuota = prestamo.cuotas.order_by('-numero_cuota').first()
+                ultimo_numero = ultima_cuota.numero_cuota if ultima_cuota else 0
+                fecha_vencimiento = ultima_cuota.fecha_vencimiento if ultima_cuota else prestamo.fecha_inicio
+                faltan = necesarias - len(cuotas_pendientes)
+                for _ in range(faltan):
+                    ultimo_numero += 1
+                    fecha_vencimiento = prestamo.siguiente_fecha_cuota(fecha_vencimiento)
+                    cuotas_pendientes.append(Cuota.objects.create(
+                        prestamo=prestamo,
+                        numero_cuota=ultimo_numero,
+                        monto_cuota=Decimal('0.00'),
+                        fecha_vencimiento=fecha_vencimiento
+                    ))
+
+            # Redistribuir el monto restante entre las cuotas pendientes ya sincronizadas
+            if cuotas_pendientes:
+                monto_pagado = prestamo.monto_pagado
+                monto_restante = prestamo.monto_total_a_pagar - monto_pagado
+                nueva_cuota_monto = round(monto_restante / len(cuotas_pendientes), 2)
+                for cuota in cuotas_pendientes:
+                    cuota.monto_cuota = nueva_cuota_monto
+                Cuota.objects.bulk_update(cuotas_pendientes, ['monto_cuota'])
+
         messages.success(self.request, 'Préstamo actualizado exitosamente.')
         return redirect('core:prestamo_detail', pk=prestamo.pk)
     

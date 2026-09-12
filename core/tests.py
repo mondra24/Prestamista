@@ -662,6 +662,93 @@ class PrestamoFormTest(TestCase):
         self.assertEqual(self.cliente.credito_usado, esperado)
 
 
+class EditarPrestamoSincronizaCuotasTest(TestCase):
+    """
+    Reportado por el cliente: al editar un préstamo (ej. de 2 a 3 cuotas),
+    los datos generales se actualizaban pero las cuotas seguían siendo las
+    mismas de antes, y por lo tanto los mensajes automáticos que leen esas
+    cuotas también quedaban desactualizados.
+    """
+
+    def setUp(self):
+        self.client = TestClient()
+        self.user = User.objects.create_user(username='editor', password='x')
+        self.client.login(username='editor', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Edita', apellido='Cuotas', telefono='123', direccion='x',
+            usuario=self.user
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+            cobrador=self.user
+        )
+
+    def _datos_edicion(self, cuotas_pactadas):
+        return {
+            'cliente': self.cliente.pk,
+            'monto_solicitado': '10.000',
+            'tasa_interes_porcentaje': '10',
+            'cuotas_pactadas': str(cuotas_pactadas),
+            'frecuencia': 'SE',
+            'fecha_inicio': self.prestamo.fecha_inicio.isoformat(),
+        }
+
+    def test_aumentar_cuotas_pactadas_crea_la_cuota_faltante(self):
+        self.assertEqual(self.prestamo.cuotas.count(), 2)
+
+        response = self.client.post(
+            reverse('core:prestamo_update', kwargs={'pk': self.prestamo.pk}),
+            self._datos_edicion(3)
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.cuotas_pactadas, 3)
+        self.assertEqual(self.prestamo.cuotas.count(), 3)
+        cuota3 = self.prestamo.cuotas.get(numero_cuota=3)
+        # La fecha sigue el cronograma semanal a partir de la última cuota existente
+        cuota2 = self.prestamo.cuotas.get(numero_cuota=2)
+        self.assertEqual(cuota3.fecha_vencimiento, cuota2.fecha_vencimiento + timedelta(weeks=1))
+        # El monto total se redistribuye entre las 3 cuotas pendientes
+        # (con centavos de diferencia posibles por redondeo, igual que al crear)
+        total = sum((c.monto_cuota for c in self.prestamo.cuotas.all()), Decimal('0'))
+        self.assertLessEqual(abs(total - self.prestamo.monto_total_a_pagar), Decimal('0.02'))
+
+    def test_disminuir_cuotas_pactadas_borra_la_cuota_sobrante(self):
+        response = self.client.post(
+            reverse('core:prestamo_update', kwargs={'pk': self.prestamo.pk}),
+            self._datos_edicion(1)
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.cuotas_pactadas, 1)
+        self.assertEqual(self.prestamo.cuotas.count(), 1)
+        cuota_restante = self.prestamo.cuotas.first()
+        self.assertEqual(cuota_restante.monto_cuota, self.prestamo.monto_total_a_pagar)
+
+    def test_no_permite_bajar_cuotas_por_debajo_de_las_ya_pagadas(self):
+        # Se pagan las 2 cuotas del préstamo original
+        for cuota in self.prestamo.cuotas.order_by('numero_cuota'):
+            cuota.registrar_pago(cuota.monto_cuota, cobrador=self.user)
+
+        response = self.client.post(
+            reverse('core:prestamo_update', kwargs={'pk': self.prestamo.pk}),
+            self._datos_edicion(1)  # bajar de 2 a 1, con las 2 ya pagadas
+        )
+
+        self.assertEqual(response.status_code, 200)  # form_invalid: vuelve a mostrar el form
+        self.assertContains(response, 'ya hay')
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.cuotas_pactadas, 2)  # no se modificó
+        self.assertEqual(self.prestamo.cuotas.count(), 2)
+
+
 class RepasoSemanaCobrosViewTest(TestCase):
     """Tests para A5: repaso semanal cobrado vs. no cobrado en la vista de Cobros"""
 

@@ -340,7 +340,19 @@ class PrestamoForm(forms.ModelForm):
         # Pago único fuerza 1 cuota
         if frecuencia == 'PU':
             cleaned_data['cuotas_pactadas'] = 1
-        
+
+        # Al editar, no dejar bajar la cantidad de cuotas por debajo de las
+        # que ya tienen pago (parcial o completo) registrado
+        cuotas_pactadas = cleaned_data.get('cuotas_pactadas')
+        if self.instance and self.instance.pk and cuotas_pactadas:
+            cuotas_resueltas = self.instance.cuotas.filter(estado__in=['PA', 'PC']).count()
+            if cuotas_pactadas < cuotas_resueltas:
+                self.add_error(
+                    'cuotas_pactadas',
+                    f'No se puede bajar a {cuotas_pactadas} cuotas: ya hay {cuotas_resueltas} '
+                    f'cuotas con pagos registrados.'
+                )
+
         return cleaned_data
     
     def save(self, commit=True):
