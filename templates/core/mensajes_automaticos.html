@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Mensajes Automáticos - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+
+    <div class="d-flex align-items-center mb-4">
+        <a href="{% url 'core:whatsapp_conexion' %}" class="btn btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="h4 mb-0">
+            <i class="bi bi-chat-dots me-2"></i>Mensajes Automáticos
+        </h1>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="badge {% if config.activo %}bg-success{% else %}bg-secondary{% endif %}" id="ma-status-pill">
+                    Automatización: {% if config.activo %}activada{% else %}desactivada{% endif %}
+                </span>
+                {% if config.activo %}
+                <button type="button" class="btn btn-sm btn-outline-danger ms-auto" id="btn-desactivar">Desactivar</button>
+                {% endif %}
+            </div>
+
+            {% if not config.activo %}
+            <div id="confirm-box">
+                <p class="text-muted">
+                    Antes de activar, confirmá que querés mandar estos 3 mensajes automáticos a los clientes,
+                    usando el número de WhatsApp vinculado.
+                </p>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="confirm-check">
+                    <label class="form-check-label" for="confirm-check">
+                        Confirmo que quiero activar el envío automático de estos mensajes.
+                    </label>
+                </div>
+                <button type="button" class="btn btn-success" id="btn-activar" disabled>
+                    Activar mensajes automáticos
+                </button>
+            </div>
+            {% else %}
+            <div id="cfg-panel">
+                <h6 class="mt-2">Configuración completa</h6>
+                <p class="text-muted small">
+                    Días, horario y qué días de la semana se puede mandar cada mensaje. Variables disponibles
+                    en el texto:
+                    <code>{% templatetag openvariable %}nombre{% templatetag closevariable %}</code>,
+                    <code>{% templatetag openvariable %}monto{% templatetag closevariable %}</code>,
+                    <code>{% templatetag openvariable %}fecha_vencimiento{% templatetag closevariable %}</code>.
+                </p>
+
+                {% include 'core/_mensaje_config_row.html' with prefijo='recordatorio' titulo='Recordatorio preventivo' campo_dias='recordatorio_dias_antes' etiqueta_dias='Días antes' activo=config.recordatorio_activo dias_valor=config.recordatorio_dias_antes hora=config.recordatorio_hora dias_semana=config.recordatorio_dias_semana plantilla=config.recordatorio_plantilla %}
+
+                {% include 'core/_mensaje_config_row.html' with prefijo='aviso_dia' titulo='Aviso del día' sin_dias=True activo=config.aviso_dia_activo hora=config.aviso_dia_hora dias_semana=config.aviso_dia_dias_semana plantilla=config.aviso_dia_plantilla %}
+
+                {% include 'core/_mensaje_config_row.html' with prefijo='aviso_mora' titulo='Aviso de mora' campo_dias='aviso_mora_dias_despues' etiqueta_dias='Días después' activo=config.aviso_mora_activo dias_valor=config.aviso_mora_dias_despues hora=config.aviso_mora_hora dias_semana=config.aviso_mora_dias_semana plantilla=config.aviso_mora_plantilla %}
+
+                <button type="button" class="btn btn-outline-primary mt-2" id="btn-guardar-cfg">
+                    <i class="bi bi-check-lg me-1"></i>Guardar configuración
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.ma-row { border-bottom: 1px solid var(--border-color); padding: 16px 0; }
+.ma-row:last-of-type { border-bottom: none; }
+.ma-row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ma-daychips { display: flex; gap: 4px; }
+.ma-daychip {
+    width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-color);
+    background: var(--bg-card); font-size: 0.7rem; font-weight: 700; color: var(--text-secondary);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.ma-daychip.active { background: #198754; border-color: #198754; color: #fff; }
+.ma-fields { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.ma-field { display: flex; flex-direction: column; gap: 4px; }
+.ma-field label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-secondary); }
+.ma-field input[type=number] { width: 64px; }
+.ma-field input[type=time] { width: 100px; }
+</style>
+
+<script>
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    function showToast(msg, tipo) {
+        // Reutiliza el toast global si existe (definido en base.html); si no, alert simple
+        if (typeof window.showToast === 'function') {
+            window.showToast(msg, tipo || 'success');
+        } else {
+            alert(msg);
+        }
+    }
+
+    // ---- Chips de días de la semana ----
+    document.querySelectorAll('.ma-daychips').forEach(function(container) {
+        const dias = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+        const activos = (container.dataset.value || '').toUpperCase();
+        dias.forEach(function(d) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ma-daychip' + (activos.includes(d) ? ' active' : '');
+            btn.textContent = d;
+            btn.addEventListener('click', function() { btn.classList.toggle('active'); });
+            container.appendChild(btn);
+        });
+    });
+
+    function leerDiasSemana(container) {
+        return Array.from(container.querySelectorAll('.ma-daychip.active')).map(b => b.textContent).join('');
+    }
+
+    // ---- Confirmación + activación ----
+    const confirmCheck = document.getElementById('confirm-check');
+    const btnActivar = document.getElementById('btn-activar');
+    if (confirmCheck) {
+        confirmCheck.addEventListener('change', function() {
+            btnActivar.disabled = !this.checked;
+        });
+    }
+    if (btnActivar) {
+        btnActivar.addEventListener('click', async function() {
+            btnActivar.disabled = true;
+            try {
+                const resp = await fetch('/api/mensajes-automaticos/activar/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 600);
+                } else {
+                    showToast(data.message || 'Error', 'danger');
+                    btnActivar.disabled = false;
+                }
+            } catch (e) {
+                showToast('Error de conexión', 'danger');
+                btnActivar.disabled = false;
+            }
+        });
+    }
+
+    const btnDesactivar = document.getElementById('btn-desactivar');
+    if (btnDesactivar) {
+        btnDesactivar.addEventListener('click', async function() {
+            if (!confirm('¿Desactivar el envío automático de mensajes?')) return;
+            btnDesactivar.disabled = true;
+            try {
+                const resp = await fetch('/api/mensajes-automaticos/desactivar/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    setTimeout(() => location.reload(), 600);
+                } else {
+                    showToast(data.message || 'Error', 'danger');
+                }
+            } catch (e) {
+                showToast('Error de conexión', 'danger');
+            } finally {
+                btnDesactivar.disabled = false;
+            }
+        });
+    }
+
+    // ---- Guardar configuración completa ----
+    const btnGuardar = document.getElementById('btn-guardar-cfg');
+    if (btnGuardar) {
+        btnGuardar.addEventListener('click', async function() {
+            btnGuardar.disabled = true;
+            try {
+                const payload = {};
+                document.querySelectorAll('[data-prefijo]').forEach(function(row) {
+                    const prefijo = row.dataset.prefijo;
+                    const activoInput = row.querySelector('[data-campo="activo"]');
+                    const diasInput = row.querySelector('[data-campo="dias"]');
+                    const horaInput = row.querySelector('[data-campo="hora"]');
+                    const plantillaInput = row.querySelector('[data-campo="plantilla"]');
+                    const chipsContainer = row.querySelector('.ma-daychips');
+
+                    if (activoInput) payload[prefijo + '_activo'] = activoInput.checked;
+                    if (diasInput) payload[diasInput.dataset.nombre] = parseInt(diasInput.value, 10);
+                    if (horaInput) payload[prefijo + '_hora'] = horaInput.value;
+                    if (plantillaInput) payload[prefijo + '_plantilla'] = plantillaInput.value;
+                    if (chipsContainer) payload[prefijo + '_dias_semana'] = leerDiasSemana(chipsContainer);
+                });
+
+                const resp = await fetch('/api/mensajes-automaticos/guardar/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast(data.message, 'success');
+                } else {
+                    showToast(data.message || 'Error', 'danger');
+                }
+            } catch (e) {
+                showToast('Error de conexión', 'danger');
+            } finally {
+                btnGuardar.disabled = false;
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

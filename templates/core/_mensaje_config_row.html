@@ -1,0 +1,34 @@
+{% comment %}
+Fila de configuración de un mensaje automático (recordatorio / aviso del
+día / aviso de mora). Reutilizada 3 veces en mensajes_automaticos.html con
+distintos valores. `sin_dias=True` oculta el campo de offset de días
+(el aviso del día siempre es el mismo día, no tiene "antes"/"después").
+{% endcomment %}
+<div class="ma-row" data-prefijo="{{ prefijo }}">
+    <div class="ma-row-head">
+        <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" role="switch" data-campo="activo" id="{{ prefijo }}-activo" {% if activo %}checked{% endif %}>
+        </div>
+        <strong>{{ titulo }}</strong>
+    </div>
+    <div class="ma-fields">
+        {% if not sin_dias %}
+        <div class="ma-field">
+            <label for="{{ prefijo }}-dias">{{ etiqueta_dias }}</label>
+            <input type="number" class="form-control form-control-sm" min="0" max="30" value="{{ dias_valor }}" id="{{ prefijo }}-dias" data-campo="dias" data-nombre="{{ campo_dias }}">
+        </div>
+        {% endif %}
+        <div class="ma-field">
+            <label for="{{ prefijo }}-hora">Hora</label>
+            <input type="time" class="form-control form-control-sm" value="{{ hora|time:'H:i' }}" id="{{ prefijo }}-hora" data-campo="hora">
+        </div>
+        <div class="ma-field" style="flex:1; min-width:220px;">
+            <label>Días activos</label>
+            <div class="ma-daychips" data-value="{{ dias_semana }}"></div>
+        </div>
+    </div>
+    <div class="ma-field mt-2" style="width:100%;">
+        <label for="{{ prefijo }}-plantilla">Texto del mensaje</label>
+        <textarea class="form-control form-control-sm" rows="2" id="{{ prefijo }}-plantilla" data-campo="plantilla">{{ plantilla }}</textarea>
+    </div>
+</div>

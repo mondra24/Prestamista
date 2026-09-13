@@ -10,7 +10,7 @@ from .models import (
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionMora, InteresMora, HistorialModificacionPago,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
-    ConfiguracionMoraReciente
+    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos
 )
 
 User = get_user_model()
@@ -391,11 +391,36 @@ class ConfiguracionWhatsAppAdmin(admin.ModelAdmin):
 
 @admin.register(EnvioWhatsApp)
 class EnvioWhatsAppAdmin(admin.ModelAdmin):
-    list_display = ['cliente', 'tipo', 'exitoso', 'fecha_envio', 'message_id']
-    list_filter = ['tipo', 'exitoso', 'fecha_envio']
+    list_display = ['cliente', 'tipo', 'canal', 'exitoso', 'fecha_envio', 'message_id']
+    list_filter = ['tipo', 'canal', 'exitoso', 'fecha_envio']
     search_fields = ['cliente__nombre', 'cliente__apellido']
-    readonly_fields = ['cliente', 'cuota', 'tipo', 'fecha_envio', 'exitoso', 'error', 'message_id']
+    readonly_fields = ['cliente', 'cuota', 'tipo', 'canal', 'fecha_envio', 'exitoso', 'error', 'message_id']
     date_hierarchy = 'fecha_envio'
 
     def has_add_permission(self, request):
+        return False
+
+
+@admin.register(ConfiguracionMensajesAutomaticos)
+class ConfiguracionMensajesAutomaticosAdmin(admin.ModelAdmin):
+    list_display = ['activo', 'confirmado_en']
+    fieldsets = (
+        ('General', {'fields': ('activo', 'confirmado_en')}),
+        ('Recordatorio preventivo', {'fields': (
+            'recordatorio_activo', 'recordatorio_dias_antes', 'recordatorio_hora',
+            'recordatorio_dias_semana', 'recordatorio_plantilla',
+        )}),
+        ('Aviso del día', {'fields': (
+            'aviso_dia_activo', 'aviso_dia_hora', 'aviso_dia_dias_semana', 'aviso_dia_plantilla',
+        )}),
+        ('Aviso de mora', {'fields': (
+            'aviso_mora_activo', 'aviso_mora_dias_despues', 'aviso_mora_hora',
+            'aviso_mora_dias_semana', 'aviso_mora_plantilla',
+        )}),
+    )
+
+    def has_add_permission(self, request):
+        return not ConfiguracionMensajesAutomaticos.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
         return False

@@ -2540,6 +2540,13 @@ class EnvioWhatsApp(models.Model):
     """
     class Tipo(models.TextChoices):
         RECORDATORIO = 'RE', 'Recordatorio de cuota (B1)'
+        RECORDATORIO_PREVENTIVO = 'RP', 'Recordatorio preventivo (antes del vencimiento)'
+        AVISO_DIA = 'AD', 'Aviso el día del vencimiento'
+        AVISO_MORA = 'AM', 'Aviso de mora (después del vencimiento)'
+
+    class Canal(models.TextChoices):
+        META = 'MC', 'API oficial de Meta'
+        PERSONAL = 'QR', 'Número personal (QR)'
 
     cliente = models.ForeignKey(
         Cliente,
@@ -2556,6 +2563,10 @@ class EnvioWhatsApp(models.Model):
         verbose_name='Cuota'
     )
     tipo = models.CharField(max_length=2, choices=Tipo.choices, verbose_name='Tipo')
+    canal = models.CharField(
+        max_length=2, choices=Canal.choices, default=Canal.META, verbose_name='Canal',
+        help_text='Por cuál de los dos caminos de WhatsApp se mandó (no se mezclan entre sí)'
+    )
     fecha_envio = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Envío')
     exitoso = models.BooleanField(default=False, verbose_name='Exitoso')
     error = models.TextField(blank=True, null=True, verbose_name='Error')
@@ -2582,3 +2593,106 @@ class EnvioWhatsApp(models.Model):
             fecha_envio__date=fecha_local_hoy(),
             exitoso=True
         ).exists()
+
+
+DIAS_SEMANA_CODIGOS = 'LMXJVSD'  # índice = date.weekday() (Lunes=0 ... Domingo=6)
+
+
+class ConfiguracionMensajesAutomaticos(models.Model):
+    """
+    Configuración de los 3 mensajes automáticos por WhatsApp (número
+    personal, vía bridge — ver core/whatsapp_bridge.py): recordatorio antes
+    del vencimiento, aviso el día del vencimiento, y aviso de mora después.
+    Pedido del cliente. Fila única (pk=1).
+
+    `activo` es el interruptor general: hasta que no se confirme una vez
+    (ver `confirmado_en`) y se prenda, el comando de envío no manda nada,
+    aunque los 3 sub-interruptores estén en True.
+    """
+    activo = models.BooleanField(
+        default=False,
+        verbose_name='Mensajes automáticos activos',
+        help_text='Interruptor general. Mientras esté apagado, el comando de envío no hace nada.'
+    )
+    confirmado_en = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Confirmado el',
+        help_text='Cuándo se aceptó por primera vez el envío automático de estos mensajes a los clientes.'
+    )
+
+    # Recordatorio preventivo (antes del vencimiento)
+    recordatorio_activo = models.BooleanField(default=True, verbose_name='Recordatorio preventivo activo')
+    recordatorio_dias_antes = models.PositiveIntegerField(
+        default=2, validators=[MinValueValidator(0), MaxValueValidator(10)],
+        verbose_name='Días antes del vencimiento'
+    )
+    recordatorio_hora = models.TimeField(default='09:00', verbose_name='Hora de envío')
+    recordatorio_dias_semana = models.CharField(
+        max_length=7, default='LMXJVS', blank=True,
+        verbose_name='Días activos',
+        help_text='Letras de DIAS_SEMANA_CODIGOS (L M X J V S D) presentes en el string cuentan como activas.'
+    )
+    recordatorio_plantilla = models.TextField(
+        default='Hola {{nombre}} 👋 Te recordamos que el {{fecha_vencimiento}} vence tu cuota de {{monto}}. '
+                '¡Gracias por tu pago puntual!',
+        verbose_name='Texto del mensaje',
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+    )
+
+    # Aviso el día del vencimiento
+    aviso_dia_activo = models.BooleanField(default=True, verbose_name='Aviso del día activo')
+    aviso_dia_hora = models.TimeField(default='09:00', verbose_name='Hora de envío')
+    aviso_dia_dias_semana = models.CharField(
+        max_length=7, default='LMXJVS', blank=True, verbose_name='Días activos'
+    )
+    aviso_dia_plantilla = models.TextField(
+        default='Hola {{nombre}}, hoy vence tu cuota de {{monto}}. Podés abonarla con tu cobrador o por '
+                'transferencia. ¡Te esperamos!',
+        verbose_name='Texto del mensaje',
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+    )
+
+    # Aviso de mora (después del vencimiento, si todavía no pagó)
+    aviso_mora_activo = models.BooleanField(default=True, verbose_name='Aviso de mora activo')
+    aviso_mora_dias_despues = models.PositiveIntegerField(
+        default=4, validators=[MinValueValidator(1), MaxValueValidator(30)],
+        verbose_name='Días después del vencimiento'
+    )
+    aviso_mora_hora = models.TimeField(default='09:00', verbose_name='Hora de envío')
+    aviso_mora_dias_semana = models.CharField(
+        max_length=7, default='LMXJV', blank=True, verbose_name='Días activos'
+    )
+    aviso_mora_plantilla = models.TextField(
+        default='Hola {{nombre}}, notamos que tu cuota de {{monto}} venció el {{fecha_vencimiento}} y '
+                'todavía no la registramos. Por favor comunicate para regularizar tu situación.',
+        verbose_name='Texto del mensaje',
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de Mensajes Automáticos'
+        verbose_name_plural = 'Configuración de Mensajes Automáticos'
+
+    def __str__(self):
+        return 'Mensajes automáticos: ' + ('activos' if self.activo else 'inactivos')
+
+    @classmethod
+    def obtener(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+    @staticmethod
+    def dia_activo(dias_semana, fecha):
+        """True si `fecha` cae en un día marcado como activo en el string `dias_semana`"""
+        codigo = DIAS_SEMANA_CODIGOS[fecha.weekday()]
+        return codigo in dias_semana
+
+    def renderizar_plantilla(self, plantilla, cuota):
+        """Reemplaza {{nombre}}, {{monto}}, {{fecha_vencimiento}} con los datos de la cuota"""
+        from .templatetags.currency_filters import dinero
+        return (
+            plantilla
+            .replace('{{nombre}}', cuota.prestamo.cliente.nombre)
+            .replace('{{monto}}', dinero(cuota.monto_restante))
+            .replace('{{fecha_vencimiento}}', cuota.fecha_vencimiento.strftime('%d/%m/%Y'))
+        )

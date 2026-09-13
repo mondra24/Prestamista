@@ -14,12 +14,13 @@ from django.utils import timezone
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from unittest.mock import patch
+from contextlib import contextmanager
 
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
-    ConfiguracionMoraReciente
+    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 from . import whatsapp as whatsapp_module
@@ -959,6 +960,17 @@ class WhatsAppConexionViewTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['bridge_configurado'])
+
+    def test_admin_ve_la_pantalla_si_el_bridge_esta_configurado(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True):
+            response = client.get(reverse('core:whatsapp_conexion'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['bridge_configurado'])
+        self.assertContains(response, 'Configurar mensajes automáticos')
 
     def test_estado_no_admin_devuelve_403(self):
         client = TestClient()
@@ -3935,3 +3947,285 @@ class RecordatorioWhatsAppDiarioCommandTest(TestCase):
             with patch('core.management.commands.recordatorio_whatsapp_diario.enviar_plantilla_whatsapp') as mock_enviar:
                 call_command('recordatorio_whatsapp_diario')
         mock_enviar.assert_not_called()
+
+
+class EnviarMensajesAutomaticosCommandTest(TestCase):
+    """
+    Fase 4: los 3 mensajes automáticos configurables (recordatorio antes,
+    aviso del día, aviso de mora) por el bridge de WhatsApp personal — no
+    es el mismo camino que RecordatorioWhatsAppDiarioCommandTest (ese usa
+    la API de Meta), son independientes.
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre='Auto', apellido='Matico', telefono='1122334455', direccion='x'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=3,
+            frecuencia='SE',
+            fecha_inicio=date.today()
+        )
+        self.cuota_hoy, self.cuota_2, self.cuota_3 = self.prestamo.cuotas.order_by('numero_cuota')
+        self.cuota_hoy.fecha_vencimiento = date.today()
+        self.cuota_hoy.save()
+
+    @contextmanager
+    def _bridge_conectado(self):
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_estado', return_value={'connected': True, 'phone': '5491100000000'}):
+            yield
+
+    def test_no_envia_si_configuracion_general_inactiva(self):
+        """Por defecto activo=False: no debe intentar mandar nada aunque los sub-interruptores estén en True"""
+        with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+        self.assertEqual(EnvioWhatsApp.objects.count(), 0)
+
+    def test_no_envia_si_el_bridge_no_esta_configurado(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True)
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=False):
+            with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_no_envia_si_el_bridge_no_esta_conectado(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True)
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_estado', return_value={'connected': False, 'phone': None}):
+            with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_envia_aviso_del_dia_y_registra_el_envio(self):
+        # dias_semana='LMXJVSD' para que el test no dependa de qué día corre
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+
+        mock_enviar.assert_called_once()
+        envio = EnvioWhatsApp.objects.get(tipo=EnvioWhatsApp.Tipo.AVISO_DIA)
+        self.assertTrue(envio.exitoso)
+        self.assertEqual(envio.canal, EnvioWhatsApp.Canal.PERSONAL)
+        self.assertEqual(envio.cliente, self.cliente)
+
+    def test_recordatorio_preventivo_usa_el_offset_de_dias_configurado(self):
+        self.cuota_2.fecha_vencimiento = date.today() + timedelta(days=3)
+        self.cuota_2.save()
+        ConfiguracionMensajesAutomaticos.objects.create(
+            pk=1, activo=True, recordatorio_dias_antes=3, recordatorio_dias_semana='LMXJVSD'
+        )
+
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X'):
+                call_command('enviar_mensajes_automaticos')
+
+        self.assertTrue(EnvioWhatsApp.objects.filter(
+            tipo=EnvioWhatsApp.Tipo.RECORDATORIO_PREVENTIVO, cuota=self.cuota_2
+        ).exists())
+
+    def test_aviso_de_mora_usa_el_offset_de_dias_configurado(self):
+        self.cuota_3.fecha_vencimiento = date.today() - timedelta(days=5)
+        self.cuota_3.save()
+        ConfiguracionMensajesAutomaticos.objects.create(
+            pk=1, activo=True, aviso_mora_dias_despues=5, aviso_mora_dias_semana='LMXJVSD'
+        )
+
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X'):
+                call_command('enviar_mensajes_automaticos')
+
+        self.assertTrue(EnvioWhatsApp.objects.filter(
+            tipo=EnvioWhatsApp.Tipo.AVISO_MORA, cuota=self.cuota_3
+        ).exists())
+
+    def test_no_reenvia_si_ya_se_envio_hoy(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        EnvioWhatsApp.objects.create(
+            cliente=self.cliente, cuota=self.cuota_hoy, tipo=EnvioWhatsApp.Tipo.AVISO_DIA,
+            canal=EnvioWhatsApp.Canal.PERSONAL, exitoso=True
+        )
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_sub_interruptor_apagado_no_manda_ese_mensaje(self):
+        ConfiguracionMensajesAutomaticos.objects.create(
+            pk=1, activo=True, aviso_dia_activo=False, aviso_dia_dias_semana='LMXJVSD'
+        )
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_dia_de_semana_desactivado_no_manda_ese_mensaje(self):
+        letra_hoy = 'LMXJVSD'[date.today().weekday()]
+        dias_sin_hoy = 'LMXJVSD'.replace(letra_hoy, '')
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana=dias_sin_hoy)
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_plantilla_personalizada_reemplaza_las_variables(self):
+        ConfiguracionMensajesAutomaticos.objects.create(
+            pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD',
+            aviso_dia_plantilla='Hola {{nombre}}, debés {{monto}}, vence {{fecha_vencimiento}}.'
+        )
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+
+        texto_enviado = mock_enviar.call_args[0][1]
+        self.assertIn('Hola Auto,', texto_enviado)
+        self.assertIn(self.cuota_hoy.fecha_vencimiento.strftime('%d/%m/%Y'), texto_enviado)
+        self.assertNotIn('{{', texto_enviado)
+
+
+class MensajesAutomaticosConfigViewTest(TestCase):
+    """Fase 4: pantalla de confirmación + configuración de mensajes automáticos"""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin_ma', password='x', is_superuser=True)
+        self.cobrador = User.objects.create_user(username='cobrador_ma', password='x')
+
+    def test_no_admin_no_puede_ver_la_pantalla(self):
+        client = TestClient()
+        client.login(username='cobrador_ma', password='x')
+
+        response = client.get(reverse('core:mensajes_automaticos'))
+
+        self.assertRedirects(response, reverse('core:dashboard'))
+
+    def test_admin_ve_la_pantalla_de_confirmacion_si_no_esta_activo(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.get(reverse('core:mensajes_automaticos'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Activar mensajes automáticos')
+        self.assertNotContains(response, 'Configuración completa')
+
+    def test_admin_ve_el_panel_de_configuracion_si_ya_esta_activo(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True)
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.get(reverse('core:mensajes_automaticos'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Guardar configuración')
+        self.assertContains(response, 'Recordatorio preventivo')
+        self.assertContains(response, 'Aviso del día')
+        self.assertContains(response, 'Aviso de mora')
+
+    def test_activar_confirma_y_prende_el_interruptor(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.post(reverse('core:activar_mensajes_automaticos'))
+
+        self.assertEqual(response.status_code, 200)
+        config = ConfiguracionMensajesAutomaticos.obtener()
+        self.assertTrue(config.activo)
+        self.assertIsNotNone(config.confirmado_en)
+
+    def test_confirmado_en_no_se_pisa_en_activaciones_posteriores(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        client.post(reverse('core:activar_mensajes_automaticos'))
+        primera_confirmacion = ConfiguracionMensajesAutomaticos.obtener().confirmado_en
+
+        client.post(reverse('core:desactivar_mensajes_automaticos'))
+        client.post(reverse('core:activar_mensajes_automaticos'))
+
+        self.assertEqual(ConfiguracionMensajesAutomaticos.obtener().confirmado_en, primera_confirmacion)
+
+    def test_desactivar_apaga_sin_borrar_la_configuracion(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, recordatorio_dias_antes=5)
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.post(reverse('core:desactivar_mensajes_automaticos'))
+
+        self.assertEqual(response.status_code, 200)
+        config = ConfiguracionMensajesAutomaticos.obtener()
+        self.assertFalse(config.activo)
+        self.assertEqual(config.recordatorio_dias_antes, 5)  # no se tocó
+
+    def test_no_admin_no_puede_activar(self):
+        client = TestClient()
+        client.login(username='cobrador_ma', password='x')
+
+        response = client.post(reverse('core:activar_mensajes_automaticos'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_guardar_configuracion_actualiza_los_campos(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        payload = {
+            'recordatorio_activo': True,
+            'recordatorio_dias_antes': 3,
+            'recordatorio_hora': '08:30',
+            'recordatorio_dias_semana': 'LMXJV',
+            'recordatorio_plantilla': 'Nuevo texto {{nombre}}',
+            'aviso_dia_activo': False,
+            'aviso_dia_hora': '10:00',
+            'aviso_dia_dias_semana': 'LMXJVSD',
+            'aviso_dia_plantilla': 'Otro texto',
+            'aviso_mora_activo': True,
+            'aviso_mora_dias_despues': 6,
+            'aviso_mora_hora': '11:00',
+            'aviso_mora_dias_semana': 'LV',
+            'aviso_mora_plantilla': 'Mora texto',
+        }
+        response = client.post(
+            reverse('core:guardar_configuracion_mensajes'),
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        config = ConfiguracionMensajesAutomaticos.obtener()
+        self.assertEqual(config.recordatorio_dias_antes, 3)
+        self.assertEqual(str(config.recordatorio_hora), '08:30:00')
+        self.assertEqual(config.recordatorio_dias_semana, 'LMXJV')
+        self.assertFalse(config.aviso_dia_activo)
+        self.assertEqual(config.aviso_mora_dias_despues, 6)
+        self.assertEqual(config.aviso_mora_dias_semana, 'LV')
+
+    def test_guardar_rechaza_dias_fuera_de_rango(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.post(
+            reverse('core:guardar_configuracion_mensajes'),
+            data=json.dumps({'recordatorio_dias_antes': 999}),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_guardar_filtra_letras_invalidas_de_dias_semana(self):
+        client = TestClient()
+        client.login(username='admin_ma', password='x')
+
+        response = client.post(
+            reverse('core:guardar_configuracion_mensajes'),
+            data=json.dumps({'recordatorio_dias_semana': 'lmxZZZ!!'}),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        config = ConfiguracionMensajesAutomaticos.obtener()
+        self.assertEqual(config.recordatorio_dias_semana, 'LMX')

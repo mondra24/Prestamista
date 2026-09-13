@@ -15,7 +15,7 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy, ConfiguracionMensajesAutomaticos, DIAS_SEMANA_CODIGOS
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 from . import whatsapp_bridge
 
@@ -3261,6 +3261,114 @@ def whatsapp_desconectar(request):
         return JsonResponse({'success': False, 'message': str(e)}, status=502)
 
     return JsonResponse({'success': True, 'message': 'WhatsApp desvinculado'})
+
+
+class MensajesAutomaticosConfigView(LoginRequiredMixin, TemplateView):
+    """
+    Pantalla de mensajes automáticos por WhatsApp (Fase 4): confirmación
+    antes de activar por primera vez, y configuración completa (días, hora,
+    días de semana, texto) de los 3 mensajes una vez activada.
+    Solo admin: decide qué se le manda a los clientes en nombre del negocio.
+    """
+    template_name = 'core/mensajes_automaticos.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo un administrador puede configurar los mensajes automáticos.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['config'] = ConfiguracionMensajesAutomaticos.obtener()
+        context['dias_semana_codigos'] = DIAS_SEMANA_CODIGOS
+        return context
+
+
+@login_required
+def activar_mensajes_automaticos(request):
+    """Confirma y prende el interruptor general. Solo admin."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede hacer esto'}, status=403)
+
+    config = ConfiguracionMensajesAutomaticos.obtener()
+    config.activo = True
+    if not config.confirmado_en:
+        config.confirmado_en = timezone.now()
+    config.save(update_fields=['activo', 'confirmado_en'])
+
+    return JsonResponse({'success': True, 'message': 'Mensajes automáticos activados.'})
+
+
+@login_required
+def desactivar_mensajes_automaticos(request):
+    """Apaga el interruptor general (sin borrar la configuración ni el historial). Solo admin."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede hacer esto'}, status=403)
+
+    config = ConfiguracionMensajesAutomaticos.obtener()
+    config.activo = False
+    config.save(update_fields=['activo'])
+
+    return JsonResponse({'success': True, 'message': 'Mensajes automáticos desactivados.'})
+
+
+@login_required
+def guardar_configuracion_mensajes(request):
+    """Guarda días/hora/días de semana/plantilla de los 3 mensajes. Solo admin."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede hacer esto'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'JSON inválido'}, status=400)
+
+    config = ConfiguracionMensajesAutomaticos.obtener()
+
+    try:
+        dias_antes = int(data.get('recordatorio_dias_antes', config.recordatorio_dias_antes))
+        dias_despues = int(data.get('aviso_mora_dias_despues', config.aviso_mora_dias_despues))
+    except (TypeError, ValueError):
+        return JsonResponse({'success': False, 'message': 'Los días deben ser números'}, status=400)
+
+    if not (0 <= dias_antes <= 10):
+        return JsonResponse({'success': False, 'message': 'Días antes del vencimiento: entre 0 y 10'}, status=400)
+    if not (1 <= dias_despues <= 30):
+        return JsonResponse({'success': False, 'message': 'Días después del vencimiento: entre 1 y 30'}, status=400)
+
+    def dias_semana_validos(valor, default):
+        if not isinstance(valor, str):
+            return default
+        limpio = ''.join(c for c in valor.upper() if c in DIAS_SEMANA_CODIGOS)
+        return limpio
+
+    config.recordatorio_activo = bool(data.get('recordatorio_activo', config.recordatorio_activo))
+    config.recordatorio_dias_antes = dias_antes
+    config.recordatorio_hora = data.get('recordatorio_hora', config.recordatorio_hora)
+    config.recordatorio_dias_semana = dias_semana_validos(data.get('recordatorio_dias_semana'), config.recordatorio_dias_semana)
+    config.recordatorio_plantilla = data.get('recordatorio_plantilla', config.recordatorio_plantilla)
+
+    config.aviso_dia_activo = bool(data.get('aviso_dia_activo', config.aviso_dia_activo))
+    config.aviso_dia_hora = data.get('aviso_dia_hora', config.aviso_dia_hora)
+    config.aviso_dia_dias_semana = dias_semana_validos(data.get('aviso_dia_dias_semana'), config.aviso_dia_dias_semana)
+    config.aviso_dia_plantilla = data.get('aviso_dia_plantilla', config.aviso_dia_plantilla)
+
+    config.aviso_mora_activo = bool(data.get('aviso_mora_activo', config.aviso_mora_activo))
+    config.aviso_mora_dias_despues = dias_despues
+    config.aviso_mora_hora = data.get('aviso_mora_hora', config.aviso_mora_hora)
+    config.aviso_mora_dias_semana = dias_semana_validos(data.get('aviso_mora_dias_semana'), config.aviso_mora_dias_semana)
+    config.aviso_mora_plantilla = data.get('aviso_mora_plantilla', config.aviso_mora_plantilla)
+
+    config.save()
+
+    return JsonResponse({'success': True, 'message': 'Configuración guardada.'})
 
 
 class RespaldoListView(LoginRequiredMixin, TemplateView):

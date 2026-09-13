@@ -102,6 +102,12 @@ urlpatterns = [
     path('api/whatsapp/qr/', views.whatsapp_qr, name='whatsapp_qr'),
     path('api/whatsapp/desconectar/', views.whatsapp_desconectar, name='whatsapp_desconectar'),
 
+    # Mensajes automáticos por WhatsApp (confirmación + configuración)
+    path('whatsapp/mensajes-automaticos/', views.MensajesAutomaticosConfigView.as_view(), name='mensajes_automaticos'),
+    path('api/mensajes-automaticos/activar/', views.activar_mensajes_automaticos, name='activar_mensajes_automaticos'),
+    path('api/mensajes-automaticos/desactivar/', views.desactivar_mensajes_automaticos, name='desactivar_mensajes_automaticos'),
+    path('api/mensajes-automaticos/guardar/', views.guardar_configuracion_mensajes, name='guardar_configuracion_mensajes'),
+
     # Reportes automáticos (C1-C3)
     path('reportes/automaticos/', views.ReportesAutomaticosListView.as_view(), name='reportes_automaticos'),
     path('reportes/automaticos/descargar/<str:nombre>/', views.descargar_reporte_automatico, name='descargar_reporte_automatico'),
