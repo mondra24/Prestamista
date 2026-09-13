@@ -699,6 +699,7 @@ class Prestamo(models.Model):
         FINALIZADO = 'FI', 'Finalizado'
         CANCELADO = 'CA', 'Cancelado'
         RENOVADO = 'RE', 'Renovado'
+        IRRECUPERABLE = 'IR', 'Irrecuperable'
     
     cliente = models.ForeignKey(
         Cliente,

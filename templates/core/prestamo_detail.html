@@ -13,7 +13,7 @@
             <i class="bi bi-arrow-left"></i>
         </a>
         <h1 class="h5 mb-0 flex-grow-1">Préstamo #{{ prestamo.pk }}</h1>
-        <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %} fs-6">
+        <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% elif prestamo.estado == 'IR' %}bg-dark{% else %}bg-danger{% endif %} fs-6">
             {{ prestamo.get_estado_display }}
         </span>
     </div>
@@ -183,6 +183,20 @@
                     <i class="bi bi-trash"></i>
                 </button>
             </div>
+            {% if user.is_superuser or user.perfil.es_admin %}
+            <button type="button" class="btn btn-sm btn-outline-secondary w-100 mt-2" id="btn-marcar-irrecuperable" data-prestamo-id="{{ prestamo.pk }}">
+                <i class="bi bi-archive me-1"></i> Marcar como irrecuperable
+            </button>
+            {% endif %}
+            {% endif %}
+
+            {% if prestamo.estado == 'IR' %}
+            {% if user.is_superuser or user.perfil.es_admin %}
+            <hr>
+            <button type="button" class="btn btn-sm btn-outline-success w-100" id="btn-reactivar-prestamo" data-prestamo-id="{{ prestamo.pk }}">
+                <i class="bi bi-arrow-counterclockwise me-1"></i> Reactivar préstamo
+            </button>
+            {% endif %}
             {% endif %}
         </div>
     </div>
@@ -1623,6 +1637,53 @@ async function confirmarEditarCobro() {
             const icon = btnToggle.querySelector('i');
             if (icon) icon.className = 'bi ' + (activo ? 'bi-pause-circle' : 'bi-play-circle') + ' me-1';
         }
+    }
+})();
+
+// ============ ESTADO IRRECUPERABLE ============
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+        || document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('csrftoken='))?.split('=')[1]
+        || '';
+
+    async function cambiarEstadoIrrecuperable(pk, boton) {
+        boton.disabled = true;
+        try {
+            const resp = await fetch(`/api/prestamo/${pk}/irrecuperable/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                showToast(data.message || 'Error', 'danger');
+                boton.disabled = false;
+            }
+        } catch (e) {
+            showToast('Error de conexión', 'danger');
+            boton.disabled = false;
+        }
+    }
+
+    const btnMarcar = document.getElementById('btn-marcar-irrecuperable');
+    if (btnMarcar) {
+        btnMarcar.addEventListener('click', function() {
+            if (!confirm('¿Marcar este préstamo como irrecuperable? Va a salir de Cobros y del dashboard. Se puede reactivar después.')) return;
+            cambiarEstadoIrrecuperable(this.dataset.prestamoId, this);
+        });
+    }
+
+    const btnReactivar = document.getElementById('btn-reactivar-prestamo');
+    if (btnReactivar) {
+        btnReactivar.addEventListener('click', function() {
+            if (!confirm('¿Reactivar este préstamo? Vuelve a aparecer en Cobros y en el dashboard.')) return;
+            cambiarEstadoIrrecuperable(this.dataset.prestamoId, this);
+        });
     }
 })();
 

@@ -378,6 +378,7 @@
             <button type="button" class="history-filter-chip" data-filtro="fi">Finalizados</button>
             <button type="button" class="history-filter-chip" data-filtro="re">Renovados</button>
             <button type="button" class="history-filter-chip" data-filtro="ca">Cancelados</button>
+            <button type="button" class="history-filter-chip" data-filtro="ir">Irrecuperables</button>
         </div>
 
         {% for prestamo in prestamos_historial %}
@@ -388,7 +389,7 @@
             <div class="loan-history-top">
                 <div>
                     <span class="loan-history-num">Préstamo #{{ prestamo.pk }}</span>
-                    <span class="badge {% if prestamo.estado == 'FI' %}bg-success{% elif prestamo.estado == 'RE' %}bg-primary{% else %}bg-danger{% endif %}">
+                    <span class="badge {% if prestamo.estado == 'FI' %}bg-success{% elif prestamo.estado == 'RE' %}bg-primary{% elif prestamo.estado == 'IR' %}bg-dark{% else %}bg-danger{% endif %}">
                         {{ prestamo.get_estado_display }}
                     </span>
                 </div>

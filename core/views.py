@@ -1320,6 +1320,47 @@ def cambiar_categoria_cliente(request, pk):
 
 
 @login_required
+def cambiar_estado_irrecuperable_prestamo(request, pk):
+    """
+    Marcar un préstamo activo como irrecuperable (o revertirlo a activo).
+    Solo admin: es una decisión de negocio, no una tarea de cobranza diaria.
+    Al pasar a 'IR' el préstamo desaparece de Cobros/dashboard/reportes sin
+    tocar ninguna de esas vistas, porque todas filtran explícitamente
+    estado='AC'.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede hacer este cambio'}, status=403)
+
+    try:
+        prestamo = Prestamo.objects.get(pk=pk)
+    except Prestamo.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
+
+    if prestamo.estado == Prestamo.Estado.ACTIVO:
+        prestamo.estado = Prestamo.Estado.IRRECUPERABLE
+        mensaje = f'Préstamo #{prestamo.pk} marcado como irrecuperable.'
+    elif prestamo.estado == Prestamo.Estado.IRRECUPERABLE:
+        prestamo.estado = Prestamo.Estado.ACTIVO
+        mensaje = f'Préstamo #{prestamo.pk} reactivado.'
+    else:
+        return JsonResponse({
+            'success': False,
+            'message': f'No se puede cambiar un préstamo en estado "{prestamo.get_estado_display()}".'
+        }, status=400)
+
+    prestamo.save(update_fields=['estado'])
+
+    return JsonResponse({
+        'success': True,
+        'message': mensaje,
+        'data': {'estado': prestamo.estado, 'estado_display': prestamo.get_estado_display()}
+    })
+
+
+@login_required
 def buscar_clientes(request):
     """Búsqueda de clientes via AJAX para autocompletado"""
     q = request.GET.get('q', '').strip()

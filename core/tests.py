@@ -749,6 +749,98 @@ class EditarPrestamoSincronizaCuotasTest(TestCase):
         self.assertEqual(self.prestamo.cuotas.count(), 2)
 
 
+class EstadoIrrecuperablePrestamoTest(TestCase):
+    """
+    Pedido del cliente: poder marcar un crédito con cuotas vencidas como
+    irrecuperable/incobrable para que salga de la gestión diaria (Cobros,
+    dashboard), sin borrar el historial ni el préstamo en sí.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin_ir', password='x', is_superuser=True)
+        self.cobrador = User.objects.create_user(username='cobrador_ir', password='x')
+        self.cliente = Cliente.objects.create(
+            nombre='Perdido', apellido='DeVista', telefono='555', direccion='x',
+            usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=60),
+            cobrador=self.cobrador
+        )
+        for cuota in self.prestamo.cuotas.all():
+            cuota.fecha_vencimiento = date.today() - timedelta(days=30)
+            cuota.save()
+
+    def _url(self):
+        return reverse('core:cambiar_estado_irrecuperable', kwargs={'pk': self.prestamo.pk})
+
+    def test_admin_puede_marcar_como_irrecuperable(self):
+        client = TestClient()
+        client.login(username='admin_ir', password='x')
+
+        response = client.post(self._url())
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'IR')
+
+    def test_cobrador_no_admin_no_puede_marcar(self):
+        client = TestClient()
+        client.login(username='cobrador_ir', password='x')
+
+        response = client.post(self._url())
+
+        self.assertEqual(response.status_code, 403)
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'AC')
+
+    def test_marcar_irrecuperable_lo_saca_de_cobros(self):
+        client = TestClient()
+        client.login(username='admin_ir', password='x')
+
+        # Antes de marcarlo, sus cuotas vencidas aparecen en Cobros
+        response = client.get(reverse('core:cobros'))
+        ids_vencidas_antes = [c.pk for c in response.context['cuotas_vencidas']]
+        self.assertTrue(any(c.prestamo_id == self.prestamo.pk for c in response.context['cuotas_vencidas']))
+
+        client.post(self._url())
+
+        response = client.get(reverse('core:cobros'))
+        self.assertFalse(any(c.prestamo_id == self.prestamo.pk for c in response.context['cuotas_vencidas']))
+
+    def test_reactivar_lo_vuelve_a_mostrar_en_cobros(self):
+        client = TestClient()
+        client.login(username='admin_ir', password='x')
+
+        client.post(self._url())  # marcar irrecuperable
+        client.post(self._url())  # alternar de nuevo: vuelve a activo
+
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'AC')
+
+        response = client.get(reverse('core:cobros'))
+        self.assertTrue(any(c.prestamo_id == self.prestamo.pk for c in response.context['cuotas_vencidas']))
+
+    def test_no_se_puede_marcar_un_prestamo_finalizado(self):
+        self.prestamo.estado = 'FI'
+        self.prestamo.save(update_fields=['estado'])
+        client = TestClient()
+        client.login(username='admin_ir', password='x')
+
+        response = client.post(self._url())
+
+        self.assertEqual(response.status_code, 400)
+        self.prestamo.refresh_from_db()
+        self.assertEqual(self.prestamo.estado, 'FI')
+
+
 class RepasoSemanaCobrosViewTest(TestCase):
     """Tests para A5: repaso semanal cobrado vs. no cobrado en la vista de Cobros"""
 

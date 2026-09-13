@@ -82,6 +82,9 @@ urlpatterns = [
     path('api/prestamo/<int:pk>/notas/crear/', views.crear_nota_prestamo, name='crear_nota_prestamo'),
     path('api/notas/<int:pk>/eliminar/', views.eliminar_nota_prestamo, name='eliminar_nota_prestamo'),
 
+    # Estado irrecuperable (AJAX, solo admin)
+    path('api/prestamo/<int:pk>/irrecuperable/', views.cambiar_estado_irrecuperable_prestamo, name='cambiar_estado_irrecuperable'),
+
     # Auditoría
     path('auditoria/', views.AuditoriaListView.as_view(), name='auditoria_list'),
     

@@ -51,6 +51,10 @@
            class="btn btn-sm rounded-pill {% if request.GET.estado == 'RE' %}btn-warning{% else %}btn-outline-warning{% endif %}">
             Renovados
         </a>
+        <a href="?estado=IR{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+           class="btn btn-sm rounded-pill {% if request.GET.estado == 'IR' %}btn-dark{% else %}btn-outline-dark{% endif %}">
+            Irrecuperables
+        </a>
     </div>
     
     <!-- Lista de préstamos -->
@@ -80,7 +84,7 @@
                     </div>
                 </div>
                 <div class="text-end">
-                    <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% else %}bg-danger{% endif %}">
+                    <span class="badge {% if prestamo.estado == 'AC' %}bg-success{% elif prestamo.estado == 'FI' %}bg-secondary{% elif prestamo.estado == 'RE' %}bg-warning{% elif prestamo.estado == 'IR' %}bg-dark{% else %}bg-danger{% endif %}">
                         {{ prestamo.get_estado_display }}
                     </span>
                     <small class="d-block text-muted mt-1">

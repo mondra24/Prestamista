@@ -3112,6 +3112,7 @@ body {
 .loan-history-card.estado-fi { border-left-color: var(--color-pagado); }
 .loan-history-card.estado-re { border-left-color: var(--color-nuevo); }
 .loan-history-card.estado-ca { border-left-color: var(--color-moroso); }
+.loan-history-card.estado-ir { border-left-color: var(--text-secondary); opacity: 0.85; }
 
 .loan-history-top {
     display: flex;
