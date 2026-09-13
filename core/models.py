@@ -230,6 +230,35 @@ class ConfiguracionCategorizacion(models.Model):
         return config.categorizacion_automatica
 
 
+class ConfiguracionMoraReciente(models.Model):
+    """
+    Configuración global: cuántos días de atraso se consideran "mora
+    reciente" en Cobros antes de que una cuota pase a la sección de
+    "Vencidas" (deuda histórica). Pedido del cliente: separar la mora que
+    todavía está dentro de su margen de tolerancia de pago de la deuda
+    vieja, que se le mezclaba. Solo debe existir una fila.
+    """
+    dias_corte = models.PositiveIntegerField(
+        default=7,
+        verbose_name='Días de corte para "Mora reciente"',
+        help_text='Cuotas vencidas hace hasta esta cantidad de días se muestran en '
+                   '"Mora Reciente". Más allá de este corte, pasan a "Vencidas".'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de Mora Reciente'
+        verbose_name_plural = 'Configuración de Mora Reciente'
+
+    def __str__(self):
+        return f'Corte de mora reciente: {self.dias_corte} días'
+
+    @classmethod
+    def obtener_dias_corte(cls):
+        """Retorna el corte configurado (crea la config con default si no existe)"""
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config.dias_corte
+
+
 class ColumnaPlanilla(models.Model):
     """Columnas personalizables para la planilla de cobros"""
     

@@ -15,7 +15,7 @@ from django.contrib.auth import logout
 from decimal import Decimal
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 
 
@@ -147,9 +147,29 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'prestamo__cliente__apellido'
         )
 
-        # Cuotas vencidas (días anteriores) - ordenadas por ruta y fecha
-        cuotas_vencidas = Cuota.objects.filter(
+        # Mora reciente / Vencidas (días anteriores): el corte configurable
+        # (ConfiguracionMoraReciente) separa la mora que todavía está dentro
+        # del margen de tolerancia de pago del cliente de la deuda vieja,
+        # que antes se mezclaba todo en "Vencidas".
+        dias_corte_mora = ConfiguracionMoraReciente.obtener_dias_corte()
+        fecha_corte_mora = hoy - timedelta(days=dias_corte_mora)
+
+        cuotas_mora_reciente = Cuota.objects.filter(
             fecha_vencimiento__lt=hoy,
+            fecha_vencimiento__gte=fecha_corte_mora,
+            estado__in=['PE', 'PC'],
+            prestamo__estado='AC',
+            **base_filter
+        ).select_related(
+            'prestamo', 'prestamo__cliente', 'prestamo__cliente__ruta', 'prestamo__cliente__usuario', 'prestamo__cobrador'
+        ).prefetch_related('prestamo__notas_seguimiento').order_by(
+            'prestamo__cliente__ruta__orden',
+            'prestamo__cliente__ruta__nombre',
+            'fecha_vencimiento'
+        )
+
+        cuotas_vencidas = Cuota.objects.filter(
+            fecha_vencimiento__lt=fecha_corte_mora,
             estado__in=['PE', 'PC'],
             prestamo__estado='AC',
             **base_filter
@@ -230,9 +250,14 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
 
-        # Total vencidas: solo capital pendiente. La mora la registra el cobrador
-        # a mano desde el modal del lápiz; no se suma automática.
+        # Total vencidas / mora reciente: solo capital pendiente. La mora la
+        # registra el cobrador a mano desde el modal del lápiz; no se suma
+        # automática.
         total_vencidas = cuotas_vencidas.aggregate(
+            total=Sum(pendiente_expr)
+        )['total'] or Decimal('0.00')
+
+        total_mora_reciente = cuotas_mora_reciente.aggregate(
             total=Sum(pendiente_expr)
         )['total'] or Decimal('0.00')
         
@@ -261,6 +286,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         context.update({
             'cuotas_hoy': cuotas_hoy,
             'cuotas_vencidas': cuotas_vencidas,
+            'cuotas_mora_reciente': cuotas_mora_reciente,
             'cuotas_proximas': cuotas_proximas,
             'cuotas_semana': cuotas_semana,
             'cuotas_mes': cuotas_mes,
@@ -271,6 +297,8 @@ class CobrosView(LoginRequiredMixin, TemplateView):
             'total_dia_completo': total_cobrado_hoy + total_por_cobrar,
             'total_proximas': total_proximas,
             'total_vencidas': total_vencidas,
+            'total_mora_reciente': total_mora_reciente,
+            'dias_corte_mora': dias_corte_mora,
             'fecha_hoy': hoy,
             'rutas': rutas,
             'config_mora': config_mora,
@@ -283,7 +311,7 @@ class CobrosView(LoginRequiredMixin, TemplateView):
         
         # Anotar historial de modificaciones en todas las cuotas
         from itertools import chain
-        todas_cuotas = list(chain(cuotas_vencidas, cuotas_hoy, cuotas_semana, cuotas_mes))
+        todas_cuotas = list(chain(cuotas_vencidas, cuotas_mora_reciente, cuotas_hoy, cuotas_semana, cuotas_mes))
         cuota_ids = [c.id for c in todas_cuotas]
         if cuota_ids:
             historiales = HistorialModificacionPago.objects.filter(
@@ -1357,6 +1385,39 @@ def cambiar_estado_irrecuperable_prestamo(request, pk):
         'success': True,
         'message': mensaje,
         'data': {'estado': prestamo.estado, 'estado_display': prestamo.get_estado_display()}
+    })
+
+
+@login_required
+def actualizar_corte_mora_reciente(request):
+    """
+    Actualiza cuántos días de atraso separan "Mora Reciente" de "Vencidas"
+    en Cobros. Solo admin: es una decisión de política de cobranza, no algo
+    que cada cobrador deba poder tocar.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede cambiar esto'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        dias = int(data.get('dias_corte'))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'success': False, 'message': 'Valor no válido'}, status=400)
+
+    if dias < 1 or dias > 90:
+        return JsonResponse({'success': False, 'message': 'El corte debe ser entre 1 y 90 días'}, status=400)
+
+    config, _ = ConfiguracionMoraReciente.objects.get_or_create(pk=1)
+    config.dias_corte = dias
+    config.save(update_fields=['dias_corte'])
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Corte actualizado a {dias} días.',
+        'data': {'dias_corte': dias}
     })
 
 

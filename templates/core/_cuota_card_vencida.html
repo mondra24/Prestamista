@@ -1,0 +1,106 @@
+{% load currency_filters %}
+{% comment %}
+Tarjeta de cobro para una cuota vencida (o en mora reciente). Compartida
+entre las secciones "Mora Reciente" y "Cuotas Vencidas" de Cobros: son la
+misma tarjeta, solo cambia el color según `tarjeta_clase` ('vencida' o
+'mora-reciente'). Requiere `cuota`, `tarjeta_clase` y `user` en el contexto.
+{% endcomment %}
+<div class="payment-card {{ tarjeta_clase }} filtrable" data-zona="{{ cuota.prestamo.cliente.ruta.nombre|default:'Sin Zona' }}" data-prestamo-id="{{ cuota.prestamo.pk }}">
+    <div class="payment-card-header">
+        <div class="client-info">
+            <div class="client-avatar {{ tarjeta_clase }}">{{ cuota.prestamo.cliente.nombre|slice:":1" }}{{ cuota.prestamo.cliente.apellido|slice:":1" }}</div>
+            <div class="client-details">
+                <h6 class="client-name">{{ cuota.prestamo.cliente.nombre_completo }}</h6>
+                <span class="loan-progress">Préstamo #{{ cuota.prestamo.pk }} — Cuota {{ cuota.numero_cuota }} de {{ cuota.prestamo.cuotas_pactadas }}</span>
+                <button type="button" class="btn-add-nota-cobro" data-prestamo-id="{{ cuota.prestamo.pk }}" data-cliente-nombre="{{ cuota.prestamo.cliente.nombre_completo|escapejs }}" title="Agregar nota de seguimiento"><i class="bi bi-sticky"></i> Nota</button>
+            </div>
+        </div>
+        <div class="amount-section {{ tarjeta_clase }}">
+            <span class="amount">{{ cuota.monto_restante|dinero }}</span>
+            <span class="overdue-badge">{{ cuota.dias_vencida }} días</span>
+        </div>
+    </div>
+    {% with notas=cuota.prestamo.notas_vigentes %}{% if notas %}
+    <div class="nota-cobro-banner">
+        {% for nota in notas %}
+        <div class="nota-cobro-item" data-nota-id="{{ nota.pk }}">
+            <i class="bi bi-sticky-fill"></i>
+            <span class="nota-cobro-texto">{{ nota.texto }}</span>
+            <button type="button" class="btn-borrar-nota-cobro" data-nota-id="{{ nota.pk }}" title="Resolver nota"><i class="bi bi-x-lg"></i></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}{% endwith %}
+    {% if cuota.interes_mora_pendiente > 0 %}
+    <div class="mora-total-banner">
+        <span class="mora-total-label">
+            <i class="bi bi-info-circle me-1"></i>Mora calculada (cobrar aparte):
+        </span>
+        <span class="mora-total-value">{{ cuota.interes_mora_pendiente|dinero }}</span>
+        <span class="mora-total-desglose">
+            <small>El botón rápido solo cobra el capital. Registrá la mora desde el modal de pago parcial si querés dejarla asentada.</small>
+        </span>
+    </div>
+    {% endif %}
+    <div class="payment-card-body" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="info-chips">
+            {% if user.is_superuser or user.perfil.es_admin %}{% if cuota.prestamo.cobrador %}<span class="chip" style="background: #e0e7ff; color: #3730a3;"><i class="bi bi-person-badge"></i> {{ cuota.prestamo.cobrador.get_full_name|default:cuota.prestamo.cobrador.username }}</span>{% endif %}{% endif %}
+            {% if cuota.prestamo.cliente.ruta %}<span class="chip"><i class="bi bi-geo-alt"></i> {{ cuota.prestamo.cliente.ruta.nombre }}</span>{% endif %}
+            <span class="chip"><i class="bi bi-telephone"></i> {{ cuota.prestamo.cliente.telefono|default:'Sin tel.' }}</span>
+            <span class="chip"><i class="bi bi-calendar-x"></i> Fin: {{ cuota.prestamo.fecha_finalizacion|date:"d/m/Y" }}</span>
+            <span class="chip"><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección'|truncatechars:30 }}</span>
+            {% if cuota.interes_mora_pendiente > 0 %}<span class="chip mora"><i class="bi bi-percent"></i> +{{ cuota.interes_mora_pendiente|dinero }}</span>{% endif %}
+            {% if cuota.historial_list %}<span class="chip" style="background:#fff3cd;color:#856404;cursor:pointer;" data-bs-toggle="collapse" data-bs-target="#historial-cobro-{{ cuota.pk }}"><i class="bi bi-clock-history"></i> Modificada</span>{% endif %}
+        </div>
+    </div>
+    {% if cuota.historial_list %}
+    <div class="collapse" id="historial-cobro-{{ cuota.pk }}">
+        <div class="card card-body border-warning mx-2 mb-2 p-2" style="font-size:0.78rem; background: var(--bg-card);">
+            <h6 class="mb-2 text-warning" style="font-size:0.8rem;"><i class="bi bi-clock-history me-1"></i>Historial de Modificaciones</h6>
+            {% for h in cuota.historial_list %}
+            <div class="d-flex justify-content-between align-items-start border-bottom py-1">
+                <div>
+                    <span class="badge {% if h.tipo_modificacion == 'PP' %}bg-warning text-dark{% elif h.tipo_modificacion == 'PA' %}bg-success{% elif h.tipo_modificacion == 'TR' %}bg-info text-dark{% elif h.tipo_modificacion == 'CE' %}bg-primary{% elif h.tipo_modificacion == 'MR' %}bg-secondary{% elif h.tipo_modificacion == 'AN' %}bg-danger{% elif h.tipo_modificacion == 'RM' %}bg-warning{% elif h.tipo_modificacion == 'ED' %}bg-info{% endif %} me-1">{{ h.get_tipo_modificacion_display }}</span>
+                    <span>{{ h.resumen }}</span>
+                    {% if h.metodo_pago %}<span class="text-muted ms-1">({{ h.get_metodo_pago_display }})</span>{% endif %}
+                </div>
+                <div class="text-muted text-end" style="white-space:nowrap;font-size:0.72rem;">
+                    {{ h.fecha_modificacion|date:"d/m/Y H:i" }}
+                    {% if h.usuario %}<br><small>{{ h.usuario.get_full_name|default:h.usuario.username }}</small>{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    <div class="payment-card-expand">
+        <div class="expand-content">
+            <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
+            <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
+        </div>
+    </div>
+    {% if cuota.prestamo.cobrador == user %}
+    <div class="payment-card-actions">
+        <button type="button" class="action-btn-mini btn-editar-cobro"
+                data-cuota-id="{{ cuota.pk }}"
+                data-monto="{{ cuota.monto_restante|numero_raw }}"
+                data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
+                data-mora-cobrada="{{ cuota.interes_mora_cobrado|numero_raw }}"
+                data-monto-cuota="{{ cuota.monto_cuota|numero_raw }}"
+                data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                data-dias-vencida="{{ cuota.dias_vencida }}"
+                data-fecha="{{ cuota.fecha_vencimiento|date:'Y-m-d' }}"
+                title="Cobro parcial">
+            <i class="bi bi-pencil-square"></i>
+        </button>
+        <button type="button" class="action-btn-mini primary btn-cobrar"
+                data-cuota-id="{{ cuota.pk }}"
+                data-monto="{{ cuota.monto_restante|numero_raw }}"
+                data-mora="{{ cuota.interes_mora_pendiente|numero_raw }}"
+                data-cliente="{{ cuota.prestamo.cliente.nombre_completo }}"
+                title="Cobrar completo">
+            <i class="bi bi-check-lg"></i>
+        </button>
+    </div>
+    {% endif %}
+</div>

@@ -13,7 +13,9 @@
     --color-moroso-light: #f8d7da;
     --color-nuevo: #0d6efd;
     --color-nuevo-light: #cfe2ff;
-    
+    --color-mora-reciente: #7c3aed;
+    --color-mora-reciente-light: #ede9fe;
+
     /* UI Colors */
     --bg-primary: #f8f9fa;
     --bg-card: #ffffff;
@@ -77,6 +79,7 @@
     --color-pendiente-light: #431407;
     --color-moroso-light: #450a0a;
     --color-nuevo-light: #172554;
+    --color-mora-reciente-light: #2e1065;
 }
 
 /* Dark mode overrides */
@@ -469,6 +472,11 @@ body {
     border-left: 4px solid #2196f3;
 }
 
+.payment-card.mora-reciente {
+    background: linear-gradient(135deg, var(--color-mora-reciente-light) 0%, var(--bg-card) 100%);
+    border-left: 4px solid var(--color-mora-reciente);
+}
+
 /* Header de la tarjeta */
 .payment-card-header {
     display: flex;
@@ -506,6 +514,10 @@ body {
 
 .client-avatar.proxima {
     background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+}
+
+.client-avatar.mora-reciente {
+    background: linear-gradient(135deg, var(--color-mora-reciente) 0%, #5b21b6 100%);
 }
 
 .client-details {
@@ -557,6 +569,55 @@ body {
 
 .amount-section.proxima .amount {
     color: #1976d2;
+}
+
+.amount-section.mora-reciente .amount {
+    color: var(--color-mora-reciente);
+}
+
+/* Accordion "Mora Reciente": violeta, para no confundirse con el naranja
+   de "Hoy" ni el rojo de "Vencidas" */
+.accordion-item.mora-reciente-item {
+    border-color: var(--color-mora-reciente);
+}
+
+.mora-reciente-button {
+    background-color: var(--color-mora-reciente-light);
+    color: var(--color-mora-reciente);
+}
+
+.mora-reciente-button:not(.collapsed) {
+    background-color: var(--color-mora-reciente-light);
+    color: var(--color-mora-reciente);
+}
+
+.mora-reciente-badge {
+    background-color: var(--color-mora-reciente);
+    color: #fff;
+}
+
+.mora-reciente-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    background: var(--bg-chip);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.mora-reciente-config input[type="number"] {
+    width: 64px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 6px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .overdue-badge {
@@ -2667,7 +2728,8 @@ body {
 /* Amount color en contexto de card con fondo claro - forzar oscuro */
 .payment-card.vencida .amount-section .amount,
 .payment-card.pendiente .amount-section .amount,
-.payment-card.proxima .amount-section .amount {
+.payment-card.proxima .amount-section .amount,
+.payment-card.mora-reciente .amount-section .amount {
     /* Ya usan colores específicos por clase, esto asegura legibilidad en dark */
 }
 
@@ -2677,13 +2739,15 @@ body {
    claro se ve bien. Pero si el gradiente va al revés, forzamos: */
 [data-theme="dark"] .payment-card.vencida,
 [data-theme="dark"] .payment-card.pendiente,
-[data-theme="dark"] .payment-card.proxima {
+[data-theme="dark"] .payment-card.proxima,
+[data-theme="dark"] .payment-card.mora-reciente {
     color: var(--text-primary);
 }
 
 [data-theme="dark"] .payment-card.vencida .client-name,
 [data-theme="dark"] .payment-card.pendiente .client-name,
-[data-theme="dark"] .payment-card.proxima .client-name {
+[data-theme="dark"] .payment-card.proxima .client-name,
+[data-theme="dark"] .payment-card.mora-reciente .client-name {
     color: var(--text-primary);
 }
 

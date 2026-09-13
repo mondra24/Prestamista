@@ -9,7 +9,8 @@ from .models import (
     TipoNegocio, ConfiguracionCredito, ColumnaPlanilla, ConfiguracionPlanilla,
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionMora, InteresMora, HistorialModificacionPago,
-    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp
+    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
+    ConfiguracionMoraReciente
 )
 
 User = get_user_model()
@@ -125,6 +126,20 @@ class ConfiguracionCategorizacionAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Solo debe existir una fila (pk=1)
         return not ConfiguracionCategorizacion.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ConfiguracionMoraReciente)
+class ConfiguracionMoraRecienteAdmin(admin.ModelAdmin):
+    list_display = ['dias_corte']
+    list_editable = ['dias_corte']
+    list_display_links = None
+
+    def has_add_permission(self, request):
+        # Solo debe existir una fila (pk=1)
+        return not ConfiguracionMoraReciente.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

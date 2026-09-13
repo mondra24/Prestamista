@@ -85,6 +85,9 @@ urlpatterns = [
     # Estado irrecuperable (AJAX, solo admin)
     path('api/prestamo/<int:pk>/irrecuperable/', views.cambiar_estado_irrecuperable_prestamo, name='cambiar_estado_irrecuperable'),
 
+    # Corte de días para "Mora Reciente" en Cobros (AJAX, solo admin)
+    path('api/cobros/corte-mora-reciente/', views.actualizar_corte_mora_reciente, name='actualizar_corte_mora_reciente'),
+
     # Auditoría
     path('auditoria/', views.AuditoriaListView.as_view(), name='auditoria_list'),
     

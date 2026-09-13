@@ -18,7 +18,8 @@ from unittest.mock import patch
 from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
-    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp
+    ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
+    ConfiguracionMoraReciente
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 from . import whatsapp as whatsapp_module
@@ -839,6 +840,94 @@ class EstadoIrrecuperablePrestamoTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.prestamo.refresh_from_db()
         self.assertEqual(self.prestamo.estado, 'FI')
+
+
+class MoraRecienteTest(TestCase):
+    """
+    Pedido del cliente: un intermedio entre "Cobros de hoy" y "Vencidas"
+    para las cuotas que están atrasadas pero todavía dentro de su margen de
+    tolerancia de pago (evita que se le mezclen con la deuda vieja).
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin_mora', password='x', is_superuser=True)
+        self.cliente = Cliente.objects.create(
+            nombre='Atrasado', apellido='Reciente', telefono='555', direccion='x',
+            usuario=self.admin
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2,
+            frecuencia='SE',
+            fecha_inicio=date.today() - timedelta(days=60),
+            cobrador=self.admin
+        )
+        self.cuota_reciente, self.cuota_vieja = self.prestamo.cuotas.order_by('numero_cuota')
+        self.cuota_reciente.fecha_vencimiento = date.today() - timedelta(days=3)  # dentro del corte default (7)
+        self.cuota_reciente.save()
+        self.cuota_vieja.fecha_vencimiento = date.today() - timedelta(days=30)  # fuera del corte
+        self.cuota_vieja.save()
+
+    def test_corte_default_separa_mora_reciente_de_vencidas(self):
+        client = TestClient()
+        client.login(username='admin_mora', password='x')
+
+        response = client.get(reverse('core:cobros'))
+
+        ids_mora_reciente = [c.pk for c in response.context['cuotas_mora_reciente']]
+        ids_vencidas = [c.pk for c in response.context['cuotas_vencidas']]
+        self.assertIn(self.cuota_reciente.pk, ids_mora_reciente)
+        self.assertIn(self.cuota_vieja.pk, ids_vencidas)
+        self.assertNotIn(self.cuota_reciente.pk, ids_vencidas)
+        self.assertNotIn(self.cuota_vieja.pk, ids_mora_reciente)
+
+    def test_admin_puede_cambiar_el_corte(self):
+        client = TestClient()
+        client.login(username='admin_mora', password='x')
+
+        response = client.post(
+            reverse('core:actualizar_corte_mora_reciente'),
+            data=json.dumps({'dias_corte': 40}),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+        self.assertEqual(ConfiguracionMoraReciente.obtener_dias_corte(), 40)
+
+        # Con el corte en 40 días, la cuota "vieja" (30 días) ahora entra en mora reciente
+        response = client.get(reverse('core:cobros'))
+        ids_mora_reciente = [c.pk for c in response.context['cuotas_mora_reciente']]
+        self.assertIn(self.cuota_vieja.pk, ids_mora_reciente)
+
+    def test_no_admin_no_puede_cambiar_el_corte(self):
+        cobrador = User.objects.create_user(username='cobrador_mora', password='x')
+        client = TestClient()
+        client.login(username='cobrador_mora', password='x')
+
+        response = client.post(
+            reverse('core:actualizar_corte_mora_reciente'),
+            data=json.dumps({'dias_corte': 15}),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(ConfiguracionMoraReciente.obtener_dias_corte(), 7)  # default sin cambios
+
+    def test_rechaza_valores_fuera_de_rango(self):
+        client = TestClient()
+        client.login(username='admin_mora', password='x')
+
+        response = client.post(
+            reverse('core:actualizar_corte_mora_reciente'),
+            data=json.dumps({'dias_corte': 200}),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ConfiguracionMoraReciente.obtener_dias_corte(), 7)
 
 
 class RepasoSemanaCobrosViewTest(TestCase):
