@@ -1,0 +1,19 @@
+{
+  "name": "whatsapp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servicio interno que conecta un número personal de WhatsApp (vía QR, multi-dispositivo) y expone una API HTTP mínima para que Django mande mensajes. No es la API oficial de Meta.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.21.1",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4"
+  }
+}

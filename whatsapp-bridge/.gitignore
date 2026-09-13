@@ -1,0 +1,7 @@
+node_modules/
+npm-debug.log*
+
+# Sesión de WhatsApp: son las credenciales del dispositivo vinculado.
+# Si esto se filtra, alguien puede mandar mensajes como si fuera Thomi.
+# En Railway vive en un Volume, nunca en el repo.
+auth_session/

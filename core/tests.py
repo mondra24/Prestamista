@@ -23,6 +23,7 @@ from .models import (
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 from . import whatsapp as whatsapp_module
+from . import whatsapp_bridge as whatsapp_bridge_module
 
 
 # ============== TESTS DE FILTROS DE MONEDA ==============
@@ -928,6 +929,115 @@ class MoraRecienteTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(ConfiguracionMoraReciente.obtener_dias_corte(), 7)
+
+
+class WhatsAppConexionViewTest(TestCase):
+    """
+    Fase 3: pantalla para vincular el WhatsApp personal (vía QR) que se usa
+    para los mensajes automáticos. El bridge (servicio Node.js aparte) se
+    mockea siempre acá — estos tests no hablan por red con nada real.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin_wa', password='x', is_superuser=True)
+        self.cobrador = User.objects.create_user(username='cobrador_wa', password='x')
+
+    def test_no_admin_no_puede_ver_la_pantalla(self):
+        client = TestClient()
+        client.login(username='cobrador_wa', password='x')
+
+        response = client.get(reverse('core:whatsapp_conexion'))
+
+        self.assertRedirects(response, reverse('core:dashboard'))
+
+    def test_admin_ve_aviso_si_el_bridge_no_esta_configurado(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=False):
+            response = client.get(reverse('core:whatsapp_conexion'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['bridge_configurado'])
+
+    def test_estado_no_admin_devuelve_403(self):
+        client = TestClient()
+        client.login(username='cobrador_wa', password='x')
+
+        response = client.get(reverse('core:whatsapp_estado'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_estado_bridge_no_configurado_devuelve_503(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=False):
+            response = client.get(reverse('core:whatsapp_estado'))
+
+        self.assertEqual(response.status_code, 503)
+
+    def test_estado_conectado_se_propaga_desde_el_bridge(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_estado', return_value={'connected': True, 'phone': '5491122334455'}):
+            response = client.get(reverse('core:whatsapp_estado'))
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertTrue(data['data']['connected'])
+        self.assertEqual(data['data']['phone'], '5491122334455')
+
+    def test_estado_error_del_bridge_devuelve_502(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_estado', side_effect=whatsapp_bridge_module.WhatsAppBridgeError('caído')):
+            response = client.get(reverse('core:whatsapp_estado'))
+
+        self.assertEqual(response.status_code, 502)
+
+    def test_qr_se_propaga_desde_el_bridge(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_qr', return_value={'qr': 'data:image/png;base64,xyz', 'connected': False}):
+            response = client.get(reverse('core:whatsapp_qr'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['qr'], 'data:image/png;base64,xyz')
+
+    def test_desconectar_requiere_post(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        response = client.get(reverse('core:whatsapp_desconectar'))
+
+        self.assertEqual(response.status_code, 405)
+
+    def test_desconectar_no_admin_devuelve_403(self):
+        client = TestClient()
+        client.login(username='cobrador_wa', password='x')
+
+        response = client.post(reverse('core:whatsapp_desconectar'))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_desconectar_admin_llama_al_bridge(self):
+        client = TestClient()
+        client.login(username='admin_wa', password='x')
+
+        with patch('core.whatsapp_bridge.desconectar', return_value={'success': True}) as mock_desconectar:
+            response = client.post(reverse('core:whatsapp_desconectar'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+        mock_desconectar.assert_called_once()
 
 
 class RepasoSemanaCobrosViewTest(TestCase):

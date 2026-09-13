@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Conexión de WhatsApp - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+
+    <div class="d-flex align-items-center mb-4">
+        <h1 class="h4 mb-0">
+            <i class="bi bi-whatsapp me-2"></i>Conexión de WhatsApp
+        </h1>
+    </div>
+
+    {% if not bridge_configurado %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        El servicio de WhatsApp todavía no está desplegado o configurado
+        (faltan <code>WHATSAPP_BRIDGE_URL</code> / <code>WHATSAPP_BRIDGE_SECRET</code>
+        en las variables de entorno). Una vez desplegado el bridge, esta
+        pantalla va a mostrar el código para vincular el número.
+    </div>
+    {% else %}
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="wa-dot" id="wa-dot"></span>
+                <strong id="wa-status-text">Consultando estado...</strong>
+            </div>
+
+            <div id="wa-qr-block" style="display:none;">
+                <p class="text-muted small mb-3">
+                    Escaneá este código desde el celular que se va a usar para
+                    mandar los mensajes: WhatsApp → Configuración → Dispositivos
+                    vinculados → Vincular un dispositivo.
+                </p>
+                <div class="text-center mb-3">
+                    <img id="wa-qr-img" src="" alt="Código QR de WhatsApp" style="max-width:260px; width:100%; border-radius:12px;">
+                </div>
+                <p class="text-muted small text-center">
+                    El código se renueva solo cada pocos segundos si no se escanea a tiempo.
+                </p>
+            </div>
+
+            <div id="wa-connected-block" style="display:none;">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="fw-semibold" id="wa-phone-text">—</div>
+                        <small class="text-muted">Conectado</small>
+                    </div>
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="btn-wa-desconectar">
+                        <i class="bi bi-x-circle me-1"></i>Desvincular
+                    </button>
+                </div>
+            </div>
+
+            <div id="wa-error-block" class="alert alert-danger mt-3" style="display:none;"></div>
+        </div>
+    </div>
+
+    <div class="alert alert-secondary small">
+        <i class="bi bi-info-circle me-1"></i>
+        Esto usa el número personal de WhatsApp, no la app oficial de Meta
+        Business. Se recomienda usar un número secundario, no el que se usa
+        para hablar con la familia — el proveedor puede bloquear el número
+        sin aviso previo por usar este método.
+    </div>
+
+    {% endif %}
+</div>
+
+<style>
+.wa-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #adb5bd; display: inline-block;
+}
+.wa-dot.conectado { background: #198754; }
+.wa-dot.desconectado { background: #dc3545; }
+</style>
+
+{% if bridge_configurado %}
+<script>
+(function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const dot = document.getElementById('wa-dot');
+    const statusText = document.getElementById('wa-status-text');
+    const qrBlock = document.getElementById('wa-qr-block');
+    const qrImg = document.getElementById('wa-qr-img');
+    const connectedBlock = document.getElementById('wa-connected-block');
+    const phoneText = document.getElementById('wa-phone-text');
+    const errorBlock = document.getElementById('wa-error-block');
+    const btnDesconectar = document.getElementById('btn-wa-desconectar');
+
+    let polling = null;
+
+    function mostrarError(msg) {
+        errorBlock.textContent = msg;
+        errorBlock.style.display = 'block';
+    }
+
+    function ocultarError() {
+        errorBlock.style.display = 'none';
+    }
+
+    async function consultarEstado() {
+        try {
+            const resp = await fetch('/api/whatsapp/estado/');
+            const data = await resp.json();
+            if (!data.success) {
+                mostrarError(data.message || 'No se pudo consultar el estado');
+                return;
+            }
+            ocultarError();
+            if (data.data.connected) {
+                dot.className = 'wa-dot conectado';
+                statusText.textContent = 'Conectado';
+                phoneText.textContent = data.data.phone || '';
+                connectedBlock.style.display = 'block';
+                qrBlock.style.display = 'none';
+            } else {
+                dot.className = 'wa-dot desconectado';
+                statusText.textContent = 'No conectado';
+                connectedBlock.style.display = 'none';
+                qrBlock.style.display = 'block';
+                consultarQr();
+            }
+        } catch (e) {
+            mostrarError('Error de conexión con el servidor');
+        }
+    }
+
+    async function consultarQr() {
+        try {
+            const resp = await fetch('/api/whatsapp/qr/');
+            const data = await resp.json();
+            if (data.success && data.data.qr) {
+                qrImg.src = data.data.qr;
+            }
+        } catch (e) {
+            // Silencioso: el próximo ciclo de consultarEstado lo va a reintentar
+        }
+    }
+
+    btnDesconectar.addEventListener('click', async function() {
+        if (!confirm('¿Desvincular este número? Los mensajes automáticos van a dejar de enviarse hasta que se vuelva a escanear el QR.')) return;
+        btnDesconectar.disabled = true;
+        try {
+            const resp = await fetch('/api/whatsapp/desconectar/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                consultarEstado();
+            } else {
+                mostrarError(data.message || 'No se pudo desvincular');
+            }
+        } catch (e) {
+            mostrarError('Error de conexión con el servidor');
+        } finally {
+            btnDesconectar.disabled = false;
+        }
+    });
+
+    consultarEstado();
+    polling = setInterval(consultarEstado, 4000);
+    window.addEventListener('beforeunload', () => clearInterval(polling));
+})();
+</script>
+{% endif %}
+{% endblock %}

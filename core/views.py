@@ -17,6 +17,7 @@ import json
 
 from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
+from . import whatsapp_bridge
 
 
 def es_usuario_admin(user):
@@ -3189,6 +3190,77 @@ def descargar_respaldo(request, nombre):
     
     messages.error(request, 'El archivo de respaldo no existe.')
     return redirect('core:reporte_general')
+
+
+class WhatsAppConexionView(LoginRequiredMixin, TemplateView):
+    """
+    Pantalla para vincular el número de WhatsApp personal (vía QR) que se
+    usa para los mensajes automáticos. Solo admin: es una decisión de
+    infraestructura, no algo que cada cobrador deba poder tocar.
+    """
+    template_name = 'core/whatsapp_conexion.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo un administrador puede gestionar la conexión de WhatsApp.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['bridge_configurado'] = whatsapp_bridge.bridge_configurado()
+        return context
+
+
+@login_required
+def whatsapp_estado(request):
+    """Proxy AJAX del /status del bridge — el frontend nunca ve la URL/secreto del bridge directamente."""
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede ver esto'}, status=403)
+
+    if not whatsapp_bridge.bridge_configurado():
+        return JsonResponse({'success': False, 'message': 'El bridge de WhatsApp no está configurado todavía'}, status=503)
+
+    try:
+        estado = whatsapp_bridge.obtener_estado()
+    except whatsapp_bridge.WhatsAppBridgeError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=502)
+
+    return JsonResponse({'success': True, 'data': estado})
+
+
+@login_required
+def whatsapp_qr(request):
+    """Proxy AJAX del /qr del bridge."""
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede ver esto'}, status=403)
+
+    if not whatsapp_bridge.bridge_configurado():
+        return JsonResponse({'success': False, 'message': 'El bridge de WhatsApp no está configurado todavía'}, status=503)
+
+    try:
+        data = whatsapp_bridge.obtener_qr()
+    except whatsapp_bridge.WhatsAppBridgeError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=502)
+
+    return JsonResponse({'success': True, 'data': data})
+
+
+@login_required
+def whatsapp_desconectar(request):
+    """Proxy AJAX del /disconnect del bridge."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    if not es_usuario_admin(request.user):
+        return JsonResponse({'success': False, 'message': 'Solo un administrador puede hacer esto'}, status=403)
+
+    try:
+        whatsapp_bridge.desconectar()
+    except whatsapp_bridge.WhatsAppBridgeError as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=502)
+
+    return JsonResponse({'success': True, 'message': 'WhatsApp desvinculado'})
 
 
 class RespaldoListView(LoginRequiredMixin, TemplateView):

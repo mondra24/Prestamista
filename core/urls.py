@@ -96,6 +96,12 @@ urlpatterns = [
     path('respaldos/crear/', views.crear_respaldo, name='crear_respaldo'),
     path('respaldos/descargar/<str:nombre>/', views.descargar_respaldo, name='descargar_respaldo'),
 
+    # Conexión de WhatsApp (número personal, vía QR)
+    path('whatsapp/conexion/', views.WhatsAppConexionView.as_view(), name='whatsapp_conexion'),
+    path('api/whatsapp/estado/', views.whatsapp_estado, name='whatsapp_estado'),
+    path('api/whatsapp/qr/', views.whatsapp_qr, name='whatsapp_qr'),
+    path('api/whatsapp/desconectar/', views.whatsapp_desconectar, name='whatsapp_desconectar'),
+
     # Reportes automáticos (C1-C3)
     path('reportes/automaticos/', views.ReportesAutomaticosListView.as_view(), name='reportes_automaticos'),
     path('reportes/automaticos/descargar/<str:nombre>/', views.descargar_reporte_automatico, name='descargar_reporte_automatico'),
