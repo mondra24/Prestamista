@@ -88,7 +88,9 @@
 
 <script>
 (function() {
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+        || document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('csrftoken='))?.split('=')[1]
+        || '';
 
     function showToast(msg, tipo) {
         // Reutiliza el toast global si existe (definido en base.html); si no, alert simple

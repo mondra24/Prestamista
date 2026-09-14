@@ -13,12 +13,14 @@
     </div>
 
     {% if not bridge_configurado %}
-    <div class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle me-1"></i>
-        El servicio de WhatsApp todavía no está desplegado o configurado
-        (faltan <code>WHATSAPP_BRIDGE_URL</code> / <code>WHATSAPP_BRIDGE_SECRET</code>
-        en las variables de entorno). Una vez desplegado el bridge, esta
-        pantalla va a mostrar el código para vincular el número.
+    <div>
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            El servicio de WhatsApp todavía no está desplegado o configurado
+            (faltan <code>WHATSAPP_BRIDGE_URL</code> / <code>WHATSAPP_BRIDGE_SECRET</code>
+            en las variables de entorno). Una vez desplegado el bridge, esta
+            pantalla va a mostrar el código para vincular el número.
+        </div>
     </div>
     {% else %}
 
@@ -59,12 +61,14 @@
         </div>
     </div>
 
-    <div class="alert alert-secondary small">
-        <i class="bi bi-info-circle me-1"></i>
-        Esto usa el número personal de WhatsApp, no la app oficial de Meta
-        Business. Se recomienda usar un número secundario, no el que se usa
-        para hablar con la familia — el proveedor puede bloquear el número
-        sin aviso previo por usar este método.
+    <div class="mb-3">
+        <div class="alert alert-secondary small mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            Esto usa el número personal de WhatsApp, no la app oficial de Meta
+            Business. Se recomienda usar un número secundario, no el que se usa
+            para hablar con la familia — el proveedor puede bloquear el número
+            sin aviso previo por usar este método.
+        </div>
     </div>
 
     <a href="{% url 'core:mensajes_automaticos' %}" class="btn btn-outline-primary">
@@ -86,7 +90,9 @@
 {% if bridge_configurado %}
 <script>
 (function() {
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value
+        || document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('csrftoken='))?.split('=')[1]
+        || '';
     const dot = document.getElementById('wa-dot');
     const statusText = document.getElementById('wa-status-text');
     const qrBlock = document.getElementById('wa-qr-block');
