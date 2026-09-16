@@ -6,13 +6,15 @@ from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
-from django.db.models import Sum, Count, Q, F, Prefetch
+from django.db.models import Sum, Count, Q, F, Prefetch, Avg
+from django.db.models.functions import TruncMonth
 from django.db import transaction
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from decimal import Decimal
+from datetime import date, timedelta
 import json
 
 from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy, ConfiguracionMensajesAutomaticos, DIAS_SEMANA_CODIGOS
@@ -1766,23 +1768,43 @@ class PlanillaImpresionView(LoginRequiredMixin, TemplateView):
         return context
 
 
+MESES_ABREV = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def _primer_dia_mes_hace(fecha, meses_atras):
+    """Primer día del mes que está `meses_atras` meses antes del mes de `fecha`."""
+    total = fecha.year * 12 + (fecha.month - 1) - meses_atras
+    return date(total // 12, total % 12 + 1, 1)
+
+
+def _mes_siguiente(fecha):
+    total = fecha.year * 12 + (fecha.month - 1) + 1
+    return date(total // 12, total % 12 + 1, 1)
+
+
 class ReporteGeneralView(LoginRequiredMixin, TemplateView):
     """Vista con reportes generales"""
     template_name = 'core/reporte_general.html'
-    
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+        hoy = fecha_local_hoy()
+        es_admin = es_usuario_admin(self.request.user)
+
         # Estadísticas generales - filtradas por usuario
-        if not es_usuario_admin(self.request.user):
+        if not es_admin:
             clientes_qs = Cliente.objects.filter(estado='AC', usuario=self.request.user)
             prestamos_qs = Prestamo.objects.filter(estado='AC', cobrador=self.request.user)
             cuotas_qs = Cuota.objects.filter(prestamo__estado='AC', prestamo__cobrador=self.request.user)
+            prestamos_historicos_qs = Prestamo.objects.filter(cobrador=self.request.user)
+            cuotas_historicas_qs = Cuota.objects.filter(prestamo__cobrador=self.request.user)
         else:
             clientes_qs = Cliente.objects.filter(estado='AC')
             prestamos_qs = Prestamo.objects.filter(estado='AC')
             cuotas_qs = Cuota.objects.filter(prestamo__estado='AC')
-        
+            prestamos_historicos_qs = Prestamo.objects.all()
+            cuotas_historicas_qs = Cuota.objects.all()
+
         context['total_clientes'] = clientes_qs.count()
         context['prestamos_activos'] = prestamos_qs.count()
 
@@ -1795,20 +1817,142 @@ class ReporteGeneralView(LoginRequiredMixin, TemplateView):
         ).aggregate(total=Sum('monto_pagado'))['total'] or Decimal('0.00')
         context['capital_en_calle'] = capital_pendiente - capital_pagado_parcial
 
-        # Cuotas vencidas
-        hoy = fecha_local_hoy()
-        context['cuotas_vencidas'] = cuotas_qs.filter(
-            fecha_vencimiento__lt=hoy,
-            estado__in=['PE', 'PC'],
-        ).count()
+        # Cuotas vencidas y cartera en riesgo (capital vencido todavía no cobrado)
+        vencidas_qs = cuotas_qs.filter(fecha_vencimiento__lt=hoy, estado__in=['PE', 'PC'])
+        context['cuotas_vencidas'] = vencidas_qs.count()
+        context['cartera_en_riesgo'] = vencidas_qs.aggregate(
+            total=Sum(F('monto_cuota') - F('monto_pagado'))
+        )['total'] or Decimal('0.00')
 
-        # Mora automática desactivada: el cobrador la registra manualmente.
-        context['mora_total_pendiente'] = Decimal('0.00')
+        # Ticket e interés promedio de la cartera activa
+        promedios = prestamos_qs.aggregate(
+            ticket_promedio=Avg('monto_solicitado'),
+            interes_promedio=Avg('tasa_interes_porcentaje'),
+        )
+        context['ticket_promedio'] = promedios['ticket_promedio'] or Decimal('0.00')
+        context['interes_promedio'] = promedios['interes_promedio'] or Decimal('0.00')
 
         # Distribución por categoría de clientes
         context['clientes_por_categoria'] = clientes_qs.values('categoria').annotate(
             cantidad=Count('id')
         )
+
+        # --- Proyectado vs Cobrado, últimos 6 meses (por mes de vencimiento) ---
+        inicio_rango = _primer_dia_mes_hace(hoy, 5)
+        datos_mes = {
+            d['mes']: d for d in cuotas_historicas_qs.filter(
+                fecha_vencimiento__gte=inicio_rango
+            ).annotate(mes=TruncMonth('fecha_vencimiento')).values('mes').annotate(
+                proyectado=Sum('monto_cuota'),
+                cobrado=Sum('monto_pagado'),
+            )
+        }
+        meses_labels, proyectado_serie, cobrado_serie = [], [], []
+        cursor = inicio_rango
+        for _ in range(6):
+            dato = datos_mes.get(cursor)
+            meses_labels.append(MESES_ABREV[cursor.month - 1])
+            proyectado_serie.append(float(dato['proyectado']) if dato and dato['proyectado'] else 0)
+            cobrado_serie.append(float(dato['cobrado']) if dato and dato['cobrado'] else 0)
+            cursor = _mes_siguiente(cursor)
+        context['meses_labels'] = json.dumps(meses_labels)
+        context['proyectado_serie'] = json.dumps(proyectado_serie)
+        context['cobrado_serie'] = json.dumps(cobrado_serie)
+        total_proyectado = sum(proyectado_serie)
+        total_cobrado = sum(cobrado_serie)
+        context['tasa_recuperacion'] = (
+            round(total_cobrado / total_proyectado * 100, 1) if total_proyectado else 0
+        )
+
+        # --- Cartera por estado de préstamo ---
+        cartera_por_estado = list(prestamos_historicos_qs.values('estado').annotate(
+            cantidad=Count('id'),
+            monto=Sum('monto_total_a_pagar'),
+        ))
+        nombres_estado = dict(Prestamo.Estado.choices)
+        for item in cartera_por_estado:
+            item['nombre'] = nombres_estado.get(item['estado'], item['estado'])
+        context['cartera_por_estado'] = cartera_por_estado
+        context['cartera_por_estado_labels'] = json.dumps([i['nombre'] for i in cartera_por_estado])
+        context['cartera_por_estado_data'] = json.dumps([i['cantidad'] for i in cartera_por_estado])
+
+        # --- Antigüedad de mora (aging), sobre cartera activa vencida ---
+        buckets = [
+            {'label': '1-7 días', 'min': 1, 'max': 7, 'cantidad': 0, 'monto': Decimal('0.00')},
+            {'label': '8-15 días', 'min': 8, 'max': 15, 'cantidad': 0, 'monto': Decimal('0.00')},
+            {'label': '16-30 días', 'min': 16, 'max': 30, 'cantidad': 0, 'monto': Decimal('0.00')},
+            {'label': '31-60 días', 'min': 31, 'max': 60, 'cantidad': 0, 'monto': Decimal('0.00')},
+            {'label': '+60 días', 'min': 61, 'max': None, 'cantidad': 0, 'monto': Decimal('0.00')},
+        ]
+        for cuota in vencidas_qs.only('fecha_vencimiento', 'monto_cuota', 'monto_pagado'):
+            dias = (hoy - cuota.fecha_vencimiento).days
+            restante = cuota.monto_cuota - cuota.monto_pagado
+            for bucket in buckets:
+                if dias >= bucket['min'] and (bucket['max'] is None or dias <= bucket['max']):
+                    bucket['cantidad'] += 1
+                    bucket['monto'] += restante
+                    break
+        context['aging_buckets'] = buckets
+        context['aging_labels'] = json.dumps([b['label'] for b in buckets])
+        context['aging_data'] = json.dumps([float(b['monto']) for b in buckets])
+
+        # --- Métodos de pago, últimos 30 días ---
+        desde_30 = hoy - timedelta(days=30)
+        metodos = cuotas_historicas_qs.filter(fecha_pago_real__gte=desde_30).aggregate(
+            efectivo=Sum('monto_efectivo'),
+            transferencia=Sum('monto_transferencia'),
+        )
+        context['metodo_efectivo'] = metodos['efectivo'] or Decimal('0.00')
+        context['metodo_transferencia'] = metodos['transferencia'] or Decimal('0.00')
+        context['metodos_labels'] = json.dumps(['Efectivo', 'Transferencia'])
+        context['metodos_data'] = json.dumps([
+            float(metodos['efectivo'] or 0), float(metodos['transferencia'] or 0)
+        ])
+
+        # --- Préstamos otorgados por mes, últimos 6 meses ---
+        datos_otorgados = {
+            d['mes'].date(): d for d in prestamos_historicos_qs.filter(
+                fecha_creacion__date__gte=inicio_rango
+            ).annotate(mes=TruncMonth('fecha_creacion')).values('mes').annotate(
+                cantidad=Count('id'),
+                monto=Sum('monto_solicitado'),
+            )
+        }
+        otorgados_labels, otorgados_cantidad = [], []
+        cursor = inicio_rango
+        for _ in range(6):
+            dato = datos_otorgados.get(cursor)
+            otorgados_labels.append(MESES_ABREV[cursor.month - 1])
+            otorgados_cantidad.append(dato['cantidad'] if dato else 0)
+            cursor = _mes_siguiente(cursor)
+        context['otorgados_labels'] = json.dumps(otorgados_labels)
+        context['otorgados_data'] = json.dumps(otorgados_cantidad)
+
+        # --- Ranking de cobradores del mes (solo admin) ---
+        if es_admin:
+            inicio_mes = hoy.replace(day=1)
+            ranking = list(Cuota.objects.filter(
+                fecha_pago_real__gte=inicio_mes,
+                estado__in=['PA', 'PC'],
+                cobrado_por__isnull=False,
+            ).values(
+                'cobrado_por__username', 'cobrado_por__first_name', 'cobrado_por__last_name'
+            ).annotate(monto=Sum('monto_pagado')).order_by('-monto')[:10])
+            maximo = max((r['monto'] for r in ranking), default=Decimal('0.00')) or Decimal('1.00')
+            for r in ranking:
+                nombre_completo = f"{r['cobrado_por__first_name']} {r['cobrado_por__last_name']}".strip()
+                r['nombre'] = nombre_completo or r['cobrado_por__username']
+                r['porcentaje'] = int(r['monto'] / maximo * 100)
+            context['ranking_cobradores'] = ranking
+
+        # --- Top 5 clientes con mayor monto adeudado en mora ---
+        top_morosos = list(vencidas_qs.values(
+            'prestamo__cliente__id', 'prestamo__cliente__nombre', 'prestamo__cliente__apellido'
+        ).annotate(
+            monto_adeudado=Sum(F('monto_cuota') - F('monto_pagado')),
+            cuotas_atrasadas=Count('id'),
+        ).order_by('-monto_adeudado')[:5])
+        context['top_morosos'] = top_morosos
 
         return context
 

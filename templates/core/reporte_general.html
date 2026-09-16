@@ -6,14 +6,14 @@
 
 {% block content %}
 <div class="container-fluid px-2 px-lg-4">
-    
+
     <!-- Header -->
     <h1 class="h4 mb-4">
         <i class="bi bi-graph-up me-2"></i>Reportes Generales
     </h1>
-    
+
     <!-- Estadísticas principales -->
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-3">
         <div class="col-6 col-lg-3">
             <div class="stat-card">
                 <div class="stat-icon bg-primary bg-opacity-10 text-primary">
@@ -52,62 +52,240 @@
         </div>
     </div>
 
-    {% if mora_total_pendiente and mora_total_pendiente > 0 %}
+    <!-- Estadísticas secundarias -->
     <div class="row g-3 mb-4">
-        <div class="col-12">
+        <div class="col-6 col-lg-3">
             <div class="stat-card">
                 <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                    <i class="bi bi-shield-exclamation"></i>
+                </div>
+                <div class="stat-value">{{ cartera_en_riesgo|dinero }}</div>
+                <div class="stat-label">Cartera en Riesgo</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-success bg-opacity-10 text-success">
+                    <i class="bi bi-graph-up-arrow"></i>
+                </div>
+                <div class="stat-value">{{ tasa_recuperacion }}%</div>
+                <div class="stat-label">Tasa de Recuperación (6m)</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                    <i class="bi bi-ticket-perforated"></i>
+                </div>
+                <div class="stat-value">{{ ticket_promedio|dinero }}</div>
+                <div class="stat-label">Ticket Promedio</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning">
                     <i class="bi bi-percent"></i>
                 </div>
-                <div class="stat-value text-danger">{{ mora_total_pendiente|dinero }}</div>
-                <div class="stat-label">Mora Total Pendiente</div>
+                <div class="stat-value">{{ interes_promedio|floatformat:1 }}%</div>
+                <div class="stat-label">Interés Promedio</div>
             </div>
         </div>
     </div>
-    {% endif %}
-    
-    <!-- Distribución por categoría -->
+
+    <!-- Proyectado vs Cobrado -->
     <section class="mb-4">
         <h3 class="section-title">
-            <i class="bi bi-pie-chart"></i>
-            Clientes por Categoría
+            <i class="bi bi-bar-chart-line"></i>
+            Proyectado vs Cobrado (últimos 6 meses)
         </h3>
-        
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                {% for item in clientes_por_categoria %}
-                <div class="d-flex align-items-center mb-3">
-                    <div class="categoria-badge me-3 {% if item.categoria == 'EX' %}categoria-excelente{% elif item.categoria == 'RE' %}categoria-regular{% elif item.categoria == 'MO' %}categoria-moroso{% else %}categoria-nuevo{% endif %}" 
-                         style="width: 12px; height: 12px;"></div>
-                    <div class="flex-grow-1">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span>
-                                {% if item.categoria == 'EX' %}Excelente{% elif item.categoria == 'RE' %}Regular{% elif item.categoria == 'MO' %}Moroso{% else %}Nuevo{% endif %}
-                            </span>
-                            <strong>{{ item.cantidad }}</strong>
+                <div class="chart-wrap">
+                    <canvas id="chartProyectadoCobrado"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Cartera por estado + Métodos de pago -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-lg-6">
+            <section>
+                <h3 class="section-title">
+                    <i class="bi bi-pie-chart"></i>
+                    Cartera por Estado
+                </h3>
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="chart-wrap chart-wrap-donut">
+                            <canvas id="chartCarteraEstado"></canvas>
                         </div>
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar 
-                                {% if item.categoria == 'EX' %}bg-success{% elif item.categoria == 'RE' %}bg-warning{% elif item.categoria == 'MO' %}bg-danger{% else %}bg-primary{% endif %}" 
-                                 style="width: {% widthratio item.cantidad total_clientes 100 %}%">
+                        <div class="mt-3">
+                            {% for item in cartera_por_estado %}
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>{{ item.nombre }} <span class="text-muted">({{ item.cantidad }})</span></span>
+                                <strong>{{ item.monto|dinero }}</strong>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-lg-6">
+            <section>
+                <h3 class="section-title">
+                    <i class="bi bi-credit-card"></i>
+                    Métodos de Pago (30 días)
+                </h3>
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="chart-wrap chart-wrap-donut">
+                            <canvas id="chartMetodosPago"></canvas>
+                        </div>
+                        <div class="mt-3">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span><i class="bi bi-cash me-1"></i>Efectivo</span>
+                                <strong>{{ metodo_efectivo|dinero }}</strong>
+                            </div>
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span><i class="bi bi-bank me-1"></i>Transferencia</span>
+                                <strong>{{ metodo_transferencia|dinero }}</strong>
                             </div>
                         </div>
                     </div>
                 </div>
-                {% empty %}
-                <p class="text-muted text-center">No hay datos disponibles</p>
+            </section>
+        </div>
+    </div>
+
+    <!-- Antigüedad de mora -->
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-hourglass-split"></i>
+            Antigüedad de Mora
+        </h3>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="chart-wrap chart-wrap-aging">
+                    <canvas id="chartAging"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Préstamos otorgados por mes -->
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-graph-up"></i>
+            Préstamos Otorgados por Mes
+        </h3>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="chart-wrap">
+                    <canvas id="chartOtorgados"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="row g-3 mb-4">
+        <!-- Distribución por categoría -->
+        <div class="col-12 col-lg-6">
+            <section>
+                <h3 class="section-title">
+                    <i class="bi bi-people"></i>
+                    Clientes por Categoría
+                </h3>
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        {% for item in clientes_por_categoria %}
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="categoria-badge me-3 {% if item.categoria == 'EX' %}categoria-excelente{% elif item.categoria == 'RE' %}categoria-regular{% elif item.categoria == 'MO' %}categoria-moroso{% else %}categoria-nuevo{% endif %}"
+                                 style="width: 12px; height: 12px;"></div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span>
+                                        {% if item.categoria == 'EX' %}Excelente{% elif item.categoria == 'RE' %}Regular{% elif item.categoria == 'MO' %}Moroso{% else %}Nuevo{% endif %}
+                                    </span>
+                                    <strong>{{ item.cantidad }}</strong>
+                                </div>
+                                <div class="progress" style="height: 6px;">
+                                    <div class="progress-bar
+                                        {% if item.categoria == 'EX' %}bg-success{% elif item.categoria == 'RE' %}bg-warning{% elif item.categoria == 'MO' %}bg-danger{% else %}bg-primary{% endif %}"
+                                         style="width: {% widthratio item.cantidad total_clientes 100 %}%">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <p class="text-muted text-center">No hay datos disponibles</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Top clientes en mora -->
+        <div class="col-12 col-lg-6">
+            <section>
+                <h3 class="section-title">
+                    <i class="bi bi-exclamation-circle"></i>
+                    Top Clientes en Mora
+                </h3>
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        {% for cliente in top_morosos %}
+                        <div class="d-flex justify-content-between align-items-center {% if not forloop.last %}mb-3{% endif %}">
+                            <div>
+                                <div class="fw-semibold">{{ cliente.prestamo__cliente__nombre }} {{ cliente.prestamo__cliente__apellido }}</div>
+                                <div class="text-muted small">{{ cliente.cuotas_atrasadas }} cuota{{ cliente.cuotas_atrasadas|pluralize }} vencida{{ cliente.cuotas_atrasadas|pluralize }}</div>
+                            </div>
+                            <strong class="text-danger">{{ cliente.monto_adeudado|dinero }}</strong>
+                        </div>
+                        {% empty %}
+                        <p class="text-muted text-center">No hay clientes en mora</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    {% if ranking_cobradores %}
+    <!-- Ranking de cobradores -->
+    <section class="mb-4">
+        <h3 class="section-title">
+            <i class="bi bi-trophy"></i>
+            Ranking de Cobradores (mes actual)
+        </h3>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                {% for cobrador in ranking_cobradores %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-grow-1">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>{{ cobrador.nombre }}</span>
+                            <strong>{{ cobrador.monto|dinero }}</strong>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-success" style="width: {{ cobrador.porcentaje }}%"></div>
+                        </div>
+                    </div>
+                </div>
                 {% endfor %}
             </div>
         </div>
     </section>
-    
+    {% endif %}
+
     <!-- Accesos rápidos -->
     <section>
         <h3 class="section-title">
             <i class="bi bi-lightning"></i>
             Accesos Rápidos
         </h3>
-        
+
         <div class="row g-2">
             <div class="col-6">
                 <a href="{% url 'core:cierre_caja' %}" class="btn btn-outline-success btn-lg w-100 py-3">
@@ -135,6 +313,166 @@
             </div>
         </div>
     </section>
-    
+
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .chart-wrap { position: relative; height: 260px; }
+    .chart-wrap-donut { height: 220px; }
+    .chart-wrap-aging { height: 220px; }
+    @media (min-width: 768px) {
+        .chart-wrap { height: 320px; }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+    var css = getComputedStyle(document.documentElement);
+    var colorPagado = css.getPropertyValue('--color-pagado').trim() || '#198754';
+    var colorPendiente = css.getPropertyValue('--color-pendiente').trim() || '#fd7e14';
+    var colorMoroso = css.getPropertyValue('--color-moroso').trim() || '#dc3545';
+    var colorNuevo = css.getPropertyValue('--color-nuevo').trim() || '#0d6efd';
+    var colorMoraReciente = css.getPropertyValue('--color-mora-reciente').trim() || '#7c3aed';
+    var textColor = css.getPropertyValue('--text-secondary').trim() || '#6c757d';
+    var gridColor = css.getPropertyValue('--border-color').trim() || '#dee2e6';
+
+    Chart.defaults.color = textColor;
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+
+    function moneda(valor) {
+        return '$' + Math.round(valor).toLocaleString('es-AR');
+    }
+
+    // Proyectado vs Cobrado
+    new Chart(document.getElementById('chartProyectadoCobrado'), {
+        type: 'bar',
+        data: {
+            labels: JSON.parse('{{ meses_labels|escapejs }}'),
+            datasets: [
+                {
+                    label: 'Proyectado',
+                    data: JSON.parse('{{ proyectado_serie|escapejs }}'),
+                    backgroundColor: colorNuevo + '55',
+                    borderColor: colorNuevo,
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                },
+                {
+                    label: 'Cobrado',
+                    data: JSON.parse('{{ cobrado_serie|escapejs }}'),
+                    backgroundColor: colorPagado + 'aa',
+                    borderColor: colorPagado,
+                    borderWidth: 1.5,
+                    borderRadius: 4,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: moneda } },
+                x: { grid: { display: false } },
+            },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + moneda(ctx.parsed.y); } } },
+            },
+        },
+    });
+
+    // Cartera por estado
+    new Chart(document.getElementById('chartCarteraEstado'), {
+        type: 'doughnut',
+        data: {
+            labels: JSON.parse('{{ cartera_por_estado_labels|escapejs }}'),
+            datasets: [{
+                data: JSON.parse('{{ cartera_por_estado_data|escapejs }}'),
+                backgroundColor: [colorPagado, colorNuevo, textColor, colorMoraReciente, colorMoroso],
+                borderWidth: 0,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+        },
+    });
+
+    // Métodos de pago
+    new Chart(document.getElementById('chartMetodosPago'), {
+        type: 'doughnut',
+        data: {
+            labels: JSON.parse('{{ metodos_labels|escapejs }}'),
+            datasets: [{
+                data: JSON.parse('{{ metodos_data|escapejs }}'),
+                backgroundColor: [colorPagado, colorNuevo],
+                borderWidth: 0,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+        },
+    });
+
+    // Antigüedad de mora
+    new Chart(document.getElementById('chartAging'), {
+        type: 'bar',
+        data: {
+            labels: JSON.parse('{{ aging_labels|escapejs }}'),
+            datasets: [{
+                label: 'Monto adeudado',
+                data: JSON.parse('{{ aging_data|escapejs }}'),
+                backgroundColor: [colorPendiente, colorPendiente, colorMoroso, colorMoroso, colorMoroso],
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: moneda } },
+                y: { grid: { display: false } },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: function(ctx) { return moneda(ctx.parsed.x); } } },
+            },
+        },
+    });
+
+    // Préstamos otorgados por mes
+    new Chart(document.getElementById('chartOtorgados'), {
+        type: 'bar',
+        data: {
+            labels: JSON.parse('{{ otorgados_labels|escapejs }}'),
+            datasets: [{
+                label: 'Préstamos otorgados',
+                data: JSON.parse('{{ otorgados_data|escapejs }}'),
+                backgroundColor: colorNuevo + 'aa',
+                borderColor: colorNuevo,
+                borderWidth: 1.5,
+                borderRadius: 4,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, grid: { color: gridColor }, ticks: { precision: 0 } },
+                x: { grid: { display: false } },
+            },
+            plugins: { legend: { display: false } },
+        },
+    });
+})();
+</script>
 {% endblock %}

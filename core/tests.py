@@ -3095,11 +3095,81 @@ class DashboardMoraTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('mora_total_pendiente', response.context)
 
-    def test_reporte_incluye_mora(self):
-        """Test que el reporte general incluye mora_total_pendiente"""
+    def test_reporte_incluye_cartera_en_riesgo(self):
+        """Test que el reporte general incluye cartera_en_riesgo (reemplaza al mora_total_pendiente muerto, siempre en 0)"""
         response = self.client.get(reverse('core:reporte_general'))
         self.assertEqual(response.status_code, 200)
-        self.assertIn('mora_total_pendiente', response.context)
+        self.assertIn('cartera_en_riesgo', response.context)
+
+
+class ReporteGeneralMetricasTest(TestCase):
+    """Tests para las métricas nuevas de Reportes Generales (proyectado vs cobrado, mora, etc.)"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='admin_reportes', password='test123')
+        self.user.perfil.rol = 'AD'
+        self.user.perfil.save()
+        self.client = TestClient()
+        self.client.login(username='admin_reportes', password='test123')
+
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Torres', telefono='1155667788', direccion='Calle Falsa 123'
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente,
+            monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=4,
+            frecuencia='SE',
+            fecha_inicio=date.today(),
+        )
+
+    def test_contexto_incluye_metricas_nuevas(self):
+        response = self.client.get(reverse('core:reporte_general'))
+        self.assertEqual(response.status_code, 200)
+        claves_esperadas = [
+            'cartera_en_riesgo', 'tasa_recuperacion', 'ticket_promedio', 'interes_promedio',
+            'meses_labels', 'proyectado_serie', 'cobrado_serie',
+            'cartera_por_estado', 'cartera_por_estado_labels', 'cartera_por_estado_data',
+            'aging_buckets', 'aging_labels', 'aging_data',
+            'metodo_efectivo', 'metodo_transferencia', 'metodos_labels', 'metodos_data',
+            'otorgados_labels', 'otorgados_data', 'top_morosos',
+        ]
+        for clave in claves_esperadas:
+            self.assertIn(clave, response.context, f'Falta la clave {clave} en el contexto')
+
+    def test_prestamo_creado_hoy_aparece_en_otorgados_del_mes_actual(self):
+        """
+        Regresión: TruncMonth sobre fecha_creacion (DateTimeField) devuelve un
+        datetime con timezone, no un date. Si se usa esa clave sin normalizar
+        contra el diccionario de meses (que usa date), el mes actual siempre
+        da 0 aunque haya préstamos creados hoy.
+        """
+        response = self.client.get(reverse('core:reporte_general'))
+        otorgados_data = json.loads(response.context['otorgados_data'])
+        # El préstamo de setUp se creó hoy -> el último mes de la serie (mes actual) debe ser >= 1
+        self.assertGreaterEqual(otorgados_data[-1], 1)
+
+    def test_ranking_cobradores_solo_para_admin(self):
+        cobrador = User.objects.create_user(username='cobrador_reportes', password='test123')
+        cobrador.perfil.rol = 'CO'
+        cobrador.perfil.save()
+        client_cobrador = TestClient()
+        client_cobrador.login(username='cobrador_reportes', password='test123')
+
+        response = self.client.get(reverse('core:reporte_general'))
+        self.assertIn('ranking_cobradores', response.context)
+
+        response_cobrador = client_cobrador.get(reverse('core:reporte_general'))
+        self.assertNotIn('ranking_cobradores', response_cobrador.context)
+
+    def test_cartera_en_riesgo_suma_solo_cuotas_vencidas_no_pagadas(self):
+        cuota_vencida = self.prestamo.cuotas.order_by('numero_cuota').first()
+        cuota_vencida.fecha_vencimiento = date.today() - timedelta(days=5)
+        cuota_vencida.save()
+
+        response = self.client.get(reverse('core:reporte_general'))
+        self.assertEqual(response.context['cartera_en_riesgo'], cuota_vencida.monto_restante)
 
 
 class CierreCajaDesglose(TestCase):
