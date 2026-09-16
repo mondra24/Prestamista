@@ -93,6 +93,17 @@ misma tarjeta, solo cambia el color según `tarjeta_clase` ('vencida' o
                 title="Cobro parcial">
             <i class="bi bi-pencil-square"></i>
         </button>
+        {% if cuota.prestamo.cliente.telefono %}
+        <button type="button" class="action-btn-mini whatsapp btn-avisar-wp"
+                data-tel="{{ cuota.prestamo.cliente.telefono }}"
+                data-cliente-wp="{{ cuota.prestamo.cliente.nombre }}"
+                data-monto-wp="{{ cuota.monto_restante|dinero }}"
+                data-vencida-wp="true"
+                data-dias-vencida-wp="{{ cuota.dias_vencida }}"
+                title="Avisar por WhatsApp">
+            <i class="bi bi-whatsapp"></i>
+        </button>
+        {% endif %}
         <button type="button" class="action-btn-mini primary btn-cobrar"
                 data-cuota-id="{{ cuota.pk }}"
                 data-monto="{{ cuota.monto_restante|numero_raw }}"

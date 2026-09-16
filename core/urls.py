@@ -82,6 +82,12 @@ urlpatterns = [
     path('api/prestamo/<int:pk>/notas/crear/', views.crear_nota_prestamo, name='crear_nota_prestamo'),
     path('api/notas/<int:pk>/eliminar/', views.eliminar_nota_prestamo, name='eliminar_nota_prestamo'),
 
+    # Tareas pendientes (widget flotante personal, visible en toda la app, AJAX)
+    path('api/tareas/', views.listar_tareas, name='listar_tareas'),
+    path('api/tareas/crear/', views.crear_tarea, name='crear_tarea'),
+    path('api/tareas/<int:pk>/toggle/', views.toggle_tarea, name='toggle_tarea'),
+    path('api/tareas/<int:pk>/eliminar/', views.eliminar_tarea, name='eliminar_tarea'),
+
     # Estado irrecuperable (AJAX, solo admin)
     path('api/prestamo/<int:pk>/irrecuperable/', views.cambiar_estado_irrecuperable_prestamo, name='cambiar_estado_irrecuperable'),
 

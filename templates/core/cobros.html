@@ -216,6 +216,16 @@
                                         title="Cobro parcial">
                                     <i class="bi bi-pencil-square"></i>
                                 </button>
+                                {% if cuota.prestamo.cliente.telefono %}
+                                <button type="button" class="action-btn-mini whatsapp btn-avisar-wp"
+                                        data-tel="{{ cuota.prestamo.cliente.telefono }}"
+                                        data-cliente-wp="{{ cuota.prestamo.cliente.nombre }}"
+                                        data-monto-wp="{{ cuota.monto_restante|dinero }}"
+                                        data-vencida-wp="false"
+                                        title="Avisar por WhatsApp">
+                                    <i class="bi bi-whatsapp"></i>
+                                </button>
+                                {% endif %}
                                 <button type="button" class="action-btn-mini primary btn-cobrar"
                                         data-cuota-id="{{ cuota.pk }}"
                                         data-monto="{{ cuota.monto_restante|numero_raw }}"
@@ -1298,6 +1308,31 @@ document.addEventListener('click', function(e) {
     const cliente = btn.dataset.cliente || 'Cliente';
 
     mostrarConfirmacion(cuotaId, monto, cliente, mora);
+});
+
+// Delegación de eventos para botón avisar por WhatsApp (mensaje manual, abre wa.me)
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-avisar-wp');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const cliente = btn.dataset.clienteWp || 'Cliente';
+    const monto = btn.dataset.montoWp || '';
+    const esVencida = btn.dataset.vencidaWp === 'true';
+    const dias = btn.dataset.diasVencidaWp || '0';
+
+    let mensaje;
+    if (esVencida) {
+        mensaje = `Hola ${cliente}! Te escribo porque tu cuota de ${monto} venció hace ${dias} día${dias == '1' ? '' : 's'}. ¿Podemos coordinar el pago? ¡Gracias!`;
+    } else {
+        mensaje = `Hola ${cliente}! Te recuerdo que hoy vence tu cuota de ${monto}. ¡Gracias!`;
+    }
+
+    let tel = (btn.dataset.tel || '').replace(/[^0-9]/g, '');
+    if (tel.startsWith('0')) tel = tel.substring(1);
+    if (!tel.startsWith('54')) tel = '54' + tel;
+    window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
 });
 
 // Context menu y long press para abrir modal desde botón cobrar

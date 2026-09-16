@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initFormateoMontos();
     initThemeToggle();
     initSelectAutocomplete();
+    initTareasPendientes();
 });
 
 /**
@@ -863,6 +864,139 @@ function initThemeToggle() {
     if (toggleDesktop) {
         toggleDesktop.addEventListener('click', toggleTheme);
     }
+}
+
+/**
+ * Widget flotante de Tareas Pendientes (visible sobre cualquier pantalla).
+ * Lista personal por usuario, pensada para recordatorios sueltos tipo
+ * "fulano quiere refinanciar" que se manejan a mano y se pasan por alto.
+ */
+function initTareasPendientes() {
+    const widget = document.getElementById('tareas-widget');
+    if (!widget) return; // no logueado, no se renderiza el widget
+
+    const toggleBtn = document.getElementById('tareas-widget-toggle');
+    const closeBtn = document.getElementById('tareas-widget-close');
+    const form = document.getElementById('tareas-widget-form');
+    const input = document.getElementById('tareas-widget-input');
+    const lista = document.getElementById('tareas-widget-list');
+    const badge = document.getElementById('tareas-widget-badge');
+
+    function actualizarBadge(tareas) {
+        const pendientes = tareas.filter(function(t) { return !t.completada; }).length;
+        if (pendientes > 0) {
+            badge.textContent = pendientes > 99 ? '99+' : pendientes;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    function crearElementoTarea(tarea) {
+        const div = document.createElement('div');
+        div.className = 'tarea-item' + (tarea.completada ? ' completada' : '');
+        div.dataset.tareaId = tarea.id;
+        div.innerHTML =
+            '<input type="checkbox" class="tarea-check" ' + (tarea.completada ? 'checked' : '') + '>' +
+            '<span class="tarea-texto"></span>' +
+            '<button type="button" class="tarea-borrar" title="Eliminar"><i class="bi bi-x-lg"></i></button>';
+        div.querySelector('.tarea-texto').textContent = tarea.texto;
+        return div;
+    }
+
+    function renderizar(tareas) {
+        lista.innerHTML = '';
+        if (tareas.length === 0) {
+            lista.innerHTML = '<div class="tareas-widget-empty"><i class="bi bi-check2-circle fs-4 d-block mb-1"></i>Sin tareas pendientes</div>';
+        } else {
+            tareas.forEach(function(t) { lista.appendChild(crearElementoTarea(t)); });
+        }
+        actualizarBadge(tareas);
+    }
+
+    function cargarTareas() {
+        fetch('/api/tareas/')
+            .then(function(r) { return r.json(); })
+            .then(function(data) { if (data.success) renderizar(data.data); })
+            .catch(function(err) { console.log('Error cargando tareas:', err); });
+    }
+
+    function abrir() {
+        widget.classList.add('abierto');
+        localStorage.setItem('tareasWidgetAbierto', '1');
+        input.focus();
+    }
+
+    function cerrar() {
+        widget.classList.remove('abierto');
+        localStorage.setItem('tareasWidgetAbierto', '0');
+    }
+
+    toggleBtn.addEventListener('click', function() {
+        widget.classList.contains('abierto') ? cerrar() : abrir();
+    });
+    closeBtn.addEventListener('click', cerrar);
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const texto = input.value.trim();
+        if (!texto) return;
+
+        fetch('/api/tareas/crear/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': CONFIG.CSRF_TOKEN
+            },
+            body: 'texto=' + encodeURIComponent(texto)
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    input.value = '';
+                    cargarTareas();
+                } else if (typeof showToast === 'function') {
+                    showToast(data.message || 'No se pudo guardar la tarea', 'danger');
+                }
+            })
+            .catch(function() { if (typeof showToast === 'function') showToast('Error de conexión', 'danger'); });
+    });
+
+    lista.addEventListener('click', function(e) {
+        const item = e.target.closest('.tarea-item');
+        if (!item) return;
+        const tareaId = item.dataset.tareaId;
+
+        if (e.target.closest('.tarea-borrar')) {
+            fetch('/api/tareas/' + tareaId + '/eliminar/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CONFIG.CSRF_TOKEN }
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { if (data.success) cargarTareas(); })
+                .catch(function() {});
+            return;
+        }
+
+        if (e.target.closest('.tarea-check') || e.target.closest('.tarea-texto')) {
+            fetch('/api/tareas/' + tareaId + '/toggle/', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': CONFIG.CSRF_TOKEN }
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { if (data.success) cargarTareas(); })
+                .catch(function() {});
+        }
+    });
+
+    // Recordar si Thomas lo dejó abierto - por defecto abierto en desktop, cerrado en mobile
+    const preferenciaGuardada = localStorage.getItem('tareasWidgetAbierto');
+    const abiertoPorDefecto = window.innerWidth >= 992;
+    if (preferenciaGuardada === '1' || (preferenciaGuardada === null && abiertoPorDefecto)) {
+        widget.classList.add('abierto');
+    }
+
+    cargarTareas();
 }
 
 /**

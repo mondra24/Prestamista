@@ -181,8 +181,29 @@
             </div>
         </div>
     </aside>
+
+    <!-- Widget flotante de Tareas Pendientes (personal, visible en toda la app) -->
+    <div class="tareas-widget" id="tareas-widget">
+        <button type="button" class="tareas-widget-toggle" id="tareas-widget-toggle" title="Tareas pendientes">
+            <i class="bi bi-list-check"></i>
+            <span class="tareas-widget-badge" id="tareas-widget-badge" style="display:none;">0</span>
+        </button>
+        <div class="tareas-widget-panel" id="tareas-widget-panel">
+            <div class="tareas-widget-header">
+                <span><i class="bi bi-list-check me-1"></i>Tareas Pendientes</span>
+                <button type="button" class="tareas-widget-close" id="tareas-widget-close" title="Minimizar">
+                    <i class="bi bi-dash-lg"></i>
+                </button>
+            </div>
+            <form id="tareas-widget-form" class="tareas-widget-form">
+                <input type="text" id="tareas-widget-input" placeholder="Nueva tarea..." maxlength="280" autocomplete="off">
+                <button type="submit" title="Agregar"><i class="bi bi-plus-lg"></i></button>
+            </form>
+            <div class="tareas-widget-list" id="tareas-widget-list"></div>
+        </div>
+    </div>
     {% endif %}
-    
+
     <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     

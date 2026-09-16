@@ -17,7 +17,7 @@ from decimal import Decimal
 from datetime import date, timedelta
 import json
 
-from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy, ConfiguracionMensajesAutomaticos, DIAS_SEMANA_CODIGOS
+from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy, ConfiguracionMensajesAutomaticos, DIAS_SEMANA_CODIGOS, TareaPendiente
 from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
 from . import whatsapp_bridge
 
@@ -3899,3 +3899,62 @@ def eliminar_nota_prestamo(request, pk):
 
     nota.delete()
     return JsonResponse({'success': True, 'message': 'Nota eliminada.'})
+
+
+# ============== TAREAS PENDIENTES (widget flotante) ==============
+
+def _tarea_a_json(tarea):
+    return {
+        'id': tarea.pk,
+        'texto': tarea.texto,
+        'completada': tarea.completada,
+    }
+
+
+@login_required
+def listar_tareas(request):
+    """Tareas pendientes del usuario logueado (widget flotante, visible en toda la app)."""
+    tareas = TareaPendiente.objects.filter(usuario=request.user)
+    return JsonResponse({
+        'success': True,
+        'data': [_tarea_a_json(t) for t in tareas],
+    })
+
+
+@login_required
+def crear_tarea(request):
+    """Crea una tarea pendiente (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    texto = (request.POST.get('texto') or '').strip()
+    if not texto:
+        return JsonResponse({'success': False, 'message': 'Escribí una tarea antes de guardar.'}, status=400)
+    if len(texto) > 280:
+        return JsonResponse({'success': False, 'message': 'La tarea es muy larga (máximo 280 caracteres).'}, status=400)
+
+    tarea = TareaPendiente.objects.create(usuario=request.user, texto=texto)
+    return JsonResponse({'success': True, 'data': _tarea_a_json(tarea)})
+
+
+@login_required
+def toggle_tarea(request, pk):
+    """Marca/desmarca una tarea como completada (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    tarea = get_object_or_404(TareaPendiente, pk=pk, usuario=request.user)
+    tarea.completada = not tarea.completada
+    tarea.save(update_fields=['completada'])
+    return JsonResponse({'success': True, 'data': _tarea_a_json(tarea)})
+
+
+@login_required
+def eliminar_tarea(request, pk):
+    """Elimina una tarea pendiente (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    tarea = get_object_or_404(TareaPendiente, pk=pk, usuario=request.user)
+    tarea.delete()
+    return JsonResponse({'success': True, 'message': 'Tarea eliminada.'})

@@ -2696,3 +2696,26 @@ class ConfiguracionMensajesAutomaticos(models.Model):
             .replace('{{monto}}', dinero(cuota.monto_restante))
             .replace('{{fecha_vencimiento}}', cuota.fecha_vencimiento.strftime('%d/%m/%Y'))
         )
+
+
+class TareaPendiente(models.Model):
+    """
+    Recordatorio personal, tipo lista de tareas, del widget flotante que
+    aparece sobre cualquier pantalla. Privado por usuario - cada uno ve y
+    gestiona solo las suyas (pedido de Thomas: cosas puntuales de clientes
+    que gestiona a su manera y se le pasan por alto).
+    """
+    usuario = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='tareas_pendientes', verbose_name='Usuario'
+    )
+    texto = models.CharField(max_length=280, verbose_name='Tarea')
+    completada = models.BooleanField(default=False, verbose_name='Completada')
+    fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+
+    class Meta:
+        verbose_name = 'Tarea Pendiente'
+        verbose_name_plural = 'Tareas Pendientes'
+        ordering = ['completada', '-fecha_creacion']
+
+    def __str__(self):
+        return f'{self.usuario} - {self.texto[:40]}'

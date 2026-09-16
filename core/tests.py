@@ -20,7 +20,7 @@ from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
-    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos
+    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos, TareaPendiente
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 from . import whatsapp as whatsapp_module
@@ -4324,3 +4324,81 @@ class MensajesAutomaticosConfigViewTest(TestCase):
         self.assertEqual(response.status_code, 200)
         config = ConfiguracionMensajesAutomaticos.obtener()
         self.assertEqual(config.recordatorio_dias_semana, 'LMX')
+
+
+class TareaPendienteTest(TestCase):
+    """Widget flotante de tareas pendientes: lista personal por usuario, visible en toda la app"""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='tareas_user', password='test123')
+        self.otro_user = User.objects.create_user(username='tareas_otro', password='test123')
+        self.client = TestClient()
+        self.client.login(username='tareas_user', password='test123')
+
+    def test_listar_vacio(self):
+        response = self.client.get(reverse('core:listar_tareas'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data'], [])
+
+    def test_crear_tarea(self):
+        response = self.client.post(reverse('core:crear_tarea'), {'texto': 'Llamar a Camila por refinanciación'})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['data']['texto'], 'Llamar a Camila por refinanciación')
+        self.assertFalse(data['data']['completada'])
+        self.assertEqual(TareaPendiente.objects.filter(usuario=self.user).count(), 1)
+
+    def test_crear_tarea_vacia_falla(self):
+        response = self.client.post(reverse('core:crear_tarea'), {'texto': '   '})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(TareaPendiente.objects.count(), 0)
+
+    def test_crear_tarea_muy_larga_falla(self):
+        response = self.client.post(reverse('core:crear_tarea'), {'texto': 'x' * 281})
+        self.assertEqual(response.status_code, 400)
+
+    def test_toggle_tarea_marca_completada(self):
+        tarea = TareaPendiente.objects.create(usuario=self.user, texto='Ver a Axel')
+        response = self.client.post(reverse('core:toggle_tarea', args=[tarea.pk]))
+        self.assertEqual(response.status_code, 200)
+        tarea.refresh_from_db()
+        self.assertTrue(tarea.completada)
+
+        # Un segundo toggle la desmarca
+        response = self.client.post(reverse('core:toggle_tarea', args=[tarea.pk]))
+        tarea.refresh_from_db()
+        self.assertFalse(tarea.completada)
+
+    def test_eliminar_tarea(self):
+        tarea = TareaPendiente.objects.create(usuario=self.user, texto='Borrar esta')
+        response = self.client.post(reverse('core:eliminar_tarea', args=[tarea.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(TareaPendiente.objects.filter(pk=tarea.pk).exists())
+
+    def test_no_ve_tareas_de_otro_usuario(self):
+        TareaPendiente.objects.create(usuario=self.otro_user, texto='Tarea ajena')
+        response = self.client.get(reverse('core:listar_tareas'))
+        self.assertEqual(response.json()['data'], [])
+
+    def test_no_puede_completar_tarea_de_otro_usuario(self):
+        tarea_ajena = TareaPendiente.objects.create(usuario=self.otro_user, texto='Tarea ajena')
+        response = self.client.post(reverse('core:toggle_tarea', args=[tarea_ajena.pk]))
+        self.assertEqual(response.status_code, 404)
+        tarea_ajena.refresh_from_db()
+        self.assertFalse(tarea_ajena.completada)
+
+    def test_no_puede_eliminar_tarea_de_otro_usuario(self):
+        tarea_ajena = TareaPendiente.objects.create(usuario=self.otro_user, texto='Tarea ajena')
+        response = self.client.post(reverse('core:eliminar_tarea', args=[tarea_ajena.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(TareaPendiente.objects.filter(pk=tarea_ajena.pk).exists())
+
+    def test_requiere_login(self):
+        client_anonimo = TestClient()
+        response = client_anonimo.get(reverse('core:listar_tareas'))
+        self.assertEqual(response.status_code, 302)  # redirect a login
+
+    def test_widget_aparece_en_base_para_usuario_logueado(self):
+        response = self.client.get(reverse('core:dashboard'))
+        self.assertContains(response, 'id="tareas-widget"')
