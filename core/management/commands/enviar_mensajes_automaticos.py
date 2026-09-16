@@ -11,7 +11,15 @@ No manda nada hasta que:
 
 Cada uno de los 3 mensajes tiene su propio interruptor, día de la semana y
 plantilla configurables, independientes entre sí.
+
+Pausa entre envíos: mandar todos los mensajes del día en ráfaga (sin espera)
+es el patrón que más fácil detectan los sistemas anti-spam de WhatsApp en un
+número personal no verificado (Baileys). Por eso cada envío exitoso o
+fallido espera un tiempo aleatorio antes de seguir con el próximo — ver
+PAUSA_MIN_SEGUNDOS / PAUSA_MAX_SEGUNDOS.
 """
+import random
+import time
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -19,6 +27,9 @@ from django.core.management.base import BaseCommand
 from django.db.models import Q
 
 from core.models import Cuota, ConfiguracionMensajesAutomaticos, EnvioWhatsApp, Notificacion, PerfilUsuario, fecha_local_hoy
+
+PAUSA_MIN_SEGUNDOS = 20
+PAUSA_MAX_SEGUNDOS = 60
 from core import whatsapp_bridge
 
 
@@ -129,5 +140,7 @@ class Command(BaseCommand):
                     exitoso=False, error=str(e)
                 )
                 fallidos += 1
+
+            time.sleep(random.uniform(PAUSA_MIN_SEGUNDOS, PAUSA_MAX_SEGUNDOS))
 
         return enviados, fallidos

@@ -4043,6 +4043,12 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
         self.cuota_hoy.fecha_vencimiento = date.today()
         self.cuota_hoy.save()
 
+        # La pausa antiban entre envíos (ver PAUSA_MIN/MAX_SEGUNDOS del comando) no debe
+        # hacer lentos los tests: se mockea el sleep, no el comportamiento que se prueba.
+        patcher_sleep = patch('core.management.commands.enviar_mensajes_automaticos.time.sleep')
+        patcher_sleep.start()
+        self.addCleanup(patcher_sleep.stop)
+
     @contextmanager
     def _bridge_conectado(self):
         with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
@@ -4083,6 +4089,25 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
         self.assertTrue(envio.exitoso)
         self.assertEqual(envio.canal, EnvioWhatsApp.Canal.PERSONAL)
         self.assertEqual(envio.cliente, self.cliente)
+
+    def test_pausa_entre_envios_para_no_mandar_en_rafaga(self):
+        """
+        Mandar todo en ráfaga sin pausa es el patrón que más fácil detectan los
+        sistemas anti-spam de WhatsApp en un número personal. Cada envío debe
+        esperar un tiempo aleatorio (ver PAUSA_MIN/MAX_SEGUNDOS) antes de seguir.
+        """
+        from core.management.commands.enviar_mensajes_automaticos import PAUSA_MIN_SEGUNDOS, PAUSA_MAX_SEGUNDOS
+
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X'):
+                with patch('core.management.commands.enviar_mensajes_automaticos.time.sleep') as mock_sleep:
+                    call_command('enviar_mensajes_automaticos')
+
+        mock_sleep.assert_called_once()
+        pausa_usada = mock_sleep.call_args[0][0]
+        self.assertGreaterEqual(pausa_usada, PAUSA_MIN_SEGUNDOS)
+        self.assertLessEqual(pausa_usada, PAUSA_MAX_SEGUNDOS)
 
     def test_recordatorio_preventivo_usa_el_offset_de_dias_configurado(self):
         self.cuota_2.fecha_vencimiento = date.today() + timedelta(days=3)
