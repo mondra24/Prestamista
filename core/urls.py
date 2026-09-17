@@ -85,6 +85,9 @@ urlpatterns = [
     # Tareas pendientes (widget flotante personal, visible en toda la app, AJAX)
     path('api/tareas/', views.listar_tareas, name='listar_tareas'),
     path('api/tareas/crear/', views.crear_tarea, name='crear_tarea'),
+    path('api/tareas/reordenar/', views.reordenar_tareas, name='reordenar_tareas'),
+    path('api/tareas/buscar-vinculo/', views.buscar_vinculo_tarea, name='buscar_vinculo_tarea'),
+    path('api/tareas/<int:pk>/editar/', views.editar_tarea, name='editar_tarea'),
     path('api/tareas/<int:pk>/toggle/', views.toggle_tarea, name='toggle_tarea'),
     path('api/tareas/<int:pk>/eliminar/', views.eliminar_tarea, name='eliminar_tarea'),
 

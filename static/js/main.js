@@ -875,12 +875,34 @@ function initTareasPendientes() {
     const widget = document.getElementById('tareas-widget');
     if (!widget) return; // no logueado, no se renderiza el widget
 
+    const panel = document.getElementById('tareas-widget-panel');
+    const header = document.getElementById('tareas-widget-header');
     const toggleBtn = document.getElementById('tareas-widget-toggle');
     const closeBtn = document.getElementById('tareas-widget-close');
-    const form = document.getElementById('tareas-widget-form');
-    const input = document.getElementById('tareas-widget-input');
     const lista = document.getElementById('tareas-widget-list');
     const badge = document.getElementById('tareas-widget-badge');
+    const addBtn = document.getElementById('tareas-widget-add-btn');
+    const resizeHandle = document.getElementById('tareas-widget-resize-handle');
+
+    // Formulario
+    const form = document.getElementById('tareas-widget-form');
+    const formId = document.getElementById('tarea-form-id');
+    const formTexto = document.getElementById('tarea-form-texto');
+    const formFecha = document.getElementById('tarea-form-fecha');
+    const prioridadPicker = document.getElementById('tareas-prioridad-picker');
+    const vinculoTipos = document.getElementById('tareas-vinculo-tipos');
+    const vinculoInput = document.getElementById('tarea-form-vinculo-q');
+    const vinculoResultados = document.getElementById('tareas-vinculo-resultados');
+    const vinculoElegido = document.getElementById('tareas-vinculo-elegido');
+    const btnCancelar = document.getElementById('tarea-form-cancelar');
+
+    let tareasCache = [];
+    let tipoVinculoActivo = null;
+    let vinculoSeleccionado = null; // {id, label}
+    let debounceBusqueda = null;
+    let idArrastrado = null;
+
+    // ---------- Render ----------
 
     function actualizarBadge(tareas) {
         const pendientes = tareas.filter(function(t) { return !t.completada; }).length;
@@ -892,19 +914,48 @@ function initTareasPendientes() {
         }
     }
 
+    function formatearFecha(iso) {
+        const [y, m, d] = iso.split('-');
+        return d + '/' + m;
+    }
+
     function crearElementoTarea(tarea) {
         const div = document.createElement('div');
-        div.className = 'tarea-item' + (tarea.completada ? ' completada' : '');
+        div.className = 'tarea-item prioridad-' + tarea.prioridad + (tarea.completada ? ' completada' : '');
         div.dataset.tareaId = tarea.id;
+        div.draggable = true;
+
+        let metaHtml = '';
+        if (tarea.fecha_vencimiento) {
+            metaHtml += '<span class="tarea-fecha-badge' + (tarea.vencida ? ' vencida' : '') + '">' +
+                '<i class="bi bi-calendar3"></i> ' + formatearFecha(tarea.fecha_vencimiento) + '</span>';
+        }
+        if (tarea.vinculo) {
+            const icono = tarea.vinculo.tipo === 'cliente' ? 'bi-person' : (tarea.vinculo.tipo === 'prestamo' ? 'bi-wallet2' : 'bi-calendar-check');
+            metaHtml += '<a href="' + tarea.vinculo.url + '" class="tarea-vinculo-chip"><i class="bi ' + icono + '"></i> ' +
+                '<span class="vinculo-label"></span></a>';
+        }
+
         div.innerHTML =
             '<input type="checkbox" class="tarea-check" ' + (tarea.completada ? 'checked' : '') + '>' +
-            '<span class="tarea-texto"></span>' +
-            '<button type="button" class="tarea-borrar" title="Eliminar"><i class="bi bi-x-lg"></i></button>';
+            '<div class="tarea-cuerpo">' +
+                '<div class="tarea-texto"></div>' +
+                (metaHtml ? '<div class="tarea-meta">' + metaHtml + '</div>' : '') +
+            '</div>' +
+            '<div class="tarea-item-acciones">' +
+                '<button type="button" class="tarea-editar" title="Editar"><i class="bi bi-pencil"></i></button>' +
+                '<button type="button" class="tarea-borrar" title="Eliminar"><i class="bi bi-x-lg"></i></button>' +
+            '</div>';
+
         div.querySelector('.tarea-texto').textContent = tarea.texto;
+        if (tarea.vinculo) {
+            div.querySelector('.vinculo-label').textContent = tarea.vinculo.label;
+        }
         return div;
     }
 
     function renderizar(tareas) {
+        tareasCache = tareas;
         lista.innerHTML = '';
         if (tareas.length === 0) {
             lista.innerHTML = '<div class="tareas-widget-empty"><i class="bi bi-check2-circle fs-4 d-block mb-1"></i>Sin tareas pendientes</div>';
@@ -921,14 +972,16 @@ function initTareasPendientes() {
             .catch(function(err) { console.log('Error cargando tareas:', err); });
     }
 
+    // ---------- Abrir / cerrar panel ----------
+
     function abrir() {
         widget.classList.add('abierto');
         localStorage.setItem('tareasWidgetAbierto', '1');
-        input.focus();
     }
 
     function cerrar() {
         widget.classList.remove('abierto');
+        cerrarFormulario();
         localStorage.setItem('tareasWidgetAbierto', '0');
     }
 
@@ -937,23 +990,152 @@ function initTareasPendientes() {
     });
     closeBtn.addEventListener('click', cerrar);
 
+    // ---------- Formulario (crear / editar) ----------
+
+    function fijarPrioridad(codigo) {
+        prioridadPicker.querySelectorAll('.prioridad-opt').forEach(function(btn) {
+            btn.classList.toggle('activa', btn.dataset.prioridad === codigo);
+        });
+    }
+
+    function prioridadElegida() {
+        const activa = prioridadPicker.querySelector('.prioridad-opt.activa');
+        return activa ? activa.dataset.prioridad : 'ME';
+    }
+
+    function limpiarVinculo() {
+        tipoVinculoActivo = null;
+        vinculoSeleccionado = null;
+        vinculoTipos.querySelectorAll('.vinculo-tipo-btn').forEach(function(b) { b.classList.remove('activo'); });
+        vinculoInput.style.display = 'none';
+        vinculoInput.value = '';
+        vinculoResultados.innerHTML = '';
+        vinculoElegido.style.display = 'none';
+    }
+
+    function mostrarVinculoElegido(label) {
+        vinculoElegido.innerHTML = '<span></span><button type="button" title="Quitar"><i class="bi bi-x-lg"></i></button>';
+        vinculoElegido.querySelector('span').textContent = label;
+        vinculoElegido.style.display = 'flex';
+        vinculoInput.style.display = 'none';
+        vinculoResultados.innerHTML = '';
+    }
+
+    function abrirFormulario(tarea) {
+        form.reset();
+        limpiarVinculo();
+        fijarPrioridad('ME');
+
+        if (tarea) {
+            formId.value = tarea.id;
+            formTexto.value = tarea.texto;
+            formFecha.value = tarea.fecha_vencimiento || '';
+            fijarPrioridad(tarea.prioridad);
+            if (tarea.vinculo) {
+                tipoVinculoActivo = tarea.vinculo.tipo;
+                vinculoSeleccionado = { id: tarea.vinculo.id, label: tarea.vinculo.label };
+                mostrarVinculoElegido(tarea.vinculo.label);
+            }
+        } else {
+            formId.value = '';
+        }
+
+        widget.classList.add('form-abierto');
+        setTimeout(function() { formTexto.focus(); }, 50);
+    }
+
+    function cerrarFormulario() {
+        widget.classList.remove('form-abierto');
+        limpiarVinculo();
+        form.reset();
+    }
+
+    addBtn.addEventListener('click', function() { abrirFormulario(null); });
+    btnCancelar.addEventListener('click', cerrarFormulario);
+
+    prioridadPicker.addEventListener('click', function(e) {
+        const btn = e.target.closest('.prioridad-opt');
+        if (btn) fijarPrioridad(btn.dataset.prioridad);
+    });
+
+    vinculoTipos.addEventListener('click', function(e) {
+        const btn = e.target.closest('.vinculo-tipo-btn');
+        if (!btn) return;
+        const tipo = btn.dataset.tipo;
+        if (tipoVinculoActivo === tipo) {
+            limpiarVinculo();
+            return;
+        }
+        limpiarVinculo();
+        tipoVinculoActivo = tipo;
+        btn.classList.add('activo');
+        vinculoInput.style.display = '';
+        vinculoInput.placeholder = tipo === 'cliente' ? 'Buscar cliente...' : (tipo === 'prestamo' ? 'Buscar préstamo (por cliente)...' : 'Buscar cuota (por cliente)...');
+        vinculoInput.focus();
+    });
+
+    vinculoInput.addEventListener('input', function() {
+        clearTimeout(debounceBusqueda);
+        const q = vinculoInput.value.trim();
+        if (q.length < 2) { vinculoResultados.innerHTML = ''; return; }
+        debounceBusqueda = setTimeout(function() {
+            fetch('/api/tareas/buscar-vinculo/?tipo=' + tipoVinculoActivo + '&q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    vinculoResultados.innerHTML = '';
+                    (data.data || []).forEach(function(item) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'vinculo-resultado-item';
+                        btn.textContent = item.label;
+                        btn.addEventListener('click', function() {
+                            vinculoSeleccionado = item;
+                            mostrarVinculoElegido(item.label);
+                        });
+                        vinculoResultados.appendChild(btn);
+                    });
+                })
+                .catch(function() {});
+        }, 300);
+    });
+
+    vinculoElegido.addEventListener('click', function(e) {
+        if (e.target.closest('button')) {
+            vinculoSeleccionado = null;
+            vinculoElegido.style.display = 'none';
+            vinculoInput.style.display = '';
+        }
+    });
+
     form.addEventListener('submit', function(e) {
         e.preventDefault();
-        const texto = input.value.trim();
+        const texto = formTexto.value.trim();
         if (!texto) return;
 
-        fetch('/api/tareas/crear/', {
+        const params = new URLSearchParams();
+        params.set('texto', texto);
+        params.set('prioridad', prioridadElegida());
+        if (formFecha.value) params.set('fecha_vencimiento', formFecha.value);
+        if (tipoVinculoActivo && vinculoSeleccionado) {
+            params.set('tipo_vinculo', tipoVinculoActivo);
+            params.set('vinculo_id', vinculoSeleccionado.id);
+        }
+
+        const editandoId = formId.value;
+        const url = editandoId ? '/api/tareas/' + editandoId + '/editar/' : '/api/tareas/crear/';
+
+        fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRFToken': CONFIG.CSRF_TOKEN
             },
-            body: 'texto=' + encodeURIComponent(texto)
+            body: params.toString()
         })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) {
-                    input.value = '';
+                    cerrarFormulario();
                     cargarTareas();
                 } else if (typeof showToast === 'function') {
                     showToast(data.message || 'No se pudo guardar la tarea', 'danger');
@@ -961,6 +1143,8 @@ function initTareasPendientes() {
             })
             .catch(function() { if (typeof showToast === 'function') showToast('Error de conexión', 'danger'); });
     });
+
+    // ---------- Acciones sobre la lista (check / editar / borrar / drag) ----------
 
     lista.addEventListener('click', function(e) {
         const item = e.target.closest('.tarea-item');
@@ -978,7 +1162,15 @@ function initTareasPendientes() {
             return;
         }
 
-        if (e.target.closest('.tarea-check') || e.target.closest('.tarea-texto')) {
+        if (e.target.closest('.tarea-editar')) {
+            const tarea = tareasCache.find(function(t) { return String(t.id) === String(tareaId); });
+            if (tarea) abrirFormulario(tarea);
+            return;
+        }
+
+        if (e.target.closest('.tarea-vinculo-chip')) return; // deja que navegue el link
+
+        if (e.target.closest('.tarea-check') || e.target.closest('.tarea-cuerpo')) {
             fetch('/api/tareas/' + tareaId + '/toggle/', {
                 method: 'POST',
                 headers: { 'X-CSRFToken': CONFIG.CSRF_TOKEN }
@@ -989,11 +1181,151 @@ function initTareasPendientes() {
         }
     });
 
-    // Recordar si Thomas lo dejó abierto - por defecto abierto en desktop, cerrado en mobile
+    // Drag & drop nativo para reordenar (estilo Trello)
+    lista.addEventListener('dragstart', function(e) {
+        const item = e.target.closest('.tarea-item');
+        if (!item) return;
+        idArrastrado = item.dataset.tareaId;
+        item.classList.add('arrastrando-item');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+
+    lista.addEventListener('dragend', function(e) {
+        const item = e.target.closest('.tarea-item');
+        if (item) item.classList.remove('arrastrando-item');
+        lista.querySelectorAll('.drop-target').forEach(function(el) { el.classList.remove('drop-target'); });
+    });
+
+    lista.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        const sobre = e.target.closest('.tarea-item');
+        lista.querySelectorAll('.drop-target').forEach(function(el) { el.classList.remove('drop-target'); });
+        if (sobre && sobre.dataset.tareaId !== idArrastrado) {
+            sobre.classList.add('drop-target');
+        }
+    });
+
+    lista.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const destino = e.target.closest('.tarea-item');
+        lista.querySelectorAll('.drop-target').forEach(function(el) { el.classList.remove('drop-target'); });
+        if (!destino || destino.dataset.tareaId === idArrastrado) return;
+
+        const origen = lista.querySelector('.tarea-item[data-tarea-id="' + idArrastrado + '"]');
+        if (!origen) return;
+
+        const items = Array.from(lista.querySelectorAll('.tarea-item'));
+        const idxOrigen = items.indexOf(origen);
+        const idxDestino = items.indexOf(destino);
+        if (idxOrigen < idxDestino) {
+            destino.after(origen);
+        } else {
+            destino.before(origen);
+        }
+
+        const nuevoOrden = Array.from(lista.querySelectorAll('.tarea-item')).map(function(el) { return parseInt(el.dataset.tareaId, 10); });
+        fetch('/api/tareas/reordenar/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CONFIG.CSRF_TOKEN
+            },
+            body: JSON.stringify({ orden: nuevoOrden })
+        }).catch(function() {});
+    });
+
+    // ---------- Arrastrar el panel completo (solo desktop) ----------
+
+    function iniciarArrastrePanel(e) {
+        if (window.innerWidth < 992) return;
+        if (e.target.closest('.tareas-widget-header-actions')) return;
+
+        e.preventDefault();
+        const rect = panel.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const offsetY = e.clientY - rect.top;
+        widget.classList.add('arrastrando');
+
+        function mover(ev) {
+            let left = ev.clientX - offsetX;
+            let top = ev.clientY - offsetY;
+            left = Math.max(4, Math.min(left, window.innerWidth - rect.width - 4));
+            top = Math.max(4, Math.min(top, window.innerHeight - 40));
+            widget.classList.add('posicion-manual');
+            panel.style.left = left + 'px';
+            panel.style.top = top + 'px';
+        }
+
+        function soltar() {
+            widget.classList.remove('arrastrando');
+            document.removeEventListener('mousemove', mover);
+            document.removeEventListener('mouseup', soltar);
+            try {
+                localStorage.setItem('tareasWidgetPos', JSON.stringify({ left: panel.style.left, top: panel.style.top }));
+            } catch (err) {}
+        }
+
+        document.addEventListener('mousemove', mover);
+        document.addEventListener('mouseup', soltar);
+    }
+
+    header.addEventListener('mousedown', iniciarArrastrePanel);
+
+    // ---------- Redimensionar el panel (solo desktop) ----------
+
+    function iniciarResize(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startWidth = panel.offsetWidth;
+        const startHeight = panel.offsetHeight;
+        widget.classList.add('redimensionando');
+
+        function mover(ev) {
+            const nuevoAncho = Math.max(280, Math.min(startWidth + (ev.clientX - startX), window.innerWidth - 20));
+            const nuevoAlto = Math.max(220, Math.min(startHeight + (ev.clientY - startY), window.innerHeight - 20));
+            panel.style.width = nuevoAncho + 'px';
+            panel.style.height = nuevoAlto + 'px';
+        }
+
+        function soltar() {
+            widget.classList.remove('redimensionando');
+            document.removeEventListener('mousemove', mover);
+            document.removeEventListener('mouseup', soltar);
+            try {
+                localStorage.setItem('tareasWidgetSize', JSON.stringify({ width: panel.style.width, height: panel.style.height }));
+            } catch (err) {}
+        }
+
+        document.addEventListener('mousemove', mover);
+        document.addEventListener('mouseup', soltar);
+    }
+
+    resizeHandle.addEventListener('mousedown', iniciarResize);
+
+    // ---------- Restaurar preferencias (abierto/cerrado, posición, tamaño) ----------
+
     const preferenciaGuardada = localStorage.getItem('tareasWidgetAbierto');
     const abiertoPorDefecto = window.innerWidth >= 992;
     if (preferenciaGuardada === '1' || (preferenciaGuardada === null && abiertoPorDefecto)) {
         widget.classList.add('abierto');
+    }
+
+    if (window.innerWidth >= 992) {
+        try {
+            const posGuardada = JSON.parse(localStorage.getItem('tareasWidgetPos') || 'null');
+            if (posGuardada && posGuardada.left && posGuardada.top) {
+                widget.classList.add('posicion-manual');
+                panel.style.left = posGuardada.left;
+                panel.style.top = posGuardada.top;
+            }
+            const tamGuardado = JSON.parse(localStorage.getItem('tareasWidgetSize') || 'null');
+            if (tamGuardado && tamGuardado.width && tamGuardado.height) {
+                panel.style.width = tamGuardado.width;
+                panel.style.height = tamGuardado.height;
+            }
+        } catch (err) {}
     }
 
     cargarTareas();

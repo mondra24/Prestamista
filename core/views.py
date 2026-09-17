@@ -6,6 +6,7 @@ from django.http import JsonResponse
 from django.views.generic import ListView, CreateView, UpdateView, DeleteView, DetailView, TemplateView
 from django.urls import reverse_lazy, reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.db.models import Sum, Count, Q, F, Prefetch, Avg
 from django.db.models.functions import TruncMonth
 from django.db import transaction
@@ -3908,13 +3909,65 @@ def _tarea_a_json(tarea):
         'id': tarea.pk,
         'texto': tarea.texto,
         'completada': tarea.completada,
+        'prioridad': tarea.prioridad,
+        'fecha_vencimiento': tarea.fecha_vencimiento.strftime('%Y-%m-%d') if tarea.fecha_vencimiento else None,
+        'vencida': tarea.vencida,
+        'orden': tarea.orden,
+        'vinculo': tarea.vinculo,
     }
+
+
+def _tareas_visibles_qs(user):
+    """Clientes/préstamos/cuotas que un usuario puede agendar en sus tareas: admin ve todo, cobrador solo lo suyo."""
+    if es_usuario_admin(user):
+        return Cliente.objects.all(), Prestamo.objects.all(), Cuota.objects.all()
+    return (
+        Cliente.objects.filter(usuario=user),
+        Prestamo.objects.filter(cobrador=user),
+        Cuota.objects.filter(prestamo__cobrador=user),
+    )
+
+
+def _resolver_vinculo(request, user):
+    """
+    Lee tipo_vinculo/vinculo_id del POST y devuelve (cliente, prestamo, cuota, error).
+    tipo_vinculo vacío o ausente = sin vínculo (los tres None). Valida que el
+    registro elegido sea visible para el usuario (mismo criterio que el resto
+    de la app: admin ve todo, cobrador solo lo suyo).
+    """
+    tipo = (request.POST.get('tipo_vinculo') or '').strip()
+    vinculo_id = request.POST.get('vinculo_id')
+
+    if not tipo or not vinculo_id:
+        return None, None, None, None
+
+    clientes_qs, prestamos_qs, cuotas_qs = _tareas_visibles_qs(user)
+
+    if tipo == 'cliente':
+        cliente = clientes_qs.filter(pk=vinculo_id).first()
+        if not cliente:
+            return None, None, None, 'Cliente no encontrado.'
+        return cliente, None, None, None
+    if tipo == 'prestamo':
+        prestamo = prestamos_qs.filter(pk=vinculo_id).first()
+        if not prestamo:
+            return None, None, None, 'Préstamo no encontrado.'
+        return None, prestamo, None, None
+    if tipo == 'cuota':
+        cuota = cuotas_qs.filter(pk=vinculo_id).select_related('prestamo').first()
+        if not cuota:
+            return None, None, None, 'Cuota no encontrada.'
+        return None, None, cuota, None
+
+    return None, None, None, 'Tipo de vínculo inválido.'
 
 
 @login_required
 def listar_tareas(request):
     """Tareas pendientes del usuario logueado (widget flotante, visible en toda la app)."""
-    tareas = TareaPendiente.objects.filter(usuario=request.user)
+    tareas = TareaPendiente.objects.filter(usuario=request.user).select_related(
+        'cliente', 'prestamo', 'cuota', 'cuota__prestamo', 'cuota__prestamo__cliente', 'prestamo__cliente'
+    )
     return JsonResponse({
         'success': True,
         'data': [_tarea_a_json(t) for t in tareas],
@@ -3933,7 +3986,56 @@ def crear_tarea(request):
     if len(texto) > 280:
         return JsonResponse({'success': False, 'message': 'La tarea es muy larga (máximo 280 caracteres).'}, status=400)
 
-    tarea = TareaPendiente.objects.create(usuario=request.user, texto=texto)
+    prioridad = request.POST.get('prioridad', TareaPendiente.Prioridad.MEDIA)
+    if prioridad not in TareaPendiente.Prioridad.values:
+        prioridad = TareaPendiente.Prioridad.MEDIA
+
+    fecha_vencimiento = parse_date(request.POST.get('fecha_vencimiento') or '')
+
+    cliente, prestamo, cuota, error = _resolver_vinculo(request, request.user)
+    if error:
+        return JsonResponse({'success': False, 'message': error}, status=400)
+
+    primer_orden = TareaPendiente.objects.filter(usuario=request.user).count()
+
+    tarea = TareaPendiente.objects.create(
+        usuario=request.user, texto=texto, prioridad=prioridad,
+        fecha_vencimiento=fecha_vencimiento, orden=primer_orden,
+        cliente=cliente, prestamo=prestamo, cuota=cuota,
+    )
+    return JsonResponse({'success': True, 'data': _tarea_a_json(tarea)})
+
+
+@login_required
+def editar_tarea(request, pk):
+    """Edita texto/prioridad/fecha/vínculo de una tarea existente (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    tarea = get_object_or_404(TareaPendiente, pk=pk, usuario=request.user)
+
+    texto = (request.POST.get('texto') or '').strip()
+    if not texto:
+        return JsonResponse({'success': False, 'message': 'Escribí una tarea antes de guardar.'}, status=400)
+    if len(texto) > 280:
+        return JsonResponse({'success': False, 'message': 'La tarea es muy larga (máximo 280 caracteres).'}, status=400)
+
+    prioridad = request.POST.get('prioridad', tarea.prioridad)
+    if prioridad not in TareaPendiente.Prioridad.values:
+        prioridad = tarea.prioridad
+
+    cliente, prestamo, cuota, error = _resolver_vinculo(request, request.user)
+    if error:
+        return JsonResponse({'success': False, 'message': error}, status=400)
+
+    tarea.texto = texto
+    tarea.prioridad = prioridad
+    tarea.fecha_vencimiento = parse_date(request.POST.get('fecha_vencimiento') or '')
+    tarea.cliente = cliente
+    tarea.prestamo = prestamo
+    tarea.cuota = cuota
+    tarea.save()
+
     return JsonResponse({'success': True, 'data': _tarea_a_json(tarea)})
 
 
@@ -3958,3 +4060,61 @@ def eliminar_tarea(request, pk):
     tarea = get_object_or_404(TareaPendiente, pk=pk, usuario=request.user)
     tarea.delete()
     return JsonResponse({'success': True, 'message': 'Tarea eliminada.'})
+
+
+@login_required
+def reordenar_tareas(request):
+    """
+    Persiste el nuevo orden tras arrastrar tarjetas en el widget. Recibe
+    `orden` = lista de ids en el orden deseado (JSON). Ids que no son del
+    usuario logueado se ignoran silenciosamente (no se puede reordenar lo
+    ajeno, pero tampoco es motivo para romper el pedido de quien sí es dueño).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        orden_ids = json.loads(request.body).get('orden', [])
+    except (json.JSONDecodeError, AttributeError):
+        return JsonResponse({'success': False, 'message': 'Datos inválidos'}, status=400)
+
+    propias = set(TareaPendiente.objects.filter(usuario=request.user).values_list('pk', flat=True))
+
+    for posicion, tarea_id in enumerate(orden_ids):
+        if tarea_id in propias:
+            TareaPendiente.objects.filter(pk=tarea_id).update(orden=posicion)
+
+    return JsonResponse({'success': True})
+
+
+@login_required
+def buscar_vinculo_tarea(request):
+    """Autocompletado para agendar un cliente/préstamo/cuota en una tarea (AJAX)."""
+    tipo = request.GET.get('tipo', '')
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2 or tipo not in ('cliente', 'prestamo', 'cuota'):
+        return JsonResponse({'success': True, 'data': []})
+
+    clientes_qs, prestamos_qs, cuotas_qs = _tareas_visibles_qs(request.user)
+    resultados = []
+
+    if tipo == 'cliente':
+        for c in clientes_qs.filter(Q(nombre__icontains=q) | Q(apellido__icontains=q))[:8]:
+            resultados.append({'id': c.pk, 'label': c.nombre_completo})
+    elif tipo == 'prestamo':
+        qs = prestamos_qs.filter(
+            Q(cliente__nombre__icontains=q) | Q(cliente__apellido__icontains=q)
+        ).select_related('cliente')[:8]
+        for p in qs:
+            resultados.append({'id': p.pk, 'label': f'#{p.pk} - {p.cliente.nombre_completo}'})
+    elif tipo == 'cuota':
+        qs = cuotas_qs.filter(
+            Q(prestamo__cliente__nombre__icontains=q) | Q(prestamo__cliente__apellido__icontains=q)
+        ).select_related('prestamo', 'prestamo__cliente').order_by('prestamo__cliente__nombre', 'numero_cuota')[:8]
+        for c in qs:
+            resultados.append({
+                'id': c.pk,
+                'label': f'{c.prestamo.cliente.nombre_completo} - Cuota {c.numero_cuota}/{c.prestamo.cuotas_pactadas}',
+            })
+
+    return JsonResponse({'success': True, 'data': resultados})

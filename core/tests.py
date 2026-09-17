@@ -4335,6 +4335,25 @@ class TareaPendienteTest(TestCase):
         self.client = TestClient()
         self.client.login(username='tareas_user', password='test123')
 
+        # Cliente/préstamo propios, para probar el vínculo
+        self.cliente_propio = Cliente.objects.create(
+            nombre='Camila', apellido='Rios', telefono='111', direccion='x', usuario=self.user
+        )
+        self.prestamo_propio = Prestamo.objects.create(
+            cliente=self.cliente_propio, monto_solicitado=Decimal('10000'), tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=2, frecuencia='SE', fecha_inicio=date.today(), cobrador=self.user
+        )
+        self.cuota_propia = self.prestamo_propio.cuotas.first()
+
+        # Cliente/préstamo de otro cobrador, para probar que no se puedan agendar
+        self.cliente_ajeno = Cliente.objects.create(
+            nombre='Axel', apellido='Barreto', telefono='222', direccion='y', usuario=self.otro_user
+        )
+        self.prestamo_ajeno = Prestamo.objects.create(
+            cliente=self.cliente_ajeno, monto_solicitado=Decimal('5000'), tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=1, frecuencia='PU', fecha_inicio=date.today(), cobrador=self.otro_user
+        )
+
     def test_listar_vacio(self):
         response = self.client.get(reverse('core:listar_tareas'))
         self.assertEqual(response.status_code, 200)
@@ -4402,3 +4421,121 @@ class TareaPendienteTest(TestCase):
     def test_widget_aparece_en_base_para_usuario_logueado(self):
         response = self.client.get(reverse('core:dashboard'))
         self.assertContains(response, 'id="tareas-widget"')
+
+    def test_crear_tarea_con_prioridad_y_fecha(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'Revisar refinanciación',
+            'prioridad': 'AL',
+            'fecha_vencimiento': '2026-12-25',
+        })
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['data']['prioridad'], 'AL')
+        self.assertEqual(data['data']['fecha_vencimiento'], '2026-12-25')
+
+    def test_crear_tarea_prioridad_invalida_usa_media(self):
+        response = self.client.post(reverse('core:crear_tarea'), {'texto': 'x', 'prioridad': 'INVALIDA'})
+        self.assertEqual(response.json()['data']['prioridad'], 'ME')
+
+    def test_crear_tarea_vinculada_a_cliente_propio(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'Llamar a Camila', 'tipo_vinculo': 'cliente', 'vinculo_id': self.cliente_propio.pk,
+        })
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['data']['vinculo']['tipo'], 'cliente')
+        self.assertIn('Camila', data['data']['vinculo']['label'])
+
+    def test_crear_tarea_vinculada_a_prestamo_propio(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'Ver refinanciación', 'tipo_vinculo': 'prestamo', 'vinculo_id': self.prestamo_propio.pk,
+        })
+        data = response.json()
+        self.assertEqual(data['data']['vinculo']['tipo'], 'prestamo')
+
+    def test_crear_tarea_vinculada_a_cuota_propia(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'Cobrar cuota 1', 'tipo_vinculo': 'cuota', 'vinculo_id': self.cuota_propia.pk,
+        })
+        data = response.json()
+        self.assertEqual(data['data']['vinculo']['tipo'], 'cuota')
+
+    def test_no_puede_vincular_cliente_ajeno(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'x', 'tipo_vinculo': 'cliente', 'vinculo_id': self.cliente_ajeno.pk,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(TareaPendiente.objects.count(), 0)
+
+    def test_no_puede_vincular_prestamo_ajeno(self):
+        response = self.client.post(reverse('core:crear_tarea'), {
+            'texto': 'x', 'tipo_vinculo': 'prestamo', 'vinculo_id': self.prestamo_ajeno.pk,
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_editar_tarea(self):
+        tarea = TareaPendiente.objects.create(usuario=self.user, texto='Original', prioridad='BA')
+        response = self.client.post(reverse('core:editar_tarea', args=[tarea.pk]), {
+            'texto': 'Editada', 'prioridad': 'AL', 'fecha_vencimiento': '2026-11-01',
+            'tipo_vinculo': 'cliente', 'vinculo_id': self.cliente_propio.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        tarea.refresh_from_db()
+        self.assertEqual(tarea.texto, 'Editada')
+        self.assertEqual(tarea.prioridad, 'AL')
+        self.assertEqual(tarea.cliente_id, self.cliente_propio.pk)
+
+    def test_editar_tarea_quitando_vinculo(self):
+        tarea = TareaPendiente.objects.create(usuario=self.user, texto='Con vinculo', cliente=self.cliente_propio)
+        response = self.client.post(reverse('core:editar_tarea', args=[tarea.pk]), {'texto': 'Sin vinculo'})
+        self.assertEqual(response.status_code, 200)
+        tarea.refresh_from_db()
+        self.assertIsNone(tarea.cliente_id)
+        self.assertIsNone(tarea.vinculo)
+
+    def test_no_puede_editar_tarea_de_otro_usuario(self):
+        tarea_ajena = TareaPendiente.objects.create(usuario=self.otro_user, texto='Ajena')
+        response = self.client.post(reverse('core:editar_tarea', args=[tarea_ajena.pk]), {'texto': 'Hackeada'})
+        self.assertEqual(response.status_code, 404)
+
+    def test_reordenar_tareas(self):
+        t1 = TareaPendiente.objects.create(usuario=self.user, texto='Primera', orden=0)
+        t2 = TareaPendiente.objects.create(usuario=self.user, texto='Segunda', orden=1)
+        response = self.client.post(
+            reverse('core:reordenar_tareas'),
+            data=json.dumps({'orden': [t2.pk, t1.pk]}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        t1.refresh_from_db()
+        t2.refresh_from_db()
+        self.assertEqual(t2.orden, 0)
+        self.assertEqual(t1.orden, 1)
+
+    def test_reordenar_ignora_tareas_ajenas(self):
+        tarea_ajena = TareaPendiente.objects.create(usuario=self.otro_user, texto='Ajena', orden=5)
+        response = self.client.post(
+            reverse('core:reordenar_tareas'),
+            data=json.dumps({'orden': [tarea_ajena.pk]}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        tarea_ajena.refresh_from_db()
+        self.assertEqual(tarea_ajena.orden, 5)  # sin cambios
+
+    def test_buscar_vinculo_cliente(self):
+        response = self.client.get(reverse('core:buscar_vinculo_tarea'), {'tipo': 'cliente', 'q': 'Cami'})
+        data = response.json()['data']
+        self.assertEqual(len(data), 1)
+        self.assertIn('Camila', data[0]['label'])
+
+    def test_buscar_vinculo_no_incluye_clientes_ajenos(self):
+        response = self.client.get(reverse('core:buscar_vinculo_tarea'), {'tipo': 'cliente', 'q': 'Axel'})
+        self.assertEqual(response.json()['data'], [])
+
+    def test_buscar_vinculo_cuota(self):
+        # self.prestamo_propio tiene 2 cuotas (cuotas_pactadas=2) - deben aparecer las dos
+        response = self.client.get(reverse('core:buscar_vinculo_tarea'), {'tipo': 'cuota', 'q': 'Camila'})
+        data = response.json()['data']
+        self.assertEqual(len(data), 2)
+        self.assertTrue(all('Cuota' in item['label'] and 'Camila' in item['label'] for item in data))

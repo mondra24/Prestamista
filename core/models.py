@@ -2704,18 +2704,81 @@ class TareaPendiente(models.Model):
     aparece sobre cualquier pantalla. Privado por usuario - cada uno ve y
     gestiona solo las suyas (pedido de Thomas: cosas puntuales de clientes
     que gestiona a su manera y se le pasan por alto).
+
+    Puede opcionalmente "agendar" un cliente, préstamo o cuota puntual
+    (ej. "llamar a Camila por la cuota 2" con la cuota enganchada) - como
+    mucho una de las tres, se resuelve en ese orden de prioridad al mostrar.
     """
+
+    class Prioridad(models.TextChoices):
+        ALTA = 'AL', 'Alta'
+        MEDIA = 'ME', 'Media'
+        BAJA = 'BA', 'Baja'
+
     usuario = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name='tareas_pendientes', verbose_name='Usuario'
     )
     texto = models.CharField(max_length=280, verbose_name='Tarea')
     completada = models.BooleanField(default=False, verbose_name='Completada')
+    prioridad = models.CharField(
+        max_length=2, choices=Prioridad.choices, default=Prioridad.MEDIA, verbose_name='Prioridad'
+    )
+    fecha_vencimiento = models.DateField(null=True, blank=True, verbose_name='Vence el')
+    orden = models.PositiveIntegerField(default=0, verbose_name='Orden', help_text='Orden manual (arrastrar en el widget)')
     fecha_creacion = models.DateTimeField(auto_now_add=True, verbose_name='Fecha de Creación')
+
+    # Vínculo opcional a un registro puntual - a lo sumo uno de los tres
+    cliente = models.ForeignKey(
+        Cliente, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tareas_vinculadas', verbose_name='Cliente vinculado'
+    )
+    prestamo = models.ForeignKey(
+        Prestamo, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tareas_vinculadas', verbose_name='Préstamo vinculado'
+    )
+    cuota = models.ForeignKey(
+        Cuota, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='tareas_vinculadas', verbose_name='Cuota vinculada'
+    )
 
     class Meta:
         verbose_name = 'Tarea Pendiente'
         verbose_name_plural = 'Tareas Pendientes'
-        ordering = ['completada', '-fecha_creacion']
+        ordering = ['completada', 'orden', '-fecha_creacion']
 
     def __str__(self):
         return f'{self.usuario} - {self.texto[:40]}'
+
+    @property
+    def vencida(self):
+        return bool(self.fecha_vencimiento) and not self.completada and self.fecha_vencimiento < fecha_local_hoy()
+
+    @property
+    def vinculo(self):
+        """
+        Info de presentación del vínculo (si hay), ya resuelta: qué tipo es,
+        una etiqueta corta y la URL para ir directo al registro.
+        """
+        if self.cuota_id and self.cuota:
+            cliente = self.cuota.prestamo.cliente
+            return {
+                'tipo': 'cuota',
+                'id': self.cuota_id,
+                'label': f'Cuota {self.cuota.numero_cuota}/{self.cuota.prestamo.cuotas_pactadas} - {cliente.nombre_completo}',
+                'url': f'/prestamos/{self.cuota.prestamo_id}/',
+            }
+        if self.prestamo_id and self.prestamo:
+            return {
+                'tipo': 'prestamo',
+                'id': self.prestamo_id,
+                'label': f'Préstamo #{self.prestamo_id} - {self.prestamo.cliente.nombre_completo}',
+                'url': f'/prestamos/{self.prestamo_id}/',
+            }
+        if self.cliente_id and self.cliente:
+            return {
+                'tipo': 'cliente',
+                'id': self.cliente_id,
+                'label': self.cliente.nombre_completo,
+                'url': f'/clientes/{self.cliente_id}/',
+            }
+        return None
