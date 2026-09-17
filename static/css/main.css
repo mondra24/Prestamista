@@ -3312,7 +3312,10 @@ body {
 .tareas-widget-toggle {
     position: fixed;
     right: 16px;
-    bottom: calc(var(--bottom-nav-height) + 16px);
+    /* Por encima del .fab ("Nuevo Préstamo/Cliente") que ya vive en esta
+       misma esquina en cliente_list/prestamo_list/cobros: nav + su bottom
+       (20px) + su alto (56px) + un margen, para que nunca se solapen. */
+    bottom: calc(var(--bottom-nav-height) + 88px);
     width: 52px;
     height: 52px;
     border-radius: 50%;
@@ -3354,7 +3357,7 @@ body {
 .tareas-widget-panel {
     position: fixed;
     right: 16px;
-    bottom: calc(var(--bottom-nav-height) + 76px);
+    bottom: calc(var(--bottom-nav-height) + 148px);
     width: min(340px, calc(100vw - 32px));
     height: min(65vh, 520px);
     min-width: 280px;
@@ -3812,10 +3815,11 @@ body {
 
 @media (min-width: 992px) {
     .tareas-widget-toggle {
-        bottom: 24px;
+        /* .fab en desktop: bottom 30px + 56px de alto + margen */
+        bottom: 98px;
     }
     .tareas-widget-panel {
-        bottom: 88px;
+        bottom: 158px;
     }
     .tareas-widget-resize-handle {
         display: flex;
