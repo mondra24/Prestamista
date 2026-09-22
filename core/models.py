@@ -2619,6 +2619,11 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         verbose_name='Confirmado el',
         help_text='Cuándo se aceptó por primera vez el envío automático de estos mensajes a los clientes.'
     )
+    alias_pago = models.CharField(
+        max_length=100, blank=True,
+        verbose_name='Alias para pagos por transferencia',
+        help_text='Se usa para reemplazar {{alias}} en los textos de los mensajes.'
+    )
 
     # Recordatorio preventivo (antes del vencimiento)
     recordatorio_activo = models.BooleanField(default=True, verbose_name='Recordatorio preventivo activo')
@@ -2636,7 +2641,7 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         default='Hola {{nombre}} 👋 Te recordamos que el {{fecha_vencimiento}} vence tu cuota de {{monto}}. '
                 '¡Gracias por tu pago puntual!',
         verbose_name='Texto del mensaje',
-        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}, {{alias}}'
     )
 
     # Aviso el día del vencimiento
@@ -2646,10 +2651,10 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         max_length=7, default='LMXJVS', blank=True, verbose_name='Días activos'
     )
     aviso_dia_plantilla = models.TextField(
-        default='Hola {{nombre}}, hoy vence tu cuota de {{monto}}. Podés abonarla con tu cobrador o por '
-                'transferencia. ¡Te esperamos!',
+        default='Hola {{nombre}}, te recuerdo que hoy vence tu cuota de {{monto}}. Te dejo el alias: '
+                '{{alias}}. ¡Gracias!',
         verbose_name='Texto del mensaje',
-        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}, {{alias}}'
     )
 
     # Aviso de mora (después del vencimiento, si todavía no pagó)
@@ -2666,7 +2671,7 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         default='Hola {{nombre}}, notamos que tu cuota de {{monto}} venció el {{fecha_vencimiento}} y '
                 'todavía no la registramos. Por favor comunicate para regularizar tu situación.',
         verbose_name='Texto del mensaje',
-        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}'
+        help_text='Variables disponibles: {{nombre}}, {{monto}}, {{fecha_vencimiento}}, {{alias}}'
     )
 
     class Meta:
@@ -2688,13 +2693,14 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         return codigo in dias_semana
 
     def renderizar_plantilla(self, plantilla, cuota):
-        """Reemplaza {{nombre}}, {{monto}}, {{fecha_vencimiento}} con los datos de la cuota"""
+        """Reemplaza {{nombre}}, {{monto}}, {{fecha_vencimiento}}, {{alias}} con los datos de la cuota"""
         from .templatetags.currency_filters import dinero
         return (
             plantilla
             .replace('{{nombre}}', cuota.prestamo.cliente.nombre)
             .replace('{{monto}}', dinero(cuota.monto_restante))
             .replace('{{fecha_vencimiento}}', cuota.fecha_vencimiento.strftime('%d/%m/%Y'))
+            .replace('{{alias}}', self.alias_pago)
         )
 
 

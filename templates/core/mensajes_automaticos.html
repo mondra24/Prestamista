@@ -50,8 +50,15 @@
                     en el texto:
                     <code>{% templatetag openvariable %}nombre{% templatetag closevariable %}</code>,
                     <code>{% templatetag openvariable %}monto{% templatetag closevariable %}</code>,
-                    <code>{% templatetag openvariable %}fecha_vencimiento{% templatetag closevariable %}</code>.
+                    <code>{% templatetag openvariable %}fecha_vencimiento{% templatetag closevariable %}</code>,
+                    <code>{% templatetag openvariable %}alias{% templatetag closevariable %}</code>.
                 </p>
+
+                <div class="ma-field mb-3" style="max-width:320px;">
+                    <label for="ma-alias-pago">Alias para transferencias</label>
+                    <input type="text" class="form-control form-control-sm" id="ma-alias-pago"
+                           value="{{ config.alias_pago }}" placeholder="Ej: mi.alias.mp">
+                </div>
 
                 {% include 'core/_mensaje_config_row.html' with prefijo='recordatorio' titulo='Recordatorio preventivo' campo_dias='recordatorio_dias_antes' etiqueta_dias='Días antes' activo=config.recordatorio_activo dias_valor=config.recordatorio_dias_antes hora=config.recordatorio_hora dias_semana=config.recordatorio_dias_semana plantilla=config.recordatorio_plantilla %}
 
@@ -182,6 +189,8 @@
             btnGuardar.disabled = true;
             try {
                 const payload = {};
+                const aliasInput = document.getElementById('ma-alias-pago');
+                if (aliasInput) payload.alias_pago = aliasInput.value.trim();
                 document.querySelectorAll('[data-prefijo]').forEach(function(row) {
                     const prefijo = row.dataset.prefijo;
                     const activoInput = row.querySelector('[data-campo="activo"]');

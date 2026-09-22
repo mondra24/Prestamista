@@ -103,6 +103,7 @@
     const btnDesconectar = document.getElementById('btn-wa-desconectar');
 
     let polling = null;
+    let consultaEnCurso = false;
 
     function mostrarError(msg) {
         errorBlock.textContent = msg;
@@ -114,6 +115,11 @@
     }
 
     async function consultarEstado() {
+        // Si el bridge está lento (hasta 10s de timeout) y el intervalo es de 4s,
+        // sin esta guarda los pedidos se apilan uno atrás de otro y terminan
+        // ocupando todos los workers del servidor, colgando el resto del sitio.
+        if (consultaEnCurso) return;
+        consultaEnCurso = true;
         try {
             const resp = await fetch('/api/whatsapp/estado/');
             const data = await resp.json();
@@ -137,10 +143,16 @@
             }
         } catch (e) {
             mostrarError('Error de conexión con el servidor');
+        } finally {
+            consultaEnCurso = false;
         }
     }
 
+    let qrEnCurso = false;
+
     async function consultarQr() {
+        if (qrEnCurso) return;
+        qrEnCurso = true;
         try {
             const resp = await fetch('/api/whatsapp/qr/');
             const data = await resp.json();
@@ -149,6 +161,8 @@
             }
         } catch (e) {
             // Silencioso: el próximo ciclo de consultarEstado lo va a reintentar
+        } finally {
+            qrEnCurso = false;
         }
     }
 

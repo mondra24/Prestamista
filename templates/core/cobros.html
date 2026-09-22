@@ -1059,8 +1059,10 @@ function actualizarEstadisticasCobro(estadisticas, card) {
         if (esVencida) {
             const idsVencidas = ['total-vencidas', 'stat-vencidas'];
             idsVencidas.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
                 const nuevo = Math.max(0, leerMonto(id) - delta);
-                document.getElementById(id).textContent = formatearMoneda(nuevo);
+                el.textContent = formatearMoneda(nuevo);
             });
         } else if (esMoraReciente) {
             const nuevo = Math.max(0, leerMonto('total-mora-reciente') - delta);
@@ -1117,6 +1119,18 @@ function cerrarConfirmacion() {
     document.getElementById('confirm-cobro-modal').classList.remove('show');
 }
 
+// Evita que el botón se quede colgado en "Procesando..." para siempre cuando
+// el cobrador está en la calle con mala señal y el pedido nunca vuelve.
+async function fetchConTimeout(url, options, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function ejecutarCobro() {
     const cuotaIdEl = document.getElementById('confirm-cuota-id');
     const cuotaId = cuotaIdEl.value;
@@ -1126,7 +1140,7 @@ async function ejecutarCobro() {
     btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Procesando...';
 
     try {
-        const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+        const response = await fetchConTimeout(`/api/cobrar/${cuotaId}/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1134,7 +1148,7 @@ async function ejecutarCobro() {
             },
             body: JSON.stringify({})
         });
-        
+
         const result = await response.json();
         
         if (result.success) {
@@ -1173,7 +1187,10 @@ async function ejecutarCobro() {
             btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
         }
     } catch (error) {
-        showToast('Error de conexión', 'danger');
+        const msg = error.name === 'AbortError'
+            ? 'No hay respuesta del servidor. Revisá tu conexión e intentá de nuevo.'
+            : 'Error de conexión';
+        showToast(msg, 'danger');
         btnConfirmar.disabled = false;
         btnConfirmar.innerHTML = '<i class="bi bi-check2-circle"></i> Cobrar';
     }
@@ -1221,7 +1238,7 @@ async function confirmarPagoParcial() {
     };
     
     try {
-        const response = await fetch(`/api/cobrar/${cuotaId}/`, {
+        const response = await fetchConTimeout(`/api/cobrar/${cuotaId}/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1229,9 +1246,9 @@ async function confirmarPagoParcial() {
             },
             body: JSON.stringify(data)
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             // Cerrar modal de pago parcial
             const modalParcial = bootstrap.Modal.getInstance(document.getElementById('modal-pago-parcial'));
@@ -1272,7 +1289,10 @@ async function confirmarPagoParcial() {
         }
     } catch (error) {
         console.error('Error:', error);
-        showToast('Error de conexión', 'danger');
+        const msg = error.name === 'AbortError'
+            ? 'No hay respuesta del servidor. Revisá tu conexión e intentá de nuevo.'
+            : 'Error de conexión';
+        showToast(msg, 'danger');
     }
 }
 
@@ -1322,9 +1342,13 @@ document.addEventListener('click', function(e) {
     const esVencida = btn.dataset.vencidaWp === 'true';
     const dias = btn.dataset.diasVencidaWp || '0';
 
+    const alias = "{{ alias_pago|escapejs }}";
+
     let mensaje;
     if (esVencida) {
         mensaje = `Hola ${cliente}! Te escribo porque tu cuota de ${monto} venció hace ${dias} día${dias == '1' ? '' : 's'}. ¿Podemos coordinar el pago? ¡Gracias!`;
+    } else if (alias) {
+        mensaje = `Hola ${cliente}! Te recuerdo que hoy vence tu cuota de ${monto}. Te dejo el alias: ${alias}. ¡Gracias!`;
     } else {
         mensaje = `Hola ${cliente}! Te recuerdo que hoy vence tu cuota de ${monto}. ¡Gracias!`;
     }

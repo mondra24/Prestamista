@@ -328,7 +328,9 @@ class CobrosView(LoginRequiredMixin, TemplateView):
                 historial_map[h.cuota_id].append(h)
             for cuota in todas_cuotas:
                 cuota.historial_list = historial_map.get(cuota.id, [])
-        
+
+        context['alias_pago'] = ConfiguracionMensajesAutomaticos.obtener().alias_pago
+
         return context
 
 
@@ -3476,6 +3478,8 @@ def guardar_configuracion_mensajes(request):
         return JsonResponse({'success': False, 'message': 'JSON inválido'}, status=400)
 
     config = ConfiguracionMensajesAutomaticos.obtener()
+
+    config.alias_pago = data.get('alias_pago', config.alias_pago)
 
     try:
         dias_antes = int(data.get('recordatorio_dias_antes', config.recordatorio_dias_antes))

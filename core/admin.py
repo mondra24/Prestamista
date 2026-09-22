@@ -405,7 +405,7 @@ class EnvioWhatsAppAdmin(admin.ModelAdmin):
 class ConfiguracionMensajesAutomaticosAdmin(admin.ModelAdmin):
     list_display = ['activo', 'confirmado_en']
     fieldsets = (
-        ('General', {'fields': ('activo', 'confirmado_en')}),
+        ('General', {'fields': ('activo', 'confirmado_en', 'alias_pago')}),
         ('Recordatorio preventivo', {'fields': (
             'recordatorio_activo', 'recordatorio_dias_antes', 'recordatorio_hora',
             'recordatorio_dias_semana', 'recordatorio_plantilla',
