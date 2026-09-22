@@ -188,10 +188,16 @@ document.addEventListener('click', function (e) {
     if (btnWhatsapp) {
         e.preventDefault();
         e.stopPropagation();
-        const mensaje = `Hola ${btnWhatsapp.dataset.cliente}, acá podés consultar el estado de tu crédito:\n${btnWhatsapp.dataset.link}`;
         let tel = (btnWhatsapp.dataset.tel || '').replace(/[^0-9]/g, '');
+        if (!tel) {
+            if (typeof showToast === 'function') {
+                showToast('Este cliente no tiene teléfono cargado', 'danger');
+            }
+            return;
+        }
         if (tel.startsWith('0')) tel = tel.substring(1);
         if (!tel.startsWith('54')) tel = '54' + tel;
+        const mensaje = `Hola ${btnWhatsapp.dataset.cliente}, acá podés consultar el estado de tu crédito:\n${btnWhatsapp.dataset.link}`;
         window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
     }
 });

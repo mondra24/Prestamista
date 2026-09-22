@@ -811,8 +811,8 @@
 <script>
 // ============ DATOS DE CUOTAS PARA RESUMEN WP ============
 const prestamoData = {
-    telefono: "{{ prestamo.cliente.telefono }}",
-    cliente: "{{ prestamo.cliente.nombre_completo }}",
+    telefono: "{{ prestamo.cliente.telefono|escapejs }}",
+    cliente: "{{ prestamo.cliente.nombre_completo|escapejs }}",
     capital: {{ prestamo.monto_solicitado|numero_raw }},
     tasa: "{{ prestamo.tasa_interes_porcentaje }}",
     total: {{ prestamo.monto_total_a_pagar|numero_raw }},
@@ -1244,6 +1244,11 @@ document.addEventListener('click', function(e) {
 // ============ ENVIAR RESUMEN DE CRÉDITO POR WHATSAPP ============
 function enviarResumenCredito(cuotaDestacada) {
     const d = prestamoData;
+
+    if (!d.telefono) {
+        showToast('Este cliente no tiene teléfono cargado, no se puede mandar por WhatsApp', 'danger');
+        return;
+    }
 
     // Valor de cuota base (buscar cuota 1 sin modificaciones, o la primera disponible)
     const cuotaBase = cuotasData.find(c => c.numero === 1) || cuotasData[0];
