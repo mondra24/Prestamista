@@ -77,6 +77,7 @@ misma tarjeta, solo cambia el color según `tarjeta_clase` ('vencida' o
         <div class="expand-content">
             <p><i class="bi bi-house-door"></i> {{ cuota.prestamo.cliente.direccion|default:'Sin dirección' }}</p>
             <a href="{% url 'core:cliente_detail' cuota.prestamo.cliente.pk %}" class="btn-link"><i class="bi bi-person-circle"></i> Ver perfil completo</a>
+            <a href="{% url 'core:contrato_pdf' cuota.prestamo.pk %}" target="_blank" class="btn-link"><i class="bi bi-file-earmark-pdf"></i> Contrato</a>
         </div>
     </div>
     {% if cuota.prestamo.cobrador == user %}

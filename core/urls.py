@@ -31,7 +31,9 @@ urlpatterns = [
     path('prestamos/<int:pk>/editar/', views.PrestamoUpdateView.as_view(), name='prestamo_update'),
     path('prestamos/<int:pk>/eliminar/', views.PrestamoDeleteView.as_view(), name='prestamo_delete'),
     path('prestamos/<int:pk>/renovar/', views.RenovarPrestamoView.as_view(), name='prestamo_renovar'),
-    
+    path('prestamos/<int:pk>/contrato/', views.contrato_pdf, name='contrato_pdf'),
+    path('prestamos/<int:pk>/contrato/firmar/', views.FirmarContratoView.as_view(), name='contrato_firmar'),
+
     # Cobros (AJAX)
     path('api/cobrar/<int:pk>/', views.cobrar_cuota, name='cobrar_cuota'),
     path('api/editar-cobro/<int:pk>/', views.editar_cobro, name='editar_cobro'),
@@ -70,6 +72,10 @@ urlpatterns = [
     # Gestión de token público (AJAX)
     path('api/prestamo/<int:pk>/regenerar-token/', views.regenerar_token_prestamo, name='regenerar_token'),
     path('api/prestamo/<int:pk>/toggle-token/', views.toggle_token_prestamo, name='toggle_token'),
+
+    # Contrato en PDF: link público (sin auth, vía token del préstamo) y firma (AJAX)
+    path('contrato/<uuid:token>/', views.contrato_publico, name='contrato_publico'),
+    path('api/prestamo/<int:pk>/firmar/', views.firmar_contrato, name='api_firmar_contrato'),
 
     # Estado público de cliente: resumen de todos sus créditos (sin auth)
     path('cliente-publico/<uuid:token>/', views.estado_cliente_publico, name='estado_cliente_publico'),

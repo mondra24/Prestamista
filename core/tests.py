@@ -20,7 +20,8 @@ from .models import (
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
-    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos, TareaPendiente
+    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos, TareaPendiente,
+    ConfiguracionContrato, FirmaPrestamo
 )
 from .templatetags.currency_filters import formato_ars, dinero, dinero_completo, formato_miles
 from . import whatsapp as whatsapp_module
@@ -4539,3 +4540,212 @@ class TareaPendienteTest(TestCase):
         data = response.json()['data']
         self.assertEqual(len(data), 2)
         self.assertTrue(all('Cuota' in item['label'] and 'Camila' in item['label'] for item in data))
+
+
+# ============== TESTS DE CONTRATO PDF Y FIRMA ==============
+
+# PNG 1x1 transparente válido, en base64, para simular una firma capturada
+FIRMA_PNG_BASE64 = (
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4'
+    '2mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+)
+
+
+class ConfiguracionContratoModelTest(TestCase):
+    """Tests del modelo de configuración del contrato (fila única + reemplazo de variables)"""
+
+    def setUp(self):
+        self.cobrador = User.objects.create_user(username='cob_contrato_model', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='López', dni='30111222',
+            telefono='1155550001', direccion='Calle Falsa 123', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('100000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=4,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+
+    def test_obtener_es_singleton(self):
+        c1 = ConfiguracionContrato.obtener()
+        c2 = ConfiguracionContrato.obtener()
+        self.assertEqual(c1.pk, c2.pk)
+        self.assertEqual(ConfiguracionContrato.objects.count(), 1)
+
+    def test_renderizar_reemplaza_variables_del_cliente_y_prestamo(self):
+        config = ConfiguracionContrato.obtener()
+        config.cuerpo = (
+            '{{cliente_nombre}} - {{cliente_dni}} - {{cliente_direccion}} - '
+            '{{monto_solicitado}} - {{monto_total}} - {{cuotas_pactadas}} - {{frecuencia}} - '
+            '{{tasa_interes}} - {{fecha_inicio}} - {{fecha_finalizacion}} - {{fecha_hoy}}'
+        )
+        config.save()
+        texto = config.renderizar(self.prestamo)
+        self.assertIn(self.cliente.nombre_completo, texto)
+        self.assertIn('30111222', texto)
+        self.assertIn('Calle Falsa 123', texto)
+        self.assertIn('4', texto)
+        self.assertNotIn('{{', texto)  # no debe quedar ninguna variable sin reemplazar
+
+    def test_renderizar_usa_sin_dato_si_falta_dni(self):
+        self.cliente.dni = ''
+        self.cliente.save()
+        config = ConfiguracionContrato.obtener()
+        config.cuerpo = '{{cliente_dni}}'
+        config.save()
+        self.assertEqual(config.renderizar(self.prestamo), 'sin dato')
+
+
+class ContratoPdfViewTest(TestCase):
+    """Tests de las vistas de generación del PDF (autenticada y link público)"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.admin = User.objects.create_superuser(username='admin_contrato', password='test123', email='a@test.com')
+        self.cobrador = User.objects.create_user(username='cob_contrato', password='test123')
+        self.otro_cobrador = User.objects.create_user(username='otro_cob_contrato', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='López', dni='30111222',
+            telefono='1155550001', direccion='Calle Falsa 123', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('100000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=4,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+
+    def test_dueno_puede_ver_el_pdf(self):
+        self.client_http.login(username='cob_contrato', password='test123')
+        response = self.client_http.get(reverse('core:contrato_pdf', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_admin_puede_ver_el_pdf_de_cualquier_prestamo(self):
+        self.client_http.login(username='admin_contrato', password='test123')
+        response = self.client_http.get(reverse('core:contrato_pdf', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 200)
+
+    def test_otro_cobrador_no_puede_ver_el_pdf(self):
+        self.client_http.login(username='otro_cob_contrato', password='test123')
+        response = self.client_http.get(reverse('core:contrato_pdf', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_requiere_login(self):
+        response = self.client_http.get(reverse('core:contrato_pdf', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 302)  # redirect a login
+
+    def test_link_publico_accesible_sin_login_con_token_valido(self):
+        response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_link_publico_falla_con_token_inactivo(self):
+        self.prestamo.token_activo = False
+        self.prestamo.save(update_fields=['token_activo'])
+        response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_link_publico_falla_con_token_invalido(self):
+        response = self.client_http.get('/contrato/no-es-un-uuid/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_pdf_incluye_datos_del_prestamo(self):
+        self.client_http.login(username='cob_contrato', password='test123')
+        response = self.client_http.get(reverse('core:contrato_pdf', kwargs={'pk': self.prestamo.pk}))
+        import io
+        from pypdf import PdfReader
+        texto = PdfReader(io.BytesIO(response.content)).pages[0].extract_text()
+        self.assertIn(self.cliente.nombre_completo, texto)
+        self.assertIn('30111222', texto)
+
+
+class FirmarContratoTest(TestCase):
+    """Tests de la captura de firma táctil y su evidencia de respaldo"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.cobrador = User.objects.create_user(username='cob_firma', password='test123')
+        self.otro_cobrador = User.objects.create_user(username='otro_cob_firma', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Ana', apellido='López', dni='30111222',
+            telefono='1155550001', direccion='Calle Falsa 123', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('100000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=4,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.client_http.login(username='cob_firma', password='test123')
+
+    def _firmar(self, **extra):
+        data = {'firma': FIRMA_PNG_BASE64, 'lat': -34.6037, 'lng': -58.3816}
+        data.update(extra)
+        return self.client_http.post(
+            reverse('core:api_firmar_contrato', kwargs={'pk': self.prestamo.pk}),
+            data=json.dumps(data), content_type='application/json'
+        )
+
+    def test_firmar_crea_registro_con_evidencia(self):
+        response = self._firmar()
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+
+        firma = FirmaPrestamo.objects.get(prestamo=self.prestamo)
+        self.assertEqual(len(firma.hash_pdf), 64)  # SHA-256 en hex
+        self.assertEqual(firma.firmado_por, self.cobrador)
+        self.assertEqual(firma.latitud, Decimal('-34.603700'))
+        self.assertEqual(firma.longitud, Decimal('-58.381600'))
+
+    def test_no_se_puede_firmar_dos_veces(self):
+        self._firmar()
+        response = self._firmar()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(FirmaPrestamo.objects.filter(prestamo=self.prestamo).count(), 1)
+
+    def test_falta_la_firma_da_error(self):
+        response = self._firmar(firma='')
+        self.assertEqual(response.status_code, 400)
+
+    def test_otro_cobrador_no_puede_firmar_prestamo_ajeno(self):
+        self.client_http.logout()
+        self.client_http.login(username='otro_cob_firma', password='test123')
+        response = self._firmar()
+        self.assertEqual(response.status_code, 404)
+
+    def test_geolocalizacion_ausente_no_bloquea_la_firma(self):
+        response = self._firmar(lat=None, lng=None)
+        self.assertEqual(response.status_code, 200)
+        firma = FirmaPrestamo.objects.get(prestamo=self.prestamo)
+        self.assertIsNone(firma.latitud)
+        self.assertIsNone(firma.longitud)
+
+    def test_hash_corresponde_al_contrato_sin_firma_todavia(self):
+        # xhtml2pdf/reportlab embeben metadata con timestamp, así que dos PDFs
+        # generados por separado nunca son byte-a-byte idénticos aunque el
+        # contenido lógico sea el mismo — no se puede comparar el hash contra
+        # una segunda generación. Lo que sí debe cumplirse: el hash guardado
+        # es el del contrato SIN firma (se calcula antes de crear FirmaPrestamo),
+        # así que tiene que ser distinto del hash del PDF ya firmado (que
+        # incluye la imagen de la firma y el pie de evidencia).
+        import hashlib
+        from core.views import _generar_pdf_contrato
+
+        self._firmar()
+        firma = FirmaPrestamo.objects.get(prestamo=self.prestamo)
+
+        pdf_firmado = _generar_pdf_contrato(self.prestamo)
+        hash_firmado = hashlib.sha256(pdf_firmado).hexdigest()
+        self.assertNotEqual(firma.hash_pdf, hash_firmado)
+
+    def test_pantalla_de_firmar_muestra_canvas_si_no_esta_firmado(self):
+        response = self.client_http.get(reverse('core:contrato_firmar', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="firma-canvas"')
+
+    def test_pantalla_de_firmar_no_muestra_canvas_si_ya_esta_firmado(self):
+        self._firmar()
+        response = self.client_http.get(reverse('core:contrato_firmar', kwargs={'pk': self.prestamo.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'id="firma-canvas"')
+        self.assertContains(response, 'ya fue firmado')

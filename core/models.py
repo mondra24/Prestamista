@@ -2704,6 +2704,98 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         )
 
 
+CONTRATO_CUERPO_DEFAULT = """Entre {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, en adelante "EL DEUDOR", y la parte prestamista, en adelante "EL ACREEDOR", se celebra el presente contrato de mutuo, sujeto a las siguientes cláusulas:
+
+PRIMERA: EL ACREEDOR entrega en préstamo a EL DEUDOR la suma de {{monto_solicitado}}, que EL DEUDOR declara recibir en este acto de plena conformidad.
+
+SEGUNDA: EL DEUDOR se compromete a devolver la suma total de {{monto_total}}, en {{cuotas_pactadas}} cuotas de frecuencia {{frecuencia}}, comenzando el {{fecha_inicio}} y finalizando el {{fecha_finalizacion}}.
+
+TERCERA: La tasa de interés pactada es del {{tasa_interes}}% sobre el capital solicitado.
+
+CUARTA: El incumplimiento en el pago de una o más cuotas en su fecha de vencimiento generará los recargos por mora que EL ACREEDOR informe oportunamente a EL DEUDOR.
+
+QUINTA: Para todos los efectos del presente contrato, las partes se someten a la jurisdicción de los tribunales ordinarios competentes.
+
+En prueba de conformidad, se firma el presente contrato en el día de la fecha, {{fecha_hoy}}."""
+
+
+class ConfiguracionContrato(models.Model):
+    """
+    Configuración global del contrato de préstamo en PDF. Fila única (pk=1).
+    El texto es editable por el propio cliente (Thomas) desde el admin, sin
+    necesitar un desarrollador para ajustar la letra chica.
+    """
+    titulo = models.CharField(max_length=200, default='CONTRATO DE MUTUO', verbose_name='Título del contrato')
+    cuerpo = models.TextField(
+        default=CONTRATO_CUERPO_DEFAULT,
+        verbose_name='Texto del contrato',
+        help_text='Variables disponibles: {{cliente_nombre}}, {{cliente_dni}}, {{cliente_direccion}}, '
+                   '{{monto_solicitado}}, {{monto_total}}, {{cuotas_pactadas}}, {{frecuencia}}, '
+                   '{{tasa_interes}}, {{fecha_inicio}}, {{fecha_finalizacion}}, {{fecha_hoy}}'
+    )
+
+    class Meta:
+        verbose_name = 'Configuración de Contrato'
+        verbose_name_plural = 'Configuración de Contrato'
+
+    def __str__(self):
+        return self.titulo
+
+    @classmethod
+    def obtener(cls):
+        config, _ = cls.objects.get_or_create(pk=1)
+        return config
+
+    def renderizar(self, prestamo):
+        """Reemplaza las variables del cuerpo del contrato con los datos del préstamo"""
+        from .templatetags.currency_filters import dinero
+        cliente = prestamo.cliente
+        return (
+            self.cuerpo
+            .replace('{{cliente_nombre}}', cliente.nombre_completo)
+            .replace('{{cliente_dni}}', cliente.dni or 'sin dato')
+            .replace('{{cliente_direccion}}', cliente.direccion or 'sin dato')
+            .replace('{{monto_solicitado}}', dinero(prestamo.monto_solicitado))
+            .replace('{{monto_total}}', dinero(prestamo.monto_total_a_pagar))
+            .replace('{{cuotas_pactadas}}', str(prestamo.cuotas_pactadas))
+            .replace('{{frecuencia}}', prestamo.get_frecuencia_display())
+            .replace('{{tasa_interes}}', str(prestamo.tasa_interes_porcentaje))
+            .replace('{{fecha_inicio}}', prestamo.fecha_inicio.strftime('%d/%m/%Y'))
+            .replace('{{fecha_finalizacion}}', prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if prestamo.fecha_finalizacion else 'sin dato')
+            .replace('{{fecha_hoy}}', fecha_local_hoy().strftime('%d/%m/%Y'))
+        )
+
+
+class FirmaPrestamo(models.Model):
+    """
+    Evidencia de la firma táctil del contrato de un préstamo (una por
+    préstamo). Se captura en el celular del cobrador, con el cliente
+    presente — no hay verificación por OTP, la evidencia (hash del PDF
+    firmado, IP, geolocalización y quién estaba logueado) es la que le da
+    respaldo a la firma electrónica simple.
+    """
+    prestamo = models.OneToOneField(
+        'Prestamo', on_delete=models.CASCADE, related_name='firma', verbose_name='Préstamo'
+    )
+    firma_imagen_base64 = models.TextField(verbose_name='Firma (imagen)')
+    hash_pdf = models.CharField(max_length=64, verbose_name='Hash SHA-256 del PDF firmado')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name='IP')
+    latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name='Latitud')
+    longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name='Longitud')
+    user_agent = models.CharField(max_length=255, blank=True, verbose_name='Navegador/Dispositivo')
+    firmado_por = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='firmas_registradas', verbose_name='Registrado por'
+    )
+    firmado_en = models.DateTimeField(auto_now_add=True, verbose_name='Firmado el')
+
+    class Meta:
+        verbose_name = 'Firma de Contrato'
+        verbose_name_plural = 'Firmas de Contrato'
+
+    def __str__(self):
+        return f'Firma de {self.prestamo} — {self.firmado_en.strftime("%d/%m/%Y %H:%M")}'
+
+
 class TareaPendiente(models.Model):
     """
     Recordatorio personal, tipo lista de tareas, del widget flotante que
