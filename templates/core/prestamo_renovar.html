@@ -75,7 +75,7 @@
 
 {% block extra_js %}
 <script>
-const maximoCapitalAdicional = {% if maximo_capital_adicional is not None %}{{ maximo_capital_adicional }}{% else %}null{% endif %};
+const maximoCapitalAdicional = {% if maximo_capital_adicional is not None %}{{ maximo_capital_adicional|numero_raw }}{% else %}null{% endif %};
 
 document.addEventListener('DOMContentLoaded', function() {
     const montoInput = document.getElementById('id_nuevo_monto');

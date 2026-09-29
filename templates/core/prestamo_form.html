@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load crispy_forms_tags %}
+{% load currency_filters %}
 
 {% block title %}{% if editando %}Editar{% else %}Nuevo{% endif %} Préstamo - Préstamos{% endblock %}
 
@@ -85,15 +86,15 @@ const clientesData = {
         categoriaCod: "{{ cliente.categoria }}",
         tipoNegocio: "{{ cliente.tipo_negocio.nombre|default:'-'|escapejs }}",
         comercio: "{{ cliente.tipo_comercio|default:'-'|escapejs }}",
-        maximoPrestable: {% if cliente.maximo_prestable is not None %}{{ cliente.maximo_prestable }}{% else %}null{% endif %},
-        deudaTotal: {{ cliente.deuda_total|default:0 }},
+        maximoPrestable: {% if cliente.maximo_prestable is not None %}{{ cliente.maximo_prestable|numero_raw }}{% else %}null{% endif %},
+        deudaTotal: {{ cliente.deuda_total|default:0|numero_raw }},
         puedeRenovar: {{ cliente.puede_renovar|yesno:"true,false" }},
         diasParaRenovar: {{ cliente.dias_para_poder_renovar|default:0 }},
         fechaFin: "{{ cliente.fecha_fin_prestamo_activo|date:'d/m/Y'|default:'' }}",
-        limitePorCategoria: {% if cliente.limite_por_categoria is not None %}{{ cliente.limite_por_categoria }}{% else %}null{% endif %},
-        limiteSobreDeuda: {% if cliente.limite_sobre_deuda is not None %}{{ cliente.limite_sobre_deuda }}{% else %}null{% endif %},
-        limitePorTipoNegocio: {% if cliente.limite_por_tipo_negocio is not None %}{{ cliente.limite_por_tipo_negocio }}{% else %}null{% endif %},
-        limiteIndividual: {{ cliente.limite_credito|default:0 }}
+        limitePorCategoria: {% if cliente.limite_por_categoria is not None %}{{ cliente.limite_por_categoria|numero_raw }}{% else %}null{% endif %},
+        limiteSobreDeuda: {% if cliente.limite_sobre_deuda is not None %}{{ cliente.limite_sobre_deuda|numero_raw }}{% else %}null{% endif %},
+        limitePorTipoNegocio: {% if cliente.limite_por_tipo_negocio is not None %}{{ cliente.limite_por_tipo_negocio|numero_raw }}{% else %}null{% endif %},
+        limiteIndividual: {{ cliente.limite_credito|default:0|numero_raw }}
     },
     {% endfor %}
 };
