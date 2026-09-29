@@ -4539,3 +4539,53 @@ class TareaPendienteTest(TestCase):
         data = response.json()['data']
         self.assertEqual(len(data), 2)
         self.assertTrue(all('Cuota' in item['label'] and 'Camila' in item['label'] for item in data))
+
+
+# ============== BUG: IDs de 4+ cifras rotos por USE_THOUSAND_SEPARATOR ==============
+# Con USE_THOUSAND_SEPARATOR=True, Django formatea CUALQUIER número impreso sin
+# filtro en un template -- incluidos los pk. Una cuota con id 1003 se imprimía
+# "1.003" en data-cuota-id, y el botón Cobrar terminaba pegándole a
+# /api/cobrar/1.003/ (404), sin ningún error visible más que "no deja cobrar".
+
+class BugFixIdsGrandesSinFormatoTest(TestCase):
+    """El id de una cuota/préstamo nunca debe salir con separador de miles"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.cobrador = User.objects.create_user(username='cob_ids_grandes', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Grande', apellido='Test', telefono='1122223333',
+            direccion='Dir', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('80000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=1,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.cuota = self.prestamo.cuotas.first()
+        # Forzar un id de 4+ cifras (en producción esto ya pasa naturalmente
+        # una vez que la tabla acumula más de 999 cuotas) y que venza hoy,
+        # para que aparezca en "Cobros de Hoy" con el botón de cobro rápido
+        Cuota.objects.filter(pk=self.cuota.pk).update(id=123456, fecha_vencimiento=date.today())
+        self.cuota = Cuota.objects.get(pk=123456)
+        self.client_http.login(username='cob_ids_grandes', password='test123')
+
+    def test_django_no_formatea_numeros_sin_filtro(self):
+        """Guarda de la causa raíz: un número crudo en un template no debe llevar separador"""
+        from django.template import Template, Context
+        salida = Template('{{ valor }}').render(Context({'valor': 1003}))
+        self.assertEqual(salida, '1003')
+
+    def test_data_cuota_id_no_lleva_punto_en_cobros(self):
+        response = self.client_http.get(reverse('core:cobros'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'data-cuota-id="{self.cuota.pk}"')
+        self.assertNotContains(response, 'data-cuota-id="123.456"')
+
+    def test_cobrar_funciona_con_id_de_6_cifras(self):
+        response = self.client_http.post(
+            reverse('core:cobrar_cuota', kwargs={'pk': self.cuota.pk}),
+            data='{}', content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])

@@ -173,11 +173,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
 CRISPY_TEMPLATE_PACK = "bootstrap5"
 
-# Formato de moneda y números (estilo argentino)
-# Punto para separador de miles, coma para decimales
-USE_THOUSAND_SEPARATOR = True
-THOUSAND_SEPARATOR = '.'
-DECIMAL_SEPARATOR = ','
+# El formato de moneda argentino (punto de miles, coma decimal) lo hacen a mano
+# los filtros de core/templatetags/currency_filters.py (|dinero, |formato_ars),
+# que no dependen de esto. USE_THOUSAND_SEPARATOR queda en False a propósito:
+# si está en True, Django formatea TAMBIÉN cualquier número que se imprima sin
+# filtro — incluidos IDs (cuota.pk, etc.) — así que un id como 1003 se imprime
+# "1.003" en cualquier data-attribute o URL armada a mano, rompiendo todo lo
+# que dependa de ese número (p. ej. "Cobrar" tira 404 en /api/cobrar/1.003/).
+USE_THOUSAND_SEPARATOR = False
 
 # Autenticación
 LOGIN_URL = 'login'
