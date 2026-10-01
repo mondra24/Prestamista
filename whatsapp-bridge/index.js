@@ -141,6 +141,22 @@ app.post('/disconnect', async (req, res) => {
     }
 });
 
+/**
+ * WhatsApp identifica a los celulares argentinos con un "9" después del 54
+ * (ej: 549 11 1234-5678), aunque nadie lo marque así al llamar. Si el número
+ * llega sin el 54 completo, el JID queda mal armado y Baileys lo acepta
+ * igual (devuelve message_id) pero el mensaje nunca le llega a nadie — no
+ * tira error, se pierde en silencio. Los números de clientes se cargan en
+ * formato local (ej. "1123866766"), así que hay que completarlos acá.
+ */
+function normalizarNumeroAR(numero) {
+    let digitos = String(numero).replace(/\D/g, '');
+    if (digitos.startsWith('0')) digitos = digitos.substring(1);
+    if (digitos.startsWith('549')) return digitos;
+    if (digitos.startsWith('54')) return '549' + digitos.substring(2);
+    return '549' + digitos;
+}
+
 app.post('/send', async (req, res) => {
     if (!estado.conectado || !sock) {
         return res.status(409).json({ success: false, message: 'WhatsApp no está conectado' });
@@ -151,7 +167,7 @@ app.post('/send', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Faltan "to" o "message"' });
     }
 
-    const digitos = String(to).replace(/\D/g, '');
+    const digitos = normalizarNumeroAR(to);
     if (!digitos) {
         return res.status(400).json({ success: false, message: 'Número inválido' });
     }
