@@ -120,7 +120,4 @@ urlpatterns = [
     # Reportes automáticos (C1-C3)
     path('reportes/automaticos/', views.ReportesAutomaticosListView.as_view(), name='reportes_automaticos'),
     path('reportes/automaticos/descargar/<str:nombre>/', views.descargar_reporte_automatico, name='descargar_reporte_automatico'),
-
-    # TEMPORAL: diagnostico de formato de telefono en el envio automatico de WhatsApp. Borrar despues de usar.
-    path('api/_debug/whatsapp-test-send/', views.debug_whatsapp_test_send, name='debug_whatsapp_test_send'),
 ]

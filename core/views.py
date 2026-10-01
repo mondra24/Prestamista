@@ -4122,22 +4122,3 @@ def buscar_vinculo_tarea(request):
             })
 
     return JsonResponse({'success': True, 'data': resultados})
-
-
-@login_required
-def debug_whatsapp_test_send(request):
-    """TEMPORAL: manda un mensaje de prueba tal cual lo haria el envio automatico,
-    para diagnosticar si el formato de telefono guardado llega de verdad. Borrar
-    despues de usar."""
-    if not request.user.is_superuser:
-        return JsonResponse({'success': False, 'message': 'Solo superusuario'}, status=403)
-
-    from . import whatsapp_bridge
-    tel = request.GET.get('tel', '')
-    texto = request.GET.get('texto', 'Prueba de PrestaFacil')
-
-    try:
-        message_id = whatsapp_bridge.enviar_mensaje(tel, texto)
-        return JsonResponse({'success': True, 'message_id': message_id, 'tel_usado': tel})
-    except whatsapp_bridge.WhatsAppBridgeError as e:
-        return JsonResponse({'success': False, 'message': str(e), 'tel_usado': tel}, status=502)

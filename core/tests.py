@@ -1162,15 +1162,18 @@ class CalendarioCobrosViewTest(TestCase):
         cuotas[2].fecha_vencimiento = hoy + timedelta(days=3)
         cuotas[2].save()  # futura -> próxima
 
-        response = self.client.get(reverse('core:calendario_cobros'))
-        self.assertEqual(response.status_code, 200)
+        def grilla_para(fecha):
+            # Pide explícitamente el mes de cada cuota: con fechas relativas a
+            # "hoy" (hoy-2, hoy-1, hoy+3) alguna puede caer en el mes anterior
+            # o siguiente al de "hoy" si el test corre cerca de un cambio de
+            # mes, y la grilla sin year/month solo trae el mes actual.
+            resp = self.client.get(reverse('core:calendario_cobros'), {'year': fecha.year, 'month': fecha.month})
+            self.assertEqual(resp.status_code, 200)
+            return resp
 
-        self.assertEqual(self._dia_de(response, cuotas[0].fecha_vencimiento)['color'], 'cobrado')
-        self.assertEqual(self._dia_de(response, cuotas[1].fecha_vencimiento)['color'], 'pendiente')
-        # Si la fecha de la cuota "próxima" cae en el mes siguiente no se verá en esta grilla;
-        # solo se verifica cuando cae dentro del mes actual.
-        if cuotas[2].fecha_vencimiento.month == hoy.month:
-            self.assertEqual(self._dia_de(response, cuotas[2].fecha_vencimiento)['color'], 'proxima')
+        self.assertEqual(self._dia_de(grilla_para(cuotas[0].fecha_vencimiento), cuotas[0].fecha_vencimiento)['color'], 'cobrado')
+        self.assertEqual(self._dia_de(grilla_para(cuotas[1].fecha_vencimiento), cuotas[1].fecha_vencimiento)['color'], 'pendiente')
+        self.assertEqual(self._dia_de(grilla_para(cuotas[2].fecha_vencimiento), cuotas[2].fecha_vencimiento)['color'], 'proxima')
 
     def test_dia_sin_cuotas_no_tiene_color(self):
         response = self.client.get(reverse('core:calendario_cobros'))
