@@ -699,8 +699,12 @@ class PrestamoCreateView(LoginRequiredMixin, CreateView):
     model = Prestamo
     form_class = PrestamoForm
     template_name = 'core/prestamo_form.html'
-    success_url = reverse_lazy('core:prestamo_list')
-    
+
+    def get_success_url(self):
+        # Al detalle, no al listado: ahí está el botón para generar/firmar el contrato
+        return reverse('core:prestamo_detail', kwargs={'pk': self.object.pk})
+
+
     def get_initial(self):
         initial = super().get_initial()
         cliente_id = self.request.GET.get('cliente')
@@ -3759,6 +3763,152 @@ def toggle_token_prestamo(request, pk):
         })
     except Prestamo.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
+
+
+# ==================== CONTRATO PDF Y FIRMA ====================
+
+from .models import ConfiguracionContrato, FirmaPrestamo
+import hashlib
+from decimal import InvalidOperation
+
+
+def _generar_pdf_contrato(prestamo):
+    """
+    Genera los bytes del PDF del contrato de un préstamo. Se arma al vuelo en
+    cada request (no se guarda a disco: el servicio web no tiene volumen
+    persistente en Railway) y la reusan la vista autenticada, el link público
+    y el hasheo al momento de firmar.
+    """
+    from xhtml2pdf import pisa
+    from django.template.loader import render_to_string
+
+    config = ConfiguracionContrato.obtener()
+    contexto = {
+        'prestamo': prestamo,
+        'titulo': config.titulo,
+        'cuerpo_renderizado': config.renderizar(prestamo),
+        'firma': getattr(prestamo, 'firma', None),
+    }
+    html = render_to_string('core/contrato_pdf.html', contexto)
+    buffer = io.BytesIO()
+    pisa.CreatePDF(html, dest=buffer)
+    return buffer.getvalue()
+
+
+def _obtener_ip_cliente(request):
+    """IP real del visitante. Railway sirve detrás de un proxy, así que REMOTE_ADDR
+    por sí solo mostraría la IP interna del proxy, no la del dispositivo."""
+    import ipaddress
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    candidata = forwarded.split(',')[0].strip() if forwarded else request.META.get('REMOTE_ADDR')
+    try:
+        ipaddress.ip_address(candidata)
+        return candidata
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_decimal_o_none(valor):
+    if valor in (None, ''):
+        return None
+    try:
+        return Decimal(str(valor))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+@login_required
+def contrato_pdf(request, pk):
+    """Genera y muestra el PDF del contrato (admin ve todo, cobrador solo lo suyo)"""
+    if es_usuario_admin(request.user):
+        prestamo = get_object_or_404(Prestamo, pk=pk)
+    else:
+        prestamo = get_object_or_404(Prestamo, pk=pk, cobrador=request.user)
+
+    pdf_bytes = _generar_pdf_contrato(prestamo)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="contrato_prestamo_{prestamo.pk}.pdf"'
+    return response
+
+
+def contrato_publico(request, token):
+    """Vista pública (sin login) del PDF del contrato, vía el mismo token_publico del préstamo.
+    Es el link que se manda por WhatsApp."""
+    try:
+        token_uuid = uuid.UUID(str(token))
+    except (ValueError, AttributeError):
+        from django.http import Http404
+        raise Http404
+
+    prestamo = get_object_or_404(Prestamo, token_publico=token_uuid, token_activo=True)
+    pdf_bytes = _generar_pdf_contrato(prestamo)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="contrato_prestamo_{prestamo.pk}.pdf"'
+    return response
+
+
+class FirmarContratoView(LoginRequiredMixin, TemplateView):
+    """Pantalla para que el cliente firme con el dedo en el celular del cobrador"""
+    template_name = 'core/contrato_firmar.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        pk = self.kwargs['pk']
+        if es_usuario_admin(self.request.user):
+            prestamo = get_object_or_404(Prestamo, pk=pk)
+        else:
+            prestamo = get_object_or_404(Prestamo, pk=pk, cobrador=self.request.user)
+        context['prestamo'] = prestamo
+        context['firma'] = getattr(prestamo, 'firma', None)
+        return context
+
+
+@login_required
+def firmar_contrato(request, pk):
+    """
+    Guarda la firma táctil capturada, con evidencia de respaldo (hash del PDF
+    firmado, IP, geolocalización si está disponible, y quién estaba
+    logueado). No hay verificación por OTP: el cliente firma presente, en el
+    celular del cobrador.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+
+    try:
+        if es_usuario_admin(request.user):
+            prestamo = Prestamo.objects.get(pk=pk)
+        else:
+            prestamo = Prestamo.objects.get(pk=pk, cobrador=request.user)
+    except Prestamo.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
+
+    if hasattr(prestamo, 'firma'):
+        return JsonResponse({'success': False, 'message': 'Este préstamo ya tiene una firma registrada'}, status=400)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'JSON inválido'}, status=400)
+
+    firma_base64 = data.get('firma')
+    if not firma_base64:
+        return JsonResponse({'success': False, 'message': 'Falta la firma'}, status=400)
+
+    pdf_bytes = _generar_pdf_contrato(prestamo)
+    hash_pdf = hashlib.sha256(pdf_bytes).hexdigest()
+
+    FirmaPrestamo.objects.create(
+        prestamo=prestamo,
+        firma_imagen_base64=firma_base64,
+        hash_pdf=hash_pdf,
+        ip_address=_obtener_ip_cliente(request),
+        latitud=_parse_decimal_o_none(data.get('lat')),
+        longitud=_parse_decimal_o_none(data.get('lng')),
+        user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
+        firmado_por=request.user,
+    )
+
+    return JsonResponse({'success': True, 'message': 'Firma registrada correctamente'})
 
 
 # ==================== ESTADO PÚBLICO DE CLIENTE (todos sus créditos) ====================

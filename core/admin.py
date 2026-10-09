@@ -10,7 +10,8 @@ from .models import (
     RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionMora, InteresMora, HistorialModificacionPago,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
-    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos
+    ConfiguracionMoraReciente, ConfiguracionMensajesAutomaticos,
+    ConfiguracionContrato, FirmaPrestamo
 )
 
 User = get_user_model()
@@ -423,4 +424,32 @@ class ConfiguracionMensajesAutomaticosAdmin(admin.ModelAdmin):
         return not ConfiguracionMensajesAutomaticos.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+# ==================== CONTRATO Y FIRMA ====================
+
+@admin.register(ConfiguracionContrato)
+class ConfiguracionContratoAdmin(admin.ModelAdmin):
+    list_display = ['titulo']
+
+    def has_add_permission(self, request):
+        return not ConfiguracionContrato.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(FirmaPrestamo)
+class FirmaPrestamoAdmin(admin.ModelAdmin):
+    list_display = ['prestamo', 'firmado_por', 'firmado_en', 'ip_address']
+    list_filter = ['firmado_en']
+    search_fields = ['prestamo__cliente__nombre', 'prestamo__cliente__apellido']
+    readonly_fields = [
+        'prestamo', 'firma_imagen_base64', 'hash_pdf', 'ip_address',
+        'latitud', 'longitud', 'user_agent', 'firmado_por', 'firmado_en',
+    ]
+    date_hierarchy = 'firmado_en'
+
+    def has_add_permission(self, request):
         return False

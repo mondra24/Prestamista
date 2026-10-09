@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Firmar Contrato - Préstamos{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-2 px-lg-4">
+
+    <div class="d-flex align-items-center mb-4">
+        <a href="{% url 'core:prestamo_detail' prestamo.pk %}" class="btn btn-outline-secondary me-3">
+            <i class="bi bi-arrow-left"></i>
+        </a>
+        <h1 class="h4 mb-0">
+            <i class="bi bi-pen me-2"></i>Firmar Contrato — {{ prestamo.cliente.nombre_completo }}
+        </h1>
+    </div>
+
+    {% if firma %}
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill me-1"></i>
+        Este contrato ya fue firmado el {{ firma.firmado_en|date:"d/m/Y H:i" }}.
+    </div>
+    <a href="{% url 'core:contrato_pdf' prestamo.pk %}" target="_blank" class="btn btn-primary">
+        <i class="bi bi-file-earmark-pdf me-1"></i>Ver contrato firmado
+    </a>
+    {% else %}
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                Antes de firmar, revisá el contrato con el cliente.
+            </p>
+            <a href="{% url 'core:contrato_pdf' prestamo.pk %}" target="_blank" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-file-earmark-pdf me-1"></i>Ver contrato
+            </a>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <p class="mb-2">
+                <strong>Firma del cliente</strong> — pasale el celular para que firme con el dedo:
+            </p>
+            <canvas id="firma-canvas" style="border:2px dashed #999; border-radius:8px; touch-action:none; width:100%; max-width:600px; height:220px; background:#fff;"></canvas>
+            <div class="mt-2 d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-limpiar-firma">
+                    <i class="bi bi-eraser me-1"></i>Limpiar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <button type="button" class="btn btn-success btn-lg w-100" id="btn-confirmar-firma">
+        <i class="bi bi-check2-circle me-1"></i>Confirmar Firma
+    </button>
+    <div id="firma-error" class="alert alert-danger mt-3" style="display:none;"></div>
+
+    {% endif %}
+</div>
+
+<script>
+(function() {
+    const canvas = document.getElementById('firma-canvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    let dibujando = false;
+    let tieneTrazo = false;
+
+    function ajustarTamano() {
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * ratio;
+        canvas.height = rect.height * ratio;
+        ctx.scale(ratio, ratio);
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#1a1a2e';
+    }
+    ajustarTamano();
+
+    function coordenadas(e) {
+        const rect = canvas.getBoundingClientRect();
+        const punto = e.touches ? e.touches[0] : e;
+        return { x: punto.clientX - rect.left, y: punto.clientY - rect.top };
+    }
+
+    function iniciar(e) {
+        e.preventDefault();
+        dibujando = true;
+        const p = coordenadas(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+    }
+    function mover(e) {
+        if (!dibujando) return;
+        e.preventDefault();
+        const p = coordenadas(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        tieneTrazo = true;
+    }
+    function terminar() { dibujando = false; }
+
+    canvas.addEventListener('mousedown', iniciar);
+    canvas.addEventListener('mousemove', mover);
+    canvas.addEventListener('mouseup', terminar);
+    canvas.addEventListener('mouseleave', terminar);
+    canvas.addEventListener('touchstart', iniciar, { passive: false });
+    canvas.addEventListener('touchmove', mover, { passive: false });
+    canvas.addEventListener('touchend', terminar);
+
+    document.getElementById('btn-limpiar-firma').addEventListener('click', function() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        tieneTrazo = false;
+    });
+
+    function obtenerUbicacion() {
+        return new Promise(function(resolve) {
+            if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
+            const listo = function(pos) {
+                resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            };
+            const fallo = function() { resolve({ lat: null, lng: null }); };
+            navigator.geolocation.getCurrentPosition(listo, fallo, { timeout: 4000 });
+        });
+    }
+
+    const btnConfirmar = document.getElementById('btn-confirmar-firma');
+    const errorBox = document.getElementById('firma-error');
+
+    btnConfirmar.addEventListener('click', async function() {
+        errorBox.style.display = 'none';
+
+        if (!tieneTrazo) {
+            errorBox.textContent = 'Falta la firma en el recuadro.';
+            errorBox.style.display = 'block';
+            return;
+        }
+
+        btnConfirmar.disabled = true;
+        btnConfirmar.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+
+        try {
+            const ubicacion = await obtenerUbicacion();
+            const firmaBase64 = canvas.toDataURL('image/png');
+
+            const resp = await fetch('{% url "core:api_firmar_contrato" prestamo.pk %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ firma: firmaBase64, lat: ubicacion.lat, lng: ubicacion.lng })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                window.location.href = '{% url "core:prestamo_detail" prestamo.pk %}';
+            } else {
+                errorBox.textContent = data.message || 'No se pudo guardar la firma';
+                errorBox.style.display = 'block';
+                btnConfirmar.disabled = false;
+                btnConfirmar.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Confirmar Firma';
+            }
+        } catch (e) {
+            errorBox.textContent = 'Error de conexión';
+            errorBox.style.display = 'block';
+            btnConfirmar.disabled = false;
+            btnConfirmar.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Confirmar Firma';
+        }
+    });
+})();
+</script>
+{% endblock %}

@@ -15,6 +15,9 @@ django-widget-tweaks>=1.4.8
 openpyxl>=3.1.0
 Pillow>=7.1.0
 
+# PDF (contrato de préstamo)
+xhtml2pdf>=0.2.14
+
 # Deploy Railway/Producción
 gunicorn>=21.0
 psycopg2-binary>=2.9.0

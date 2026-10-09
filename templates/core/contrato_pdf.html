@@ -1,0 +1,152 @@
+{% load currency_filters %}
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ titulo }} - Préstamo #{{ prestamo.pk }}</title>
+<style>
+    @page {
+        size: A4;
+        margin: 2cm 1.8cm;
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 11pt;
+        color: #222;
+        line-height: 1.5;
+    }
+    h1 {
+        text-align: center;
+        font-size: 16pt;
+        margin-bottom: 4px;
+    }
+    .subtitulo {
+        text-align: center;
+        font-size: 9pt;
+        color: #666;
+        margin-bottom: 20px;
+    }
+    table.datos {
+        width: 100%;
+        margin-bottom: 18px;
+    }
+    table.datos td {
+        border: 1px solid #ccc;
+        padding: 5px 8px;
+        font-size: 9.5pt;
+    }
+    table.datos td.etiqueta {
+        background-color: #f2f2f2;
+        font-weight: bold;
+        width: 32%;
+    }
+    .cuerpo p {
+        text-align: justify;
+        margin: 0 0 10px 0;
+    }
+    table.firmas {
+        width: 100%;
+        margin-top: 50px;
+    }
+    table.firmas td {
+        width: 45%;
+        text-align: center;
+        vertical-align: bottom;
+        padding: 0 10px;
+    }
+    table.firmas td.espaciador {
+        width: 10%;
+    }
+    .firma-imagen {
+        height: 60px;
+        margin-bottom: 4px;
+    }
+    .firma-raya {
+        font-size: 12pt;
+        letter-spacing: 1px;
+        color: #222;
+    }
+    .firma-linea {
+        padding-top: 4px;
+        font-size: 9.5pt;
+    }
+    .firma-evidencia {
+        font-size: 7.5pt;
+        color: #777;
+        margin-top: 6px;
+    }
+</style>
+</head>
+<body>
+
+<h1>{{ titulo }}</h1>
+<div class="subtitulo">Préstamo #{{ prestamo.pk }} — Generado el {% now "d/m/Y" %}</div>
+
+<table class="datos">
+    <tr>
+        <td class="etiqueta">Cliente</td>
+        <td>{{ prestamo.cliente.nombre_completo }}</td>
+        <td class="etiqueta">DNI</td>
+        <td>{{ prestamo.cliente.dni|default:"sin dato" }}</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">Domicilio</td>
+        <td colspan="3">{{ prestamo.cliente.direccion|default:"sin dato" }}</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">Monto solicitado</td>
+        <td>{{ prestamo.monto_solicitado|dinero }}</td>
+        <td class="etiqueta">Total a pagar</td>
+        <td>{{ prestamo.monto_total_a_pagar|dinero }}</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">Cuotas</td>
+        <td>{{ prestamo.cuotas_pactadas }} ({{ prestamo.get_frecuencia_display }})</td>
+        <td class="etiqueta">Tasa de interés</td>
+        <td>{{ prestamo.tasa_interes_porcentaje }}%</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">Fecha de inicio</td>
+        <td>{{ prestamo.fecha_inicio|date:"d/m/Y" }}</td>
+        <td class="etiqueta">Fecha de finalización</td>
+        <td>{{ prestamo.fecha_finalizacion|date:"d/m/Y"|default:"sin dato" }}</td>
+    </tr>
+</table>
+
+<div class="cuerpo">
+    {{ cuerpo_renderizado|linebreaks }}
+</div>
+
+<table class="firmas">
+    <tr>
+        <td>
+            {% if firma %}
+            <img class="firma-imagen" src="{{ firma.firma_imagen_base64 }}">
+            {% endif %}
+        </td>
+        <td class="espaciador"></td>
+        <td></td>
+    </tr>
+    <tr>
+        <td class="firma-raya">______________________</td>
+        <td class="espaciador"></td>
+        <td class="firma-raya">______________________</td>
+    </tr>
+    <tr>
+        <td class="firma-linea">Firma del Deudor<br>{{ prestamo.cliente.nombre_completo }}</td>
+        <td class="espaciador"></td>
+        <td class="firma-linea">Firma del Acreedor</td>
+    </tr>
+</table>
+
+{% if firma %}
+<div class="firma-evidencia">
+    Firmado electrónicamente el {{ firma.firmado_en|date:"d/m/Y H:i" }}
+    {% if firma.ip_address %} — IP {{ firma.ip_address }}{% endif %}
+    {% if firma.latitud and firma.longitud %} — Ubicación {{ firma.latitud }}, {{ firma.longitud }}{% endif %}
+    — Hash del documento: {{ firma.hash_pdf }}
+</div>
+{% endif %}
+
+</body>
+</html>
