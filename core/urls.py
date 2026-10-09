@@ -75,6 +75,8 @@ urlpatterns = [
 
     # Contrato en PDF: link público (sin auth, vía token del préstamo) y firma (AJAX)
     path('contrato/<uuid:token>/', views.contrato_publico, name='contrato_publico'),
+    path('contrato/<uuid:token>/pdf/', views.contrato_publico_pdf, name='contrato_publico_pdf'),
+    path('contrato/<uuid:token>/firmar/', views.firmar_contrato_publico, name='contrato_publico_firmar'),
     path('api/prestamo/<int:pk>/firmar/', views.firmar_contrato, name='api_firmar_contrato'),
 
     # Estado público de cliente: resumen de todos sus créditos (sin auth)

@@ -3831,16 +3831,31 @@ def contrato_pdf(request, pk):
     return response
 
 
-def contrato_publico(request, token):
-    """Vista pública (sin login) del PDF del contrato, vía el mismo token_publico del préstamo.
-    Es el link que se manda por WhatsApp."""
+def _prestamo_por_token_o_404(token):
+    """Préstamo con link público activo, o 404 (token malformado o desactivado)"""
     try:
         token_uuid = uuid.UUID(str(token))
     except (ValueError, AttributeError):
         from django.http import Http404
         raise Http404
+    return get_object_or_404(Prestamo, token_publico=token_uuid, token_activo=True)
 
-    prestamo = get_object_or_404(Prestamo, token_publico=token_uuid, token_activo=True)
+
+def contrato_publico(request, token):
+    """Página pública (sin login) del contrato: es el link que se manda por WhatsApp.
+    El cliente lo lee y, si no está firmado, firma con el dedo desde su propio celular."""
+    prestamo = _prestamo_por_token_o_404(token)
+    return render(request, 'core/contrato_publico.html', {
+        'prestamo': prestamo,
+        'firma': getattr(prestamo, 'firma', None),
+        'titulo': ConfiguracionContrato.obtener().titulo,
+        'cuerpo': ConfiguracionContrato.obtener().renderizar(prestamo),
+    })
+
+
+def contrato_publico_pdf(request, token):
+    """PDF del contrato vía el token público del préstamo (sin login)"""
+    prestamo = _prestamo_por_token_o_404(token)
     pdf_bytes = _generar_pdf_contrato(prestamo)
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="contrato_prestamo_{prestamo.pk}.pdf"'
@@ -3882,8 +3897,27 @@ def firmar_contrato(request, pk):
     except Prestamo.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Préstamo no encontrado'}, status=404)
 
+    return _registrar_firma(request, prestamo, firmado_por=request.user)
+
+
+def firmar_contrato_publico(request, token):
+    """
+    Firma del cliente desde su propio celular, vía el link público del
+    contrato. Sin login ni OTP (decisión del negocio: lo más simple posible,
+    aunque sea menos seguro): quien tenga el link puede firmar una única vez.
+    `firmado_por` queda vacío, que es lo que distingue esta firma de la
+    tomada en el celular del cobrador.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Método no permitido'}, status=405)
+    prestamo = _prestamo_por_token_o_404(token)
+    return _registrar_firma(request, prestamo, firmado_por=None)
+
+
+def _registrar_firma(request, prestamo, firmado_por):
+    """Guarda la firma con su evidencia (hash del PDF, IP, ubicación, dispositivo)"""
     if hasattr(prestamo, 'firma'):
-        return JsonResponse({'success': False, 'message': 'Este préstamo ya tiene una firma registrada'}, status=400)
+        return JsonResponse({'success': False, 'message': 'Este contrato ya está firmado'}, status=400)
 
     try:
         data = json.loads(request.body)
@@ -3891,7 +3925,7 @@ def firmar_contrato(request, pk):
         return JsonResponse({'success': False, 'message': 'JSON inválido'}, status=400)
 
     firma_base64 = data.get('firma')
-    if not firma_base64:
+    if not firma_base64 or not str(firma_base64).startswith('data:image/png;base64,'):
         return JsonResponse({'success': False, 'message': 'Falta la firma'}, status=400)
 
     pdf_bytes = _generar_pdf_contrato(prestamo)
@@ -3905,7 +3939,7 @@ def firmar_contrato(request, pk):
         latitud=_parse_decimal_o_none(data.get('lat')),
         longitud=_parse_decimal_o_none(data.get('lng')),
         user_agent=request.META.get('HTTP_USER_AGENT', '')[:255],
-        firmado_por=request.user,
+        firmado_por=firmado_por,
     )
 
     return JsonResponse({'success': True, 'message': 'Firma registrada correctamente'})

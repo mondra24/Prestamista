@@ -4691,7 +4691,18 @@ class ContratoPdfViewTest(TestCase):
     def test_link_publico_accesible_sin_login_con_token_valido(self):
         response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'firma-canvas')
+
+    def test_pdf_publico_accesible_sin_login_con_token_valido(self):
+        response = self.client_http.get(reverse('core:contrato_publico_pdf', kwargs={'token': self.prestamo.token_publico}))
+        self.assertEqual(response.status_code, 200)
         self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_pdf_publico_falla_con_token_inactivo(self):
+        self.prestamo.token_activo = False
+        self.prestamo.save(update_fields=['token_activo'])
+        response = self.client_http.get(reverse('core:contrato_publico_pdf', kwargs={'token': self.prestamo.token_publico}))
+        self.assertEqual(response.status_code, 404)
 
     def test_link_publico_falla_con_token_inactivo(self):
         self.prestamo.token_activo = False
@@ -4802,3 +4813,69 @@ class FirmarContratoTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'id="firma-canvas"')
         self.assertContains(response, 'ya fue firmado')
+
+
+class FirmaPublicaDelClienteTest(TestCase):
+    """El cliente firma desde su propio celular con el link público (sin login ni OTP)"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.cobrador = User.objects.create_user(username='cob_firma_pub', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Rosa', apellido='Publica', telefono='1122223333',
+            direccion='Dir', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=2,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.url = reverse('core:contrato_publico_firmar', kwargs={'token': self.prestamo.token_publico})
+
+    def _firmar(self, payload=None, url=None):
+        return self.client_http.post(
+            url or self.url,
+            data=json.dumps(payload if payload is not None else {'firma': FIRMA_PNG_BASE64}),
+            content_type='application/json',
+        )
+
+    def test_cliente_firma_sin_login(self):
+        response = self._firmar({'firma': FIRMA_PNG_BASE64, 'lat': '-34.6', 'lng': '-58.4'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['success'])
+        firma = FirmaPrestamo.objects.get(prestamo=self.prestamo)
+        self.assertIsNone(firma.firmado_por)
+        self.assertEqual(len(firma.hash_pdf), 64)
+        self.assertEqual(str(firma.latitud), '-34.600000')
+
+    def test_no_se_puede_firmar_dos_veces(self):
+        self._firmar()
+        response = self._firmar()
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(FirmaPrestamo.objects.filter(prestamo=self.prestamo).count(), 1)
+
+    def test_token_inactivo_no_permite_firmar(self):
+        self.prestamo.token_activo = False
+        self.prestamo.save(update_fields=['token_activo'])
+        self.assertEqual(self._firmar().status_code, 404)
+        self.assertFalse(FirmaPrestamo.objects.exists())
+
+    def test_token_de_otro_prestamo_no_firma_este(self):
+        self.assertEqual(self._firmar(url='/contrato/00000000-0000-0000-0000-000000000000/firmar/').status_code, 404)
+
+    def test_firma_vacia_o_que_no_es_png_se_rechaza(self):
+        self.assertEqual(self._firmar({}).status_code, 400)
+        self.assertEqual(self._firmar({'firma': 'cualquier cosa'}).status_code, 400)
+
+    def test_get_no_firma(self):
+        self.assertEqual(self.client_http.get(self.url).status_code, 405)
+
+    def test_pagina_muestra_agradecimiento_si_ya_esta_firmado(self):
+        self._firmar()
+        response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
+        self.assertContains(response, 'Contrato firmado el')
+        self.assertNotContains(response, 'id="firma-canvas"')
+
+    def test_pagina_muestra_texto_del_contrato(self):
+        response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
+        self.assertContains(response, 'Rosa Publica')
