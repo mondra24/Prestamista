@@ -29,20 +29,28 @@
         <div class="card-body">
             <div class="contrato-texto">{{ cuerpo }}</div>
             <a href="{% url 'core:contrato_publico_pdf' prestamo.token_publico %}" target="_blank" class="btn btn-outline-primary btn-sm mt-3">
-                <i class="bi bi-file-earmark-pdf me-1"></i>Ver / descargar PDF
+                <i class="bi bi-file-earmark-pdf me-1"></i>Ver / descargar PDF (contrato y pagaré)
             </a>
+        </div>
+    </div>
+
+    <h2 class="h5 text-center mb-3">{{ titulo_pagare }}</h2>
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="contrato-texto">{{ pagare }}</div>
         </div>
     </div>
 
     {% if firma %}
     <div class="alert alert-success" id="ya-firmado">
         <i class="bi bi-check-circle-fill me-1"></i>
-        Contrato firmado el {{ firma.firmado_en|date:"d/m/Y H:i" }}. ¡Gracias!
+        Contrato y pagaré firmados el {{ firma.firmado_en|date:"d/m/Y H:i" }}. ¡Gracias!
     </div>
     {% else %}
     <div class="card border-0 shadow-sm mb-3" id="bloque-firma">
         <div class="card-body">
-            <p class="mb-2"><strong>Firmá acá con el dedo</strong>, <span class="text-muted">{{ prestamo.cliente.nombre_completo }}</span></p>
+            <p class="mb-1"><strong>Firmá acá con el dedo</strong>, <span class="text-muted">{{ prestamo.cliente.nombre_completo }}</span></p>
+            <p class="small text-muted mb-2">Tu firma vale para el contrato y para el pagaré.</p>
             <canvas id="firma-canvas"></canvas>
             <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="btn-limpiar-firma">
                 <i class="bi bi-eraser me-1"></i>Borrar
@@ -50,7 +58,7 @@
         </div>
     </div>
     <button type="button" class="btn btn-success btn-lg w-100" id="btn-confirmar-firma">
-        <i class="bi bi-check2-circle me-1"></i>Firmar contrato
+        <i class="bi bi-check2-circle me-1"></i>Firmar contrato y pagaré
     </button>
     <div id="firma-error" class="alert alert-danger mt-3" style="display:none;"></div>
     <div id="firma-ok" class="alert alert-success mt-3" style="display:none;">

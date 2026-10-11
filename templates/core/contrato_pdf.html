@@ -139,6 +139,37 @@
     </tr>
 </table>
 
+<pdf:nextpage />
+
+<h1>{{ titulo_pagare }}</h1>
+<div class="subtitulo">Préstamo #{{ prestamo.pk }} — Por {{ prestamo.monto_total_a_pagar|dinero }}</div>
+
+<div class="cuerpo">
+    {{ pagare_renderizado|linebreaks }}
+</div>
+
+<table class="firmas">
+    <tr>
+        <td>
+            {% if firma %}
+            <img class="firma-imagen" src="{{ firma.firma_imagen_base64 }}">
+            {% endif %}
+        </td>
+        <td class="espaciador"></td>
+        <td></td>
+    </tr>
+    <tr>
+        <td class="firma-raya">______________________</td>
+        <td class="espaciador"></td>
+        <td class="firma-raya">______________________</td>
+    </tr>
+    <tr>
+        <td class="firma-linea">Firma del Deudor<br>{{ prestamo.cliente.nombre_completo }}</td>
+        <td class="espaciador"></td>
+        <td class="firma-linea">Firma del Acreedor</td>
+    </tr>
+</table>
+
 {% if firma %}
 <div class="firma-evidencia">
     Firmado electrónicamente el {{ firma.firmado_en|date:"d/m/Y H:i" }}

@@ -2719,6 +2719,15 @@ QUINTA: Para todos los efectos del presente contrato, las partes se someten a la
 En prueba de conformidad, se firma el presente contrato en el día de la fecha, {{fecha_hoy}}."""
 
 
+PAGARE_CUERPO_DEFAULT = """Por este PAGARÉ, {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, se obliga a pagar incondicionalmente a la orden de EL ACREEDOR la suma de {{monto_total}}, en {{cuotas_pactadas}} cuotas de frecuencia {{frecuencia}}, comenzando el {{fecha_inicio}} y finalizando el {{fecha_finalizacion}}.
+
+El importe corresponde a un préstamo de {{monto_solicitado}} con una tasa de interés del {{tasa_interes}}%, que EL DEUDOR declara haber recibido de plena conformidad.
+
+La falta de pago de cualquiera de las cuotas en su fecha de vencimiento hará exigible el saldo adeudado, con más los recargos por mora que correspondan.
+
+Emitido el {{fecha_hoy}}."""
+
+
 class ConfiguracionContrato(models.Model):
     """
     Configuración global del contrato de préstamo en PDF. Fila única (pk=1).
@@ -2732,6 +2741,14 @@ class ConfiguracionContrato(models.Model):
         help_text='Variables disponibles: {{cliente_nombre}}, {{cliente_dni}}, {{cliente_direccion}}, '
                    '{{monto_solicitado}}, {{monto_total}}, {{cuotas_pactadas}}, {{frecuencia}}, '
                    '{{tasa_interes}}, {{fecha_inicio}}, {{fecha_finalizacion}}, {{fecha_hoy}}'
+    )
+
+    titulo_pagare = models.CharField(max_length=200, default='PAGARÉ', verbose_name='Título del pagaré')
+    cuerpo_pagare = models.TextField(
+        default=PAGARE_CUERPO_DEFAULT,
+        verbose_name='Texto del pagaré',
+        help_text='Se imprime en la segunda hoja del mismo PDF del contrato; una sola firma cubre los dos. '
+                   'Acepta las mismas variables que el contrato.'
     )
 
     class Meta:
@@ -2748,10 +2765,18 @@ class ConfiguracionContrato(models.Model):
 
     def renderizar(self, prestamo):
         """Reemplaza las variables del cuerpo del contrato con los datos del préstamo"""
+        return self._reemplazar_variables(self.cuerpo, prestamo)
+
+    def renderizar_pagare(self, prestamo):
+        """Igual que `renderizar`, pero para el texto del pagaré"""
+        return self._reemplazar_variables(self.cuerpo_pagare, prestamo)
+
+    @staticmethod
+    def _reemplazar_variables(texto, prestamo):
         from .templatetags.currency_filters import dinero
         cliente = prestamo.cliente
         return (
-            self.cuerpo
+            texto
             .replace('{{cliente_nombre}}', cliente.nombre_completo)
             .replace('{{cliente_dni}}', cliente.dni or 'sin dato')
             .replace('{{cliente_direccion}}', cliente.direccion or 'sin dato')

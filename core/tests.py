@@ -4873,9 +4873,71 @@ class FirmaPublicaDelClienteTest(TestCase):
     def test_pagina_muestra_agradecimiento_si_ya_esta_firmado(self):
         self._firmar()
         response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
-        self.assertContains(response, 'Contrato firmado el')
+        self.assertContains(response, 'Contrato y pagaré firmados el')
         self.assertNotContains(response, 'id="firma-canvas"')
 
     def test_pagina_muestra_texto_del_contrato(self):
         response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
         self.assertContains(response, 'Rosa Publica')
+
+
+class PagareEnElContratoTest(TestCase):
+    """El pagaré va en la segunda hoja del mismo PDF: una sola firma y un solo hash para los dos"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.cobrador = User.objects.create_user(username='cob_pagare', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Julia', apellido='Pagare', telefono='1122223333', dni='28111222',
+            direccion='Dir', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=2,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+
+    def _paginas_del_pdf(self):
+        import io
+        from pypdf import PdfReader
+        response = self.client_http.get(reverse('core:contrato_publico_pdf', kwargs={'token': self.prestamo.token_publico}))
+        return [p.extract_text() for p in PdfReader(io.BytesIO(response.content)).pages]
+
+    def test_el_pdf_tiene_contrato_y_pagare_en_hojas_distintas(self):
+        paginas = self._paginas_del_pdf()
+        self.assertEqual(len(paginas), 2)
+        self.assertIn('CONTRATO DE MUTUO', paginas[0])
+        self.assertNotIn('PAGAR', paginas[0])
+        self.assertIn('PAGAR', paginas[1])
+
+    def test_el_pagare_lleva_los_datos_del_prestamo(self):
+        pagare = self._paginas_del_pdf()[1]
+        self.assertIn('Julia Pagare', pagare)
+        self.assertIn('28111222', pagare)
+
+    def test_el_pagare_se_edita_desde_la_configuracion(self):
+        config = ConfiguracionContrato.obtener()
+        config.titulo_pagare = 'DOCUMENTO DE DEUDA'
+        config.cuerpo_pagare = 'Yo {{cliente_nombre}} debo plata.'
+        config.save()
+        pagare = self._paginas_del_pdf()[1]
+        self.assertIn('DOCUMENTO DE DEUDA', pagare)
+        self.assertIn('Yo Julia Pagare debo plata.', pagare)
+
+    def test_una_firma_aparece_en_las_dos_hojas(self):
+        self.client_http.post(
+            reverse('core:contrato_publico_firmar', kwargs={'token': self.prestamo.token_publico}),
+            data=json.dumps({'firma': FIRMA_PNG_BASE64}), content_type='application/json',
+        )
+        import io
+        from pypdf import PdfReader
+        response = self.client_http.get(reverse('core:contrato_publico_pdf', kwargs={'token': self.prestamo.token_publico}))
+        paginas = PdfReader(io.BytesIO(response.content)).pages
+        self.assertEqual(len(paginas), 2)
+        for pagina in paginas:
+            self.assertEqual(len(pagina.images), 1)
+
+    def test_la_pagina_publica_muestra_el_pagare(self):
+        response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
+        self.assertContains(response, 'PAGARÉ')
+        self.assertContains(response, 'Tu firma vale para el contrato y para el pagaré')

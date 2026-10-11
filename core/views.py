@@ -3787,6 +3787,8 @@ def _generar_pdf_contrato(prestamo):
         'prestamo': prestamo,
         'titulo': config.titulo,
         'cuerpo_renderizado': config.renderizar(prestamo),
+        'titulo_pagare': config.titulo_pagare,
+        'pagare_renderizado': config.renderizar_pagare(prestamo),
         'firma': getattr(prestamo, 'firma', None),
     }
     html = render_to_string('core/contrato_pdf.html', contexto)
@@ -3850,6 +3852,8 @@ def contrato_publico(request, token):
         'firma': getattr(prestamo, 'firma', None),
         'titulo': ConfiguracionContrato.obtener().titulo,
         'cuerpo': ConfiguracionContrato.obtener().renderizar(prestamo),
+        'titulo_pagare': ConfiguracionContrato.obtener().titulo_pagare,
+        'pagare': ConfiguracionContrato.obtener().renderizar_pagare(prestamo),
     })
 
 
