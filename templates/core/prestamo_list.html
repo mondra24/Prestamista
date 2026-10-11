@@ -28,6 +28,9 @@
         {% if request.GET.estado %}
         <input type="hidden" name="estado" value="{{ request.GET.estado }}">
         {% endif %}
+        {% if request.GET.firma %}
+        <input type="hidden" name="firma" value="{{ request.GET.firma }}">
+        {% endif %}
         <button type="submit" class="btn btn-primary btn-lg px-3">
             <i class="bi bi-search"></i>
         </button>
@@ -54,6 +57,10 @@
         <a href="?estado=IR{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
            class="btn btn-sm rounded-pill {% if request.GET.estado == 'IR' %}btn-dark{% else %}btn-outline-dark{% endif %}">
             Irrecuperables
+        </a>
+        <a href="?firma=sin{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+           class="btn btn-sm rounded-pill {% if request.GET.firma == 'sin' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+            <i class="bi bi-pen me-1"></i>Sin firmar
         </a>
     </div>
     
@@ -90,6 +97,11 @@
                     <small class="d-block text-muted mt-1">
                         {{ prestamo.cuotas_pagadas }}/{{ prestamo.cuotas_pactadas }}
                     </small>
+                    {% if prestamo.firma %}
+                    <small class="d-block text-success"><i class="bi bi-patch-check-fill me-1"></i>Firmado</small>
+                    {% elif prestamo.estado == 'AC' %}
+                    <small class="d-block text-danger"><i class="bi bi-pen me-1"></i>Sin firmar</small>
+                    {% endif %}
                     {% if prestamo.fecha_finalizacion %}
                     <small class="d-block text-muted">
                         <i class="bi bi-calendar-event me-1"></i>{{ prestamo.fecha_finalizacion|date:"d/m/Y" }}

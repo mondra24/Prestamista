@@ -17,6 +17,7 @@ from unittest.mock import patch
 from contextlib import contextmanager
 
 from .models import (
+    ConfiguracionMora,
     Cliente, Prestamo, Cuota, RutaCobro, TipoNegocio,
     PerfilUsuario, RegistroAuditoria, Notificacion, ConfiguracionRespaldo,
     ConfiguracionCategorizacion, ConfiguracionWhatsApp, EnvioWhatsApp,
@@ -4941,3 +4942,135 @@ class PagareEnElContratoTest(TestCase):
         response = self.client_http.get(reverse('core:contrato_publico', kwargs={'token': self.prestamo.token_publico}))
         self.assertContains(response, 'PAGARÉ')
         self.assertContains(response, 'Tu firma vale para el contrato y para el pagaré')
+
+
+class ContratoCriterioFinancieraTest(TestCase):
+    """Texto firmado congelado, acreedor identificado, mora real, DNI y estado de firma visibles"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.admin = User.objects.create_superuser(username='admin_crit', password='test123')
+        self.cobrador = User.objects.create_user(username='cob_crit', password='test123')
+        self.cliente = Cliente.objects.create(
+            nombre='Marta', apellido='Criterio', telefono='1122223333', dni='30111222',
+            direccion='Calle 1', usuario=self.cobrador
+        )
+        self.prestamo = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('50000'),
+            tasa_interes_porcentaje=Decimal('20'), cuotas_pactadas=2,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.url_firma = reverse('core:contrato_publico_firmar', kwargs={'token': self.prestamo.token_publico})
+        self.url_pdf = reverse('core:contrato_publico_pdf', kwargs={'token': self.prestamo.token_publico})
+
+    def _firmar(self):
+        return self.client_http.post(self.url_firma, data=json.dumps({'firma': FIRMA_PNG_BASE64}),
+                                     content_type='application/json')
+
+    def _texto_pdf(self):
+        import io
+        from pypdf import PdfReader
+        response = self.client_http.get(self.url_pdf)
+        paginas = PdfReader(io.BytesIO(response.content)).pages
+        return ' '.join(p.extract_text().replace('\n', ' ') for p in paginas)
+
+    # --- 1. lo firmado no cambia ---
+    def test_editar_el_texto_despues_de_firmar_no_altera_el_contrato_firmado(self):
+        self._firmar()
+        config = ConfiguracionContrato.obtener()
+        config.cuerpo = 'TEXTO NUEVO QUE NO FUE FIRMADO'
+        config.save()
+        texto = self._texto_pdf()
+        self.assertNotIn('TEXTO NUEVO', texto)
+        self.assertIn('PRIMERA', texto)
+
+    def test_cambiar_el_monto_despues_de_firmar_no_altera_el_pdf(self):
+        self._firmar()
+        Prestamo.objects.filter(pk=self.prestamo.pk).update(monto_solicitado=Decimal('999999'))
+        self.assertNotIn('999.999', self._texto_pdf())
+
+    def test_un_prestamo_sin_firmar_si_toma_el_texto_actual(self):
+        config = ConfiguracionContrato.obtener()
+        config.cuerpo = 'TEXTO ACTUAL {{cliente_nombre}}'
+        config.save()
+        self.assertIn('TEXTO ACTUAL Marta Criterio', self._texto_pdf())
+
+    def test_firma_guarda_copia_del_documento(self):
+        self._firmar()
+        firma = FirmaPrestamo.objects.get(prestamo=self.prestamo)
+        self.assertIn('Marta Criterio', firma.documento_firmado['cuerpo'])
+        self.assertIn('Marta Criterio', firma.documento_firmado['pagare'])
+
+    # --- 2. acreedor ---
+    def test_sin_acreedor_cargado_dice_la_parte_prestamista(self):
+        self.assertIn('la parte prestamista', self._texto_pdf())
+
+    def test_acreedor_cargado_aparece_en_contrato_pagare_y_firma(self):
+        config = ConfiguracionContrato.obtener()
+        config.acreedor_nombre = 'Thomas Prestamista'
+        config.acreedor_dni = '20333444'
+        config.save()
+        texto = self._texto_pdf()
+        self.assertGreaterEqual(texto.count('Thomas Prestamista'), 3)  # contrato, pagaré y bloque de firma
+        self.assertIn('DNI/CUIT 20333444', texto)
+
+    # --- mora ---
+    def test_la_clausula_de_mora_usa_la_configuracion_vigente(self):
+        ConfiguracionMora.objects.all().delete()
+        ConfiguracionMora.objects.create(porcentaje_diario=Decimal('1.50'), dias_gracia=3, activo=True)
+        texto = self._texto_pdf()
+        self.assertIn('1,50% por cada día de atraso', texto)
+        self.assertIn('3 días de gracia', texto)
+
+    def test_sin_configuracion_de_mora_usa_la_frase_generica(self):
+        ConfiguracionMora.objects.all().delete()
+        self.assertIn('informe oportunamente', self._texto_pdf())
+
+    def test_la_mora_firmada_no_cambia_si_despues_se_modifica_la_configuracion(self):
+        ConfiguracionMora.objects.all().delete()
+        ConfiguracionMora.objects.create(porcentaje_diario=Decimal('1.00'), activo=True)
+        self._firmar()
+        ConfiguracionMora.objects.all().update(porcentaje_diario=Decimal('9.00'))
+        texto = self._texto_pdf()
+        self.assertIn('1,00% por cada día', texto)
+        self.assertNotIn('9,00%', texto)
+
+    # --- 3. DNI ---
+    def test_detalle_avisa_si_el_cliente_no_tiene_dni(self):
+        Cliente.objects.filter(pk=self.cliente.pk).update(dni='')
+        self.client_http.login(username='cob_crit', password='test123')
+        response = self.client_http.get(reverse('core:prestamo_detail', kwargs={'pk': self.prestamo.pk}))
+        self.assertContains(response, 'no tiene DNI cargado')
+
+    def test_detalle_no_avisa_si_tiene_dni(self):
+        self.client_http.login(username='cob_crit', password='test123')
+        response = self.client_http.get(reverse('core:prestamo_detail', kwargs={'pk': self.prestamo.pk}))
+        self.assertNotContains(response, 'no tiene DNI cargado')
+
+    def test_admin_ve_aviso_de_acreedor_sin_cargar_y_cobrador_no(self):
+        url = reverse('core:prestamo_detail', kwargs={'pk': self.prestamo.pk})
+        self.client_http.login(username='admin_crit', password='test123')
+        self.assertContains(self.client_http.get(url), 'Falta cargar tu nombre y DNI como acreedor')
+        self.client_http.logout()
+        self.client_http.login(username='cob_crit', password='test123')
+        self.assertNotContains(self.client_http.get(url), 'Falta cargar tu nombre y DNI como acreedor')
+
+    # --- 4. estado de firma en el listado ---
+    def test_listado_marca_sin_firmar_y_firmado(self):
+        self.client_http.login(username='cob_crit', password='test123')
+        self.assertContains(self.client_http.get(reverse('core:prestamo_list')), 'Sin firmar')
+        self._firmar()
+        response = self.client_http.get(reverse('core:prestamo_list'))
+        self.assertContains(response, 'Firmado')
+
+    def test_filtro_sin_firmar_muestra_solo_los_pendientes(self):
+        otro = Prestamo.objects.create(
+            cliente=self.cliente, monto_solicitado=Decimal('10000'),
+            tasa_interes_porcentaje=Decimal('10'), cuotas_pactadas=1,
+            frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self._firmar()  # firma self.prestamo; queda sin firmar `otro`
+        self.client_http.login(username='cob_crit', password='test123')
+        response = self.client_http.get(reverse('core:prestamo_list'), {'firma': 'sin'})
+        ids = [p.pk for p in response.context['prestamos']]
+        self.assertEqual(ids, [otro.pk])

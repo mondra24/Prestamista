@@ -27,6 +27,12 @@
 
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-body">
+            {% if not prestamo.cliente.dni %}
+            <div class="alert alert-warning py-2 px-3 small">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>Este cliente no tiene DNI cargado: el documento va a decir "sin dato".
+                <a href="{% url 'core:cliente_update' prestamo.cliente.pk %}" class="alert-link">Cargar DNI</a>
+            </div>
+            {% endif %}
             <p class="text-muted small mb-2">
                 Antes de firmar, revisá el contrato y el pagaré con el cliente. Una sola firma vale para los dos.
             </p>

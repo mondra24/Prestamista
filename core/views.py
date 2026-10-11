@@ -684,6 +684,10 @@ class PrestamoListView(LoginRequiredMixin, ListView):
         if estado:
             queryset = queryset.filter(estado=estado)
 
+        if self.request.GET.get('firma') == 'sin':
+            # Préstamos vigentes a los que todavía les falta el contrato firmado
+            queryset = queryset.filter(estado='AC', firma__isnull=True)
+
         if busqueda:
             queryset = queryset.filter(
                 Q(cliente__nombre__icontains=busqueda) |
@@ -691,7 +695,7 @@ class PrestamoListView(LoginRequiredMixin, ListView):
                 Q(cliente__telefono__icontains=busqueda)
             )
 
-        return queryset.select_related('cliente', 'cliente__usuario', 'cobrador')
+        return queryset.select_related('cliente', 'cliente__usuario', 'cobrador', 'firma')
 
 
 class PrestamoCreateView(LoginRequiredMixin, CreateView):
@@ -773,6 +777,10 @@ class PrestamoDetailView(LoginRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         cuotas = list(self.object.cuotas.all())
         context['config_mora'] = ConfiguracionMora.obtener_config_activa()
+        # Sin el nombre del acreedor, el pagaré dice solo "la parte prestamista"
+        context['contrato_sin_acreedor'] = (
+            es_usuario_admin(self.request.user) and not ConfiguracionContrato.obtener().acreedor_nombre
+        )
         
         # Cargar historial de modificaciones para todas las cuotas
         cuota_ids = [c.id for c in cuotas]
@@ -3772,23 +3780,56 @@ import hashlib
 from decimal import InvalidOperation
 
 
-def _generar_pdf_contrato(prestamo):
+def _armar_documento(prestamo):
     """
-    Genera los bytes del PDF del contrato de un préstamo. Se arma al vuelo en
-    cada request (no se guarda a disco: el servicio web no tiene volumen
-    persistente en Railway) y la reusan la vista autenticada, el link público
-    y el hasheo al momento de firmar.
+    Contrato + pagaré ya con todas las variables reemplazadas y los datos del
+    préstamo escritos como texto. Es lo que se imprime en el PDF y lo que se
+    guarda al firmar: así lo firmado queda congelado aunque después se edite
+    el texto del contrato, la mora o los datos del préstamo.
+    """
+    from .templatetags.currency_filters import dinero
+    config = ConfiguracionContrato.obtener()
+    cliente = prestamo.cliente
+    return {
+        'prestamo_id': prestamo.pk,
+        'emitido': fecha_local_hoy().strftime('%d/%m/%Y'),
+        'titulo': config.titulo,
+        'cuerpo': config.renderizar(prestamo),
+        'titulo_pagare': config.titulo_pagare,
+        'pagare': config.renderizar_pagare(prestamo),
+        'acreedor_nombre': config.acreedor_nombre,
+        'cliente_nombre': cliente.nombre_completo,
+        'cliente_dni': cliente.dni or 'sin dato',
+        'cliente_direccion': cliente.direccion or 'sin dato',
+        'monto_solicitado': dinero(prestamo.monto_solicitado),
+        'monto_total': dinero(prestamo.monto_total_a_pagar),
+        'cuotas': f'{prestamo.cuotas_pactadas} ({prestamo.get_frecuencia_display()})',
+        'tasa': f'{prestamo.tasa_interes_porcentaje}%',
+        'fecha_inicio': prestamo.fecha_inicio.strftime('%d/%m/%Y'),
+        'fecha_fin': prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if prestamo.fecha_finalizacion else 'sin dato',
+    }
+
+
+def _documento_vigente(prestamo):
+    """El texto firmado si el préstamo ya está firmado; si no, el armado con la configuración de hoy"""
+    firma = getattr(prestamo, 'firma', None)
+    if firma and firma.documento_firmado:
+        return firma.documento_firmado
+    return _armar_documento(prestamo)
+
+
+def _generar_pdf_contrato(prestamo, documento=None):
+    """
+    Genera los bytes del PDF (contrato + pagaré) de un préstamo. Se arma al
+    vuelo en cada request (no se guarda a disco: el servicio web no tiene
+    volumen persistente en Railway) y lo reusan la vista autenticada, el
+    link público y el hasheo al momento de firmar.
     """
     from xhtml2pdf import pisa
     from django.template.loader import render_to_string
 
-    config = ConfiguracionContrato.obtener()
     contexto = {
-        'prestamo': prestamo,
-        'titulo': config.titulo,
-        'cuerpo_renderizado': config.renderizar(prestamo),
-        'titulo_pagare': config.titulo_pagare,
-        'pagare_renderizado': config.renderizar_pagare(prestamo),
+        'doc': documento or _documento_vigente(prestamo),
         'firma': getattr(prestamo, 'firma', None),
     }
     html = render_to_string('core/contrato_pdf.html', contexto)
@@ -3850,10 +3891,7 @@ def contrato_publico(request, token):
     return render(request, 'core/contrato_publico.html', {
         'prestamo': prestamo,
         'firma': getattr(prestamo, 'firma', None),
-        'titulo': ConfiguracionContrato.obtener().titulo,
-        'cuerpo': ConfiguracionContrato.obtener().renderizar(prestamo),
-        'titulo_pagare': ConfiguracionContrato.obtener().titulo_pagare,
-        'pagare': ConfiguracionContrato.obtener().renderizar_pagare(prestamo),
+        'doc': _documento_vigente(prestamo),
     })
 
 
@@ -3932,13 +3970,15 @@ def _registrar_firma(request, prestamo, firmado_por):
     if not firma_base64 or not str(firma_base64).startswith('data:image/png;base64,'):
         return JsonResponse({'success': False, 'message': 'Falta la firma'}, status=400)
 
-    pdf_bytes = _generar_pdf_contrato(prestamo)
+    documento = _armar_documento(prestamo)
+    pdf_bytes = _generar_pdf_contrato(prestamo, documento=documento)
     hash_pdf = hashlib.sha256(pdf_bytes).hexdigest()
 
     FirmaPrestamo.objects.create(
         prestamo=prestamo,
         firma_imagen_base64=firma_base64,
         hash_pdf=hash_pdf,
+        documento_firmado=documento,
         ip_address=_obtener_ip_cliente(request),
         latitud=_parse_decimal_o_none(data.get('lat')),
         longitud=_parse_decimal_o_none(data.get('lng')),

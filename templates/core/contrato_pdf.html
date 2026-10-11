@@ -1,9 +1,8 @@
-{% load currency_filters %}
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>{{ titulo }} - Préstamo #{{ prestamo.pk }}</title>
+<title>{{ doc.titulo }} - Préstamo #{{ doc.prestamo_id }}</title>
 <style>
     @page {
         size: A4;
@@ -79,42 +78,42 @@
 </head>
 <body>
 
-<h1>{{ titulo }}</h1>
-<div class="subtitulo">Préstamo #{{ prestamo.pk }} — Generado el {% now "d/m/Y" %}</div>
+<h1>{{ doc.titulo }}</h1>
+<div class="subtitulo">Préstamo #{{ doc.prestamo_id }} — Emitido el {{ doc.emitido }}</div>
 
 <table class="datos">
     <tr>
         <td class="etiqueta">Cliente</td>
-        <td>{{ prestamo.cliente.nombre_completo }}</td>
+        <td>{{ doc.cliente_nombre }}</td>
         <td class="etiqueta">DNI</td>
-        <td>{{ prestamo.cliente.dni|default:"sin dato" }}</td>
+        <td>{{ doc.cliente_dni }}</td>
     </tr>
     <tr>
         <td class="etiqueta">Domicilio</td>
-        <td colspan="3">{{ prestamo.cliente.direccion|default:"sin dato" }}</td>
+        <td colspan="3">{{ doc.cliente_direccion }}</td>
     </tr>
     <tr>
         <td class="etiqueta">Monto solicitado</td>
-        <td>{{ prestamo.monto_solicitado|dinero }}</td>
+        <td>{{ doc.monto_solicitado }}</td>
         <td class="etiqueta">Total a pagar</td>
-        <td>{{ prestamo.monto_total_a_pagar|dinero }}</td>
+        <td>{{ doc.monto_total }}</td>
     </tr>
     <tr>
         <td class="etiqueta">Cuotas</td>
-        <td>{{ prestamo.cuotas_pactadas }} ({{ prestamo.get_frecuencia_display }})</td>
+        <td>{{ doc.cuotas }}</td>
         <td class="etiqueta">Tasa de interés</td>
-        <td>{{ prestamo.tasa_interes_porcentaje }}%</td>
+        <td>{{ doc.tasa }}</td>
     </tr>
     <tr>
         <td class="etiqueta">Fecha de inicio</td>
-        <td>{{ prestamo.fecha_inicio|date:"d/m/Y" }}</td>
+        <td>{{ doc.fecha_inicio }}</td>
         <td class="etiqueta">Fecha de finalización</td>
-        <td>{{ prestamo.fecha_finalizacion|date:"d/m/Y"|default:"sin dato" }}</td>
+        <td>{{ doc.fecha_fin }}</td>
     </tr>
 </table>
 
 <div class="cuerpo">
-    {{ cuerpo_renderizado|linebreaks }}
+    {{ doc.cuerpo|linebreaks }}
 </div>
 
 <table class="firmas">
@@ -133,19 +132,19 @@
         <td class="firma-raya">______________________</td>
     </tr>
     <tr>
-        <td class="firma-linea">Firma del Deudor<br>{{ prestamo.cliente.nombre_completo }}</td>
+        <td class="firma-linea">Firma del Deudor<br>{{ doc.cliente_nombre }}</td>
         <td class="espaciador"></td>
-        <td class="firma-linea">Firma del Acreedor</td>
+        <td class="firma-linea">Firma del Acreedor{% if doc.acreedor_nombre %}<br>{{ doc.acreedor_nombre }}{% endif %}</td>
     </tr>
 </table>
 
 <pdf:nextpage />
 
-<h1>{{ titulo_pagare }}</h1>
-<div class="subtitulo">Préstamo #{{ prestamo.pk }} — Por {{ prestamo.monto_total_a_pagar|dinero }}</div>
+<h1>{{ doc.titulo_pagare }}</h1>
+<div class="subtitulo">Préstamo #{{ doc.prestamo_id }} — Por {{ doc.monto_total }}</div>
 
 <div class="cuerpo">
-    {{ pagare_renderizado|linebreaks }}
+    {{ doc.pagare|linebreaks }}
 </div>
 
 <table class="firmas">
@@ -164,9 +163,9 @@
         <td class="firma-raya">______________________</td>
     </tr>
     <tr>
-        <td class="firma-linea">Firma del Deudor<br>{{ prestamo.cliente.nombre_completo }}</td>
+        <td class="firma-linea">Firma del Deudor<br>{{ doc.cliente_nombre }}</td>
         <td class="espaciador"></td>
-        <td class="firma-linea">Firma del Acreedor</td>
+        <td class="firma-linea">Firma del Acreedor{% if doc.acreedor_nombre %}<br>{{ doc.acreedor_nombre }}{% endif %}</td>
     </tr>
 </table>
 

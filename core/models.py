@@ -2704,7 +2704,7 @@ class ConfiguracionMensajesAutomaticos(models.Model):
         )
 
 
-CONTRATO_CUERPO_DEFAULT = """Entre {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, en adelante "EL DEUDOR", y la parte prestamista, en adelante "EL ACREEDOR", se celebra el presente contrato de mutuo, sujeto a las siguientes cláusulas:
+CONTRATO_CUERPO_DEFAULT = """Entre {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, en adelante "EL DEUDOR", y {{acreedor}}, en adelante "EL ACREEDOR", se celebra el presente contrato de mutuo, sujeto a las siguientes cláusulas:
 
 PRIMERA: EL ACREEDOR entrega en préstamo a EL DEUDOR la suma de {{monto_solicitado}}, que EL DEUDOR declara recibir en este acto de plena conformidad.
 
@@ -2712,18 +2712,18 @@ SEGUNDA: EL DEUDOR se compromete a devolver la suma total de {{monto_total}}, en
 
 TERCERA: La tasa de interés pactada es del {{tasa_interes}}% sobre el capital solicitado.
 
-CUARTA: El incumplimiento en el pago de una o más cuotas en su fecha de vencimiento generará los recargos por mora que EL ACREEDOR informe oportunamente a EL DEUDOR.
+CUARTA: El incumplimiento en el pago de una o más cuotas en su fecha de vencimiento generará {{mora}}.
 
 QUINTA: Para todos los efectos del presente contrato, las partes se someten a la jurisdicción de los tribunales ordinarios competentes.
 
 En prueba de conformidad, se firma el presente contrato en el día de la fecha, {{fecha_hoy}}."""
 
 
-PAGARE_CUERPO_DEFAULT = """Por este PAGARÉ, {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, se obliga a pagar incondicionalmente a la orden de EL ACREEDOR la suma de {{monto_total}}, en {{cuotas_pactadas}} cuotas de frecuencia {{frecuencia}}, comenzando el {{fecha_inicio}} y finalizando el {{fecha_finalizacion}}.
+PAGARE_CUERPO_DEFAULT = """Por este PAGARÉ, {{cliente_nombre}}, DNI {{cliente_dni}}, con domicilio en {{cliente_direccion}}, se obliga a pagar incondicionalmente a la orden de {{acreedor}} la suma de {{monto_total}}, en {{cuotas_pactadas}} cuotas de frecuencia {{frecuencia}}, comenzando el {{fecha_inicio}} y finalizando el {{fecha_finalizacion}}.
 
 El importe corresponde a un préstamo de {{monto_solicitado}} con una tasa de interés del {{tasa_interes}}%, que EL DEUDOR declara haber recibido de plena conformidad.
 
-La falta de pago de cualquiera de las cuotas en su fecha de vencimiento hará exigible el saldo adeudado, con más los recargos por mora que correspondan.
+La falta de pago de cualquiera de las cuotas en su fecha de vencimiento hará exigible el saldo adeudado, con más {{mora}}.
 
 Emitido el {{fecha_hoy}}."""
 
@@ -2740,9 +2740,18 @@ class ConfiguracionContrato(models.Model):
         verbose_name='Texto del contrato',
         help_text='Variables disponibles: {{cliente_nombre}}, {{cliente_dni}}, {{cliente_direccion}}, '
                    '{{monto_solicitado}}, {{monto_total}}, {{cuotas_pactadas}}, {{frecuencia}}, '
-                   '{{tasa_interes}}, {{fecha_inicio}}, {{fecha_finalizacion}}, {{fecha_hoy}}'
+                   '{{tasa_interes}}, {{fecha_inicio}}, {{fecha_finalizacion}}, {{fecha_hoy}}, '
+                   '{{acreedor}} (nombre y DNI cargados abajo), {{mora}} (recargo por mora vigente)'
     )
 
+    acreedor_nombre = models.CharField(
+        max_length=150, blank=True, verbose_name='Nombre del acreedor',
+        help_text='Quien presta la plata (nombre y apellido o razón social). Aparece en el contrato y el '
+                   'pagaré; si queda vacío figura solo como "la parte prestamista".'
+    )
+    acreedor_dni = models.CharField(
+        max_length=20, blank=True, verbose_name='DNI / CUIT del acreedor'
+    )
     titulo_pagare = models.CharField(max_length=200, default='PAGARÉ', verbose_name='Título del pagaré')
     cuerpo_pagare = models.TextField(
         default=PAGARE_CUERPO_DEFAULT,
@@ -2771,8 +2780,27 @@ class ConfiguracionContrato(models.Model):
         """Igual que `renderizar`, pero para el texto del pagaré"""
         return self._reemplazar_variables(self.cuerpo_pagare, prestamo)
 
+    @property
+    def acreedor_texto(self):
+        if not self.acreedor_nombre:
+            return 'la parte prestamista'
+        if self.acreedor_dni:
+            return f'{self.acreedor_nombre}, DNI/CUIT {self.acreedor_dni}'
+        return self.acreedor_nombre
+
     @staticmethod
-    def _reemplazar_variables(texto, prestamo):
+    def texto_mora():
+        """Cláusula de mora según la configuración vigente; si no hay, la frase genérica"""
+        config = ConfiguracionMora.obtener_config_activa()
+        if not config or not config.porcentaje_diario:
+            return 'los recargos por mora que EL ACREEDOR informe oportunamente a EL DEUDOR'
+        porcentaje = f'{config.porcentaje_diario:.2f}'.replace('.', ',')
+        texto = f'un recargo por mora del {porcentaje}% por cada día de atraso, calculado sobre el valor de la cuota vencida'
+        if config.dias_gracia:
+            texto += f', luego de {config.dias_gracia} días de gracia'
+        return texto
+
+    def _reemplazar_variables(self, texto, prestamo):
         from .templatetags.currency_filters import dinero
         cliente = prestamo.cliente
         return (
@@ -2788,6 +2816,8 @@ class ConfiguracionContrato(models.Model):
             .replace('{{fecha_inicio}}', prestamo.fecha_inicio.strftime('%d/%m/%Y'))
             .replace('{{fecha_finalizacion}}', prestamo.fecha_finalizacion.strftime('%d/%m/%Y') if prestamo.fecha_finalizacion else 'sin dato')
             .replace('{{fecha_hoy}}', fecha_local_hoy().strftime('%d/%m/%Y'))
+            .replace('{{acreedor}}', self.acreedor_texto)
+            .replace('{{mora}}', self.texto_mora())
         )
 
 
@@ -2804,6 +2834,12 @@ class FirmaPrestamo(models.Model):
     )
     firma_imagen_base64 = models.TextField(verbose_name='Firma (imagen)')
     hash_pdf = models.CharField(max_length=64, verbose_name='Hash SHA-256 del PDF firmado')
+    documento_firmado = models.JSONField(
+        null=True, blank=True, verbose_name='Texto firmado',
+        help_text='Copia del contrato y pagaré tal como se mostraron al firmar. El PDF de un préstamo '
+                   'firmado se arma siempre desde esta copia, así editar el texto del contrato o los '
+                   'datos del préstamo después no altera lo que el cliente firmó.'
+    )
     ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name='IP')
     latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name='Latitud')
     longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name='Longitud')

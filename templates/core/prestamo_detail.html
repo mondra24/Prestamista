@@ -265,7 +265,21 @@
     <!-- Contrato PDF y firma -->
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body">
-            <h6 class="mb-2"><i class="bi bi-file-earmark-text me-1 text-primary"></i>Contrato</h6>
+            <h6 class="mb-2"><i class="bi bi-file-earmark-text me-1 text-primary"></i>Contrato y Pagaré</h6>
+            {% if not prestamo.cliente.dni and not prestamo.firma %}
+            <div class="alert alert-warning py-2 px-3 mb-2 small">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                Este cliente no tiene DNI cargado, así que el contrato y el pagaré van a decir "sin dato".
+                <a href="{% url 'core:cliente_update' prestamo.cliente.pk %}" class="alert-link">Cargar DNI</a>
+            </div>
+            {% endif %}
+            {% if contrato_sin_acreedor and not prestamo.firma %}
+            <div class="alert alert-warning py-2 px-3 mb-2 small">
+                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                Falta cargar tu nombre y DNI como acreedor: sin eso el pagaré dice solo "la parte prestamista".
+                <a href="/admin/core/configuracioncontrato/" class="alert-link">Cargarlo en Configuración de Contrato</a>
+            </div>
+            {% endif %}
             {% if prestamo.firma %}
             <div class="alert alert-success py-2 px-3 mb-2 small">
                 <i class="bi bi-check-circle-fill me-1"></i>Firmado el {{ prestamo.firma.firmado_en|date:"d/m/Y H:i" }}
@@ -273,11 +287,11 @@
             {% endif %}
             <div class="d-flex flex-wrap gap-2">
                 <a href="{% url 'core:contrato_pdf' prestamo.pk %}" target="_blank" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-file-earmark-pdf me-1"></i>Ver Contrato (PDF)
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Ver Contrato y Pagaré (PDF)
                 </a>
                 {% if not prestamo.firma %}
                 <a href="{% url 'core:contrato_firmar' prestamo.pk %}" class="btn btn-outline-success btn-sm">
-                    <i class="bi bi-pen me-1"></i>Firmar Contrato
+                    <i class="bi bi-pen me-1"></i>Firmar acá (en este celular)
                 </a>
                 {% endif %}
                 {% if prestamo.cliente.telefono %}
@@ -1425,7 +1439,7 @@ document.querySelector('.btn-enviar-contrato-wp')?.addEventListener('click', fun
     let tel = (this.dataset.tel || '').replace(/[^0-9]/g, '');
     if (tel.startsWith('0')) tel = tel.substring(1);
     if (!tel.startsWith('54')) tel = '54' + tel;
-    const mensaje = `Hola ${cliente}! Te paso el contrato de tu préstamo:\n${link}`;
+    const mensaje = `Hola ${cliente}! Te paso el contrato y el pagaré de tu préstamo, firmalos desde el celular con el dedo:\n${link}`;
     window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank');
 });
 
