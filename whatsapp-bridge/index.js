@@ -16,12 +16,14 @@
  *                    cada redeploy pide re-escanear el QR.
  *   PORT            puerto HTTP (default 3000, Railway lo inyecta solo).
  */
+const fs = require('fs');
 const express = require('express');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const {
     default: makeWASocket,
     DisconnectReason,
+    fetchLatestBaileysVersion,
     useMultiFileAuthState,
 } = require('@whiskeysockets/baileys');
 
@@ -46,13 +48,43 @@ const estado = {
 
 let sock = null;
 
+// Evita que dos reintentos simultáneos abran dos sockets a la vez (dos
+// sockets sobre la misma sesión se pelean y WhatsApp corta ambos).
+let reconectando = false;
+
 async function iniciarConexion() {
+    if (reconectando) return;
+    reconectando = true;
+    try {
+        await abrirSocket();
+    } finally {
+        reconectando = false;
+    }
+}
+
+async function abrirSocket() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+
+    // WhatsApp rechaza (error 405) las versiones de protocolo viejas y en ese
+    // caso nunca se genera el QR. Si no se puede consultar la última versión,
+    // se sigue con la que trae la librería.
+    let version;
+    try {
+        ({ version } = await fetchLatestBaileysVersion());
+    } catch (e) {
+        logger.warn({ err: e }, 'No se pudo consultar la última versión de WhatsApp Web');
+    }
+
+    if (sock) {
+        sock.ev.removeAllListeners();
+        try { sock.end(undefined); } catch (e) { /* ya estaba cerrado */ }
+    }
 
     sock = makeWASocket({
         auth: state,
         logger,
         printQRInTerminal: false,
+        ...(version ? { version } : {}),
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -83,16 +115,29 @@ async function iniciarConexion() {
             const deslogueado = statusCode === DisconnectReason.loggedOut;
 
             if (deslogueado) {
-                // El usuario desvinculó el dispositivo desde el celular, o
-                // WhatsApp lo desvinculó solo por inactividad prolongada.
-                // No hay sesión que recuperar: hay que volver a escanear.
+                // El usuario desvinculó el dispositivo (desde el celular o
+                // con "Desvincular"), o WhatsApp lo hizo solo por
+                // inactividad. No hay sesión que recuperar: se borran las
+                // credenciales viejas y se abre una conexión limpia, que es
+                // la que genera el QR nuevo. Sin esto el QR no volvía a
+                // aparecer hasta reiniciar el servicio.
                 estado.telefono = null;
                 estado.qrDataUrl = null;
-                logger.warn('Sesión de WhatsApp cerrada, hace falta un nuevo QR');
+                logger.warn('Sesión de WhatsApp cerrada, se genera un nuevo QR');
+                try {
+                    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+                } catch (e) {
+                    logger.error({ err: e }, 'No se pudo borrar la sesión vieja');
+                }
+                setTimeout(() => iniciarConexion().catch((err) => {
+                    logger.error({ err }, 'Error al reiniciar la conexión');
+                }), 1000);
             } else {
                 // Corte de red u otro problema transitorio: reintentar.
                 logger.warn({ statusCode }, 'Conexión perdida, reintentando');
-                setTimeout(iniciarConexion, 3000);
+                setTimeout(() => iniciarConexion().catch((err) => {
+                    logger.error({ err }, 'Error al reintentar la conexión');
+                }), 3000);
             }
         }
     });
