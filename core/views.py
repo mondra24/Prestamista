@@ -19,7 +19,7 @@ from datetime import date, timedelta
 import json
 
 from .models import Cliente, Prestamo, Cuota, ConfiguracionMora, ConfiguracionMoraReciente, HistorialModificacionPago, NotaSeguimiento, fecha_local_hoy, ConfiguracionMensajesAutomaticos, DIAS_SEMANA_CODIGOS, TareaPendiente
-from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm
+from .forms import ClienteForm, PrestamoForm, RenovacionPrestamoForm, ConfiguracionContratoForm
 from . import whatsapp_bridge
 
 
@@ -3902,6 +3902,37 @@ def contrato_publico_pdf(request, token):
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'inline; filename="contrato_prestamo_{prestamo.pk}.pdf"'
     return response
+
+
+class ConfiguracionContratoView(LoginRequiredMixin, UpdateView):
+    """
+    Pantalla para que el admin cargue sus datos como acreedor (nombre y DNI) y
+    ajuste el texto del contrato y del pagaré, sin entrar al admin de Django.
+    """
+    form_class = ConfiguracionContratoForm
+    template_name = 'core/contrato_config.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        if not es_usuario_admin(request.user):
+            messages.error(request, 'Solo un administrador puede configurar el contrato.')
+            return redirect('core:dashboard')
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_object(self, queryset=None):
+        return ConfiguracionContrato.obtener()
+
+    def get_success_url(self):
+        return reverse('core:contrato_config')
+
+    def form_valid(self, form):
+        messages.success(self.request, 'Listo, se guardaron los datos del contrato. Se aplican a los contratos nuevos; los ya firmados no cambian.')
+        return super().form_valid(form)
+
+    def get_context_data(self, **kwargs):
+        from .forms import VARIABLES_CONTRATO
+        context = super().get_context_data(**kwargs)
+        context['variables'] = VARIABLES_CONTRATO
+        return context
 
 
 class FirmarContratoView(LoginRequiredMixin, TemplateView):

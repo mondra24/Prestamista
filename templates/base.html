@@ -162,6 +162,9 @@
             <a href="{% url 'core:whatsapp_conexion' %}" class="{% if request.resolver_match.url_name == 'whatsapp_conexion' %}active{% endif %}">
                 <i class="bi bi-whatsapp"></i> WhatsApp
             </a>
+            <a href="{% url 'core:contrato_config' %}" class="{% if request.resolver_match.url_name == 'contrato_config' %}active{% endif %}">
+                <i class="bi bi-file-earmark-text"></i> Contrato
+            </a>
             {% endif %}
             {% if user.is_superuser %}
             {% if not user.perfil.es_admin %}<hr class="my-2 opacity-25">{% endif %}

@@ -1,10 +1,12 @@
 """
 Formularios del Sistema de Gestión de Préstamos
 """
+import re
+
 from django import forms
 from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Layout, Submit, Row, Column, Div, HTML, Field
-from .models import Cliente, Prestamo, RutaCobro, TipoNegocio
+from .models import Cliente, Prestamo, RutaCobro, TipoNegocio, ConfiguracionContrato
 
 
 class ClienteForm(forms.ModelForm):
@@ -732,3 +734,48 @@ class UsuarioEditForm(forms.Form):
         
         return cleaned_data
 
+
+VARIABLES_CONTRATO = (
+    'cliente_nombre', 'cliente_dni', 'cliente_direccion', 'monto_solicitado', 'monto_total',
+    'cuotas_pactadas', 'frecuencia', 'tasa_interes', 'fecha_inicio', 'fecha_finalizacion',
+    'fecha_hoy', 'acreedor', 'mora',
+)
+
+
+class ConfiguracionContratoForm(forms.ModelForm):
+    """Datos del acreedor y textos del contrato/pagaré, editables desde la app (sin pasar por el admin de Django)"""
+
+    class Meta:
+        model = ConfiguracionContrato
+        fields = ['acreedor_nombre', 'acreedor_dni', 'titulo', 'cuerpo', 'titulo_pagare', 'cuerpo_pagare']
+        widgets = {
+            'acreedor_nombre': forms.TextInput(attrs={'class': 'form-control form-control-lg', 'placeholder': 'Nombre y apellido', 'autocomplete': 'name'}),
+            'acreedor_dni': forms.TextInput(attrs={'class': 'form-control form-control-lg', 'placeholder': 'Ej: 30123456', 'inputmode': 'numeric'}),
+            'titulo': forms.TextInput(attrs={'class': 'form-control'}),
+            'cuerpo': forms.Textarea(attrs={'class': 'form-control font-monospace', 'rows': 16}),
+            'titulo_pagare': forms.TextInput(attrs={'class': 'form-control'}),
+            'cuerpo_pagare': forms.Textarea(attrs={'class': 'form-control font-monospace', 'rows': 12}),
+        }
+
+    def _validar_variables(self, campo):
+        """Una variable mal escrita saldría tal cual en el PDF del cliente, así que se rechaza al guardar"""
+        texto = self.cleaned_data.get(campo) or ''
+        desconocidas = sorted({v for v in re.findall(r'\{\{([^{}]*)\}\}', texto) if v not in VARIABLES_CONTRATO})
+        if desconocidas:
+            raise forms.ValidationError(
+                'Hay variables que no existen: ' + ', '.join('{{' + v + '}}' for v in desconocidas) +
+                '. Tienen que estar escritas exactamente como en la lista, sin espacios adentro de las llaves.'
+            )
+        return texto
+
+    def clean_cuerpo(self):
+        return self._validar_variables('cuerpo')
+
+    def clean_cuerpo_pagare(self):
+        return self._validar_variables('cuerpo_pagare')
+
+    def clean_acreedor_dni(self):
+        dni = (self.cleaned_data.get('acreedor_dni') or '').strip()
+        if dni and not re.fullmatch(r'[0-9.\-]{6,20}', dni):
+            raise forms.ValidationError('Ingresá solo números (puede llevar puntos o guiones).')
+        return dni

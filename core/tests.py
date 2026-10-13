@@ -5074,3 +5074,110 @@ class ContratoCriterioFinancieraTest(TestCase):
         response = self.client_http.get(reverse('core:prestamo_list'), {'firma': 'sin'})
         ids = [p.pk for p in response.context['prestamos']]
         self.assertEqual(ids, [otro.pk])
+
+
+class PantallaConfiguracionContratoTest(TestCase):
+    """El admin carga sus datos y ajusta los textos desde la app, sin pasar por el admin de Django"""
+
+    def setUp(self):
+        self.client_http = TestClient()
+        self.admin = User.objects.create_superuser(username='admin_cfgc', password='test123')
+        self.cobrador = User.objects.create_user(username='cob_cfgc', password='test123')
+        self.url = reverse('core:contrato_config')
+        self.config = ConfiguracionContrato.obtener()
+
+    def _datos(self, **extra):
+        datos = {
+            'acreedor_nombre': 'Thomas Prestamista', 'acreedor_dni': '30.123.456',
+            'titulo': self.config.titulo, 'cuerpo': self.config.cuerpo,
+            'titulo_pagare': self.config.titulo_pagare, 'cuerpo_pagare': self.config.cuerpo_pagare,
+        }
+        datos.update(extra)
+        return datos
+
+    def test_cobrador_no_puede_entrar(self):
+        self.client_http.login(username='cob_cfgc', password='test123')
+        self.assertRedirects(self.client_http.get(self.url), reverse('core:dashboard'))
+
+    def test_cobrador_no_puede_guardar(self):
+        self.client_http.login(username='cob_cfgc', password='test123')
+        self.client_http.post(self.url, self._datos())
+        self.assertEqual(ConfiguracionContrato.obtener().acreedor_nombre, '')
+
+    def test_requiere_login(self):
+        self.assertEqual(self.client_http.get(self.url).status_code, 302)
+
+    def test_admin_ve_la_pantalla_con_aviso_si_faltan_sus_datos(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Todavía no los cargaste')
+
+    def test_admin_guarda_sus_datos(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.post(self.url, self._datos())
+        self.assertRedirects(response, self.url)
+        config = ConfiguracionContrato.obtener()
+        self.assertEqual(config.acreedor_nombre, 'Thomas Prestamista')
+        self.assertEqual(config.acreedor_dni, '30.123.456')
+
+    def test_con_datos_cargados_ya_no_sale_el_aviso(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        self.client_http.post(self.url, self._datos())
+        self.assertNotContains(self.client_http.get(self.url), 'Todavía no los cargaste')
+
+    def test_variable_mal_escrita_se_rechaza_y_no_guarda(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.post(self.url, self._datos(cuerpo='Hola {{cliente_nmbre}}'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'cliente_nmbre')
+        self.assertNotEqual(ConfiguracionContrato.obtener().cuerpo, 'Hola {{cliente_nmbre}}')
+
+    def test_variable_con_espacios_se_rechaza(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.post(self.url, self._datos(cuerpo_pagare='Debo {{ monto_total }}'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'sin espacios')
+
+    def test_variables_validas_se_aceptan(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        self.client_http.post(self.url, self._datos(cuerpo='Yo {{cliente_nombre}} debo {{monto_total}}. {{mora}}'))
+        self.assertEqual(ConfiguracionContrato.obtener().cuerpo, 'Yo {{cliente_nombre}} debo {{monto_total}}. {{mora}}')
+
+    def test_dni_con_letras_se_rechaza(self):
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.post(self.url, self._datos(acreedor_dni='abc123'))
+        self.assertContains(response, 'solo números')
+        self.assertEqual(ConfiguracionContrato.obtener().acreedor_dni, '')
+
+    def test_los_datos_cargados_llegan_al_pdf_del_cliente(self):
+        cliente = Cliente.objects.create(
+            nombre='Rosa', apellido='Config', telefono='1122223333', dni='28111222',
+            direccion='Dir', usuario=self.cobrador
+        )
+        prestamo = Prestamo.objects.create(
+            cliente=cliente, monto_solicitado=Decimal('50000'), tasa_interes_porcentaje=Decimal('20'),
+            cuotas_pactadas=2, frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.client_http.login(username='admin_cfgc', password='test123')
+        self.client_http.post(self.url, self._datos())
+        self.client_http.logout()
+        import io
+        from pypdf import PdfReader
+        response = self.client_http.get(reverse('core:contrato_publico_pdf', kwargs={'token': prestamo.token_publico}))
+        texto = ' '.join(p.extract_text() for p in PdfReader(io.BytesIO(response.content)).pages)
+        self.assertIn('Thomas Prestamista', texto)
+        self.assertIn('30.123.456', texto)
+
+    def test_el_link_del_aviso_del_detalle_apunta_a_la_pantalla_nueva(self):
+        cliente = Cliente.objects.create(
+            nombre='Ana', apellido='Link', telefono='1122223333', dni='1', direccion='D', usuario=self.cobrador
+        )
+        prestamo = Prestamo.objects.create(
+            cliente=cliente, monto_solicitado=Decimal('1000'), tasa_interes_porcentaje=Decimal('10'),
+            cuotas_pactadas=1, frecuencia='SE', fecha_inicio=date.today(), cobrador=self.cobrador
+        )
+        self.client_http.login(username='admin_cfgc', password='test123')
+        response = self.client_http.get(reverse('core:prestamo_detail', kwargs={'pk': prestamo.pk}))
+        self.assertContains(response, f'href="{self.url}"')
+        self.assertNotContains(response, '/admin/core/configuracioncontrato')

@@ -31,6 +31,7 @@ urlpatterns = [
     path('prestamos/<int:pk>/editar/', views.PrestamoUpdateView.as_view(), name='prestamo_update'),
     path('prestamos/<int:pk>/eliminar/', views.PrestamoDeleteView.as_view(), name='prestamo_delete'),
     path('prestamos/<int:pk>/renovar/', views.RenovarPrestamoView.as_view(), name='prestamo_renovar'),
+    path('contrato/configuracion/', views.ConfiguracionContratoView.as_view(), name='contrato_config'),
     path('prestamos/<int:pk>/contrato/', views.contrato_pdf, name='contrato_pdf'),
     path('prestamos/<int:pk>/contrato/firmar/', views.FirmarContratoView.as_view(), name='contrato_firmar'),
 
