@@ -15,6 +15,7 @@ import os
 import requests
 
 TIMEOUT_SEGUNDOS = 10
+ERROR_NO_CONECTADO = 'WhatsApp no está conectado'
 
 
 class WhatsAppBridgeError(Exception):
@@ -94,7 +95,7 @@ def enviar_mensaje(telefono, texto):
         raise WhatsAppBridgeError(f'No se pudo conectar con el bridge: {e}')
 
     if response.status_code == 409:
-        raise WhatsAppBridgeError('WhatsApp no está conectado')
+        raise WhatsAppBridgeError(ERROR_NO_CONECTADO)
     if response.status_code != 200:
         raise WhatsAppBridgeError(f'El bridge rechazó el mensaje ({response.status_code}): {response.text}')
 

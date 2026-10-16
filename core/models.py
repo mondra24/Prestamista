@@ -2594,6 +2594,16 @@ class EnvioWhatsApp(models.Model):
             exitoso=True
         ).exists()
 
+    @classmethod
+    def intentos_fallidos_hoy(cls, cuota, tipo):
+        """Cuántas veces falló hoy este mismo mensaje (para no reintentar eternamente un número inválido)"""
+        return cls.objects.filter(
+            cuota=cuota,
+            tipo=tipo,
+            fecha_envio__date=fecha_local_hoy(),
+            exitoso=False
+        ).count()
+
 
 DIAS_SEMANA_CODIGOS = 'LMXJVSD'  # índice = date.weekday() (Lunes=0 ... Domingo=6)
 

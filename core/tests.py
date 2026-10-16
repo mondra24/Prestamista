@@ -5,7 +5,7 @@ Ejecutar: python manage.py test core -v 2
 import tempfile
 from pathlib import Path
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 import json
 from django.test import TestCase, Client as TestClient, override_settings
 from django.urls import reverse
@@ -4054,6 +4054,18 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
         patcher_sleep.start()
         self.addCleanup(patcher_sleep.stop)
 
+        # El comando respeta la hora configurada de cada mensaje (09:00 por defecto): se fija
+        # "ahora" al mediodía para que los tests no dependan de la hora en que corren.
+        self._fijar_hora(12, 0)
+
+    def _fijar_hora(self, hora, minuto):
+        patcher_hora = patch(
+            'core.management.commands.enviar_mensajes_automaticos.hora_local_ahora',
+            return_value=time(hora, minuto)
+        )
+        patcher_hora.start()
+        self.addCleanup(patcher_hora.stop)
+
     @contextmanager
     def _bridge_conectado(self):
         with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
@@ -4186,6 +4198,113 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
         self.assertIn('Hola Auto,', texto_enviado)
         self.assertIn(self.cuota_hoy.fecha_vencimiento.strftime('%d/%m/%Y'), texto_enviado)
         self.assertNotIn('{{', texto_enviado)
+
+    def _bridge_desconectado(self):
+        return patch.multiple(
+            'core.whatsapp_bridge',
+            bridge_configurado=lambda: True,
+            obtener_estado=lambda: {'connected': False, 'phone': None},
+        )
+
+    def test_sin_conexion_avisa_a_los_admins_una_sola_vez_por_dia(self):
+        admin = User.objects.create_user(username='admin_wa', password='x', is_superuser=True)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_desconectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+            call_command('enviar_mensajes_automaticos')  # la corrida es horaria: no debe repetir el aviso
+        mock_enviar.assert_not_called()
+        avisos = Notificacion.objects.filter(usuario=admin, titulo__startswith='WhatsApp desconectado')
+        self.assertEqual(avisos.count(), 1)
+        self.assertEqual(avisos.first().enlace, '/whatsapp/conexion/')
+
+    def test_sin_conexion_no_avisa_si_no_hay_nada_pendiente(self):
+        admin = User.objects.create_user(username='admin_wa2', password='x', is_superuser=True)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        EnvioWhatsApp.objects.create(
+            cliente=self.cliente, cuota=self.cuota_hoy, tipo=EnvioWhatsApp.Tipo.AVISO_DIA,
+            canal=EnvioWhatsApp.Canal.PERSONAL, exitoso=True
+        )
+        with self._bridge_desconectado():
+            call_command('enviar_mensajes_automaticos')
+        self.assertFalse(Notificacion.objects.filter(usuario=admin).exists())
+
+    def test_bridge_caido_tambien_avisa(self):
+        admin = User.objects.create_user(username='admin_wa3', password='x', is_superuser=True)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
+             patch('core.whatsapp_bridge.obtener_estado',
+                   side_effect=whatsapp_bridge_module.WhatsAppBridgeError('caido')):
+            call_command('enviar_mensajes_automaticos')
+        self.assertTrue(Notificacion.objects.filter(usuario=admin, titulo__startswith='WhatsApp desconectado').exists())
+
+    def test_al_reconectar_envia_lo_que_quedo_pendiente(self):
+        """El escenario real: una corrida desconectada no manda, Thomas vincula, la siguiente lo manda una sola vez"""
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_desconectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+        with self._bridge_conectado():
+            with patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.X') as mock_enviar:
+                call_command('enviar_mensajes_automaticos')
+                EnvioWhatsApp.objects.update(fecha_envio=timezone.now() - timedelta(minutes=10))
+                call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_called_once()
+
+    def test_no_manda_antes_de_la_hora_configurada(self):
+        ConfiguracionMensajesAutomaticos.objects.create(
+            pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD', aviso_dia_hora=time(15, 0)
+        )
+        with self._bridge_conectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')  # son las 12:00
+        mock_enviar.assert_not_called()
+
+    def test_no_manda_atrasado_de_noche(self):
+        self._fijar_hora(22, 30)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_si_se_cae_a_mitad_de_la_corrida_no_cuenta_como_fallido(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado(), patch(
+            'core.whatsapp_bridge.enviar_mensaje',
+            side_effect=whatsapp_bridge_module.WhatsAppBridgeError('WhatsApp no está conectado')
+        ):
+            call_command('enviar_mensajes_automaticos')
+        self.assertEqual(EnvioWhatsApp.objects.count(), 0)
+
+    def test_un_mensaje_que_falla_dos_veces_hoy_no_se_reintenta(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado(), patch(
+            'core.whatsapp_bridge.enviar_mensaje',
+            side_effect=whatsapp_bridge_module.WhatsAppBridgeError('Número inválido')
+        ) as mock_enviar:
+            for _ in range(4):
+                # que el registro anterior no cuente como "otra corrida en curso"
+                EnvioWhatsApp.objects.update(fecha_envio=timezone.now() - timedelta(minutes=10))
+                call_command('enviar_mensajes_automaticos')
+        self.assertEqual(mock_enviar.call_count, 2)
+
+    def test_no_arranca_si_hay_otra_corrida_enviando(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        EnvioWhatsApp.objects.create(
+            cliente=self.cliente, tipo=EnvioWhatsApp.Tipo.AVISO_MORA,
+            canal=EnvioWhatsApp.Canal.PERSONAL, exitoso=True
+        )  # recién enviado
+        with self._bridge_conectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        mock_enviar.assert_not_called()
+
+    def test_simular_no_envia_ni_registra_nada(self):
+        admin = User.objects.create_user(username='admin_wa4', password='x', is_superuser=True)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        with self._bridge_conectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos', '--simular')
+        mock_enviar.assert_not_called()
+        self.assertEqual(EnvioWhatsApp.objects.count(), 0)
+        self.assertFalse(Notificacion.objects.filter(usuario=admin).exists())
 
 
 class MensajesAutomaticosConfigViewTest(TestCase):
