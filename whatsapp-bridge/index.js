@@ -20,12 +20,19 @@ const fs = require('fs');
 const express = require('express');
 const QRCode = require('qrcode');
 const pino = require('pino');
-const {
-    default: makeWASocket,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-    useMultiFileAuthState,
-} = require('@whiskeysockets/baileys');
+
+// Baileys 7 es un módulo ESM: no se puede require(), se carga con import()
+// dinámico antes de abrir el primer socket.
+let makeWASocket;
+let DisconnectReason;
+let fetchLatestBaileysVersion;
+let useMultiFileAuthState;
+async function cargarBaileys() {
+    if (makeWASocket) return;
+    const baileys = await import('@whiskeysockets/baileys');
+    makeWASocket = baileys.default || baileys.makeWASocket;
+    ({ DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } = baileys);
+}
 
 const BRIDGE_SECRET = process.env.BRIDGE_SECRET;
 const AUTH_DIR = process.env.AUTH_DIR || './auth_session';
@@ -62,7 +69,28 @@ async function iniciarConexion() {
     }
 }
 
+// Estado de entrega de los últimos mensajes mandados (id → estado). Baileys
+// devuelve éxito apenas el mensaje sale del socket, pero eso no significa que
+// WhatsApp lo haya aceptado ni que le haya llegado a la persona: la
+// confirmación llega después por messages.update.
+const ESTADOS = { 0: 'error', 1: 'pendiente', 2: 'enviado', 3: 'entregado', 4: 'leido', 5: 'leido' };
+const entregas = new Map();
+const MAX_ENTREGAS = 500;
+
+function registrarEntrega(id, estadoNuevo) {
+    if (!id) return;
+    const actual = entregas.get(id);
+    if (!actual) {
+        if (entregas.size >= MAX_ENTREGAS) entregas.delete(entregas.keys().next().value);
+        entregas.set(id, { estado: estadoNuevo, actualizado: Date.now() });
+        return;
+    }
+    actual.estado = estadoNuevo;
+    actual.actualizado = Date.now();
+}
+
 async function abrirSocket() {
+    await cargarBaileys();
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
     // WhatsApp rechaza (error 405) las versiones de protocolo viejas y en ese
@@ -88,6 +116,15 @@ async function abrirSocket() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('messages.update', (updates) => {
+        for (const { key, update } of updates) {
+            if (!key || !key.fromMe || !entregas.has(key.id)) continue;
+            if (update && update.status !== undefined) {
+                registrarEntrega(key.id, ESTADOS[update.status] || String(update.status));
+            }
+        }
+    });
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -167,6 +204,13 @@ app.get('/status', (req, res) => {
     res.json({ connected: estado.conectado, phone: estado.telefono });
 });
 
+// Estado real de entrega de un mensaje ya mandado por /send.
+app.get('/message/:id', (req, res) => {
+    const e = entregas.get(req.params.id);
+    if (!e) return res.status(404).json({ success: false, message: 'Mensaje desconocido' });
+    res.json({ success: true, status: e.estado });
+});
+
 app.get('/qr', (req, res) => {
     if (estado.conectado) {
         return res.json({ qr: null, connected: true });
@@ -220,7 +264,9 @@ app.post('/send', async (req, res) => {
 
     try {
         const resultado = await sock.sendMessage(jid, { text: message });
-        res.json({ success: true, message_id: resultado && resultado.key ? resultado.key.id : null });
+        const messageId = resultado && resultado.key ? resultado.key.id : null;
+        registrarEntrega(messageId, 'pendiente');
+        res.json({ success: true, message_id: messageId });
     } catch (e) {
         logger.error({ err: e }, 'Error al enviar mensaje');
         res.status(502).json({ success: false, message: 'No se pudo enviar el mensaje' });
