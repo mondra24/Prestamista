@@ -4069,7 +4069,7 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
     @contextmanager
     def _bridge_conectado(self):
         with patch('core.whatsapp_bridge.bridge_configurado', return_value=True), \
-             patch('core.whatsapp_bridge.obtener_estado', return_value={'connected': True, 'phone': '5491100000000'}):
+             patch('core.whatsapp_bridge.obtener_estado', return_value={'connected': True, 'phone': '5491100000000'}),              patch('core.whatsapp_bridge.obtener_estado_mensaje', return_value='entregado'):
             yield
 
     def test_no_envia_si_configuracion_general_inactiva(self):
@@ -4305,6 +4305,79 @@ class EnviarMensajesAutomaticosCommandTest(TestCase):
         mock_enviar.assert_not_called()
         self.assertEqual(EnvioWhatsApp.objects.count(), 0)
         self.assertFalse(Notificacion.objects.filter(usuario=admin).exists())
+
+    # ------------------------------------------------------------------ verificación de entrega
+
+    def _envio_viejo(self, message_id='wamid.X', minutos=15):
+        envio = EnvioWhatsApp.objects.create(
+            cliente=self.cliente, cuota=self.cuota_hoy, tipo=EnvioWhatsApp.Tipo.AVISO_DIA,
+            canal=EnvioWhatsApp.Canal.PERSONAL, exitoso=True, message_id=message_id
+        )
+        EnvioWhatsApp.objects.filter(pk=envio.pk).update(fecha_envio=timezone.now() - timedelta(minutes=minutos))
+        return envio
+
+    def test_mensaje_pendiente_pasado_el_tiempo_se_marca_fallido_y_se_reintenta(self):
+        admin = User.objects.create_user(username='admin_ent', password='x', is_superuser=True)
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo()
+        with self._bridge_conectado(),              patch('core.whatsapp_bridge.obtener_estado_mensaje', return_value='pendiente'),              patch('core.whatsapp_bridge.enviar_mensaje', return_value='wamid.NUEVO') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+
+        envio.refresh_from_db()
+        self.assertFalse(envio.exitoso)
+        self.assertEqual(envio.estado_entrega, 'sin_entrega')
+        mock_enviar.assert_called_once()
+        self.assertTrue(EnvioWhatsApp.objects.filter(message_id='wamid.NUEVO', exitoso=True).exists())
+        self.assertTrue(Notificacion.objects.filter(usuario=admin, titulo='Mensajes de WhatsApp sin entregar').exists())
+
+    def test_mensaje_entregado_no_se_reenvia(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo()
+        with self._bridge_conectado(), patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        envio.refresh_from_db()
+        self.assertTrue(envio.exitoso)
+        self.assertEqual(envio.estado_entrega, 'entregado')
+        mock_enviar.assert_not_called()
+
+    def test_mensaje_pendiente_pero_reciente_se_espera(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo(minutos=3)
+        with self._bridge_conectado(),              patch('core.whatsapp_bridge.obtener_estado_mensaje', return_value='pendiente') as mock_estado,              patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        envio.refresh_from_db()
+        self.assertTrue(envio.exitoso)
+        mock_estado.assert_not_called()
+        mock_enviar.assert_not_called()
+
+    def test_si_el_bridge_no_conoce_el_mensaje_se_deja_como_enviado(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo()
+        with self._bridge_conectado(),              patch('core.whatsapp_bridge.obtener_estado_mensaje', return_value=None),              patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        envio.refresh_from_db()
+        self.assertTrue(envio.exitoso)
+        self.assertEqual(envio.estado_entrega, 'desconocido')
+        mock_enviar.assert_not_called()
+
+    def test_si_falla_la_consulta_de_estado_no_rompe_ni_reenvia(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo()
+        with self._bridge_conectado(),              patch('core.whatsapp_bridge.obtener_estado_mensaje',
+                   side_effect=whatsapp_bridge_module.WhatsAppBridgeError('caido')),              patch('core.whatsapp_bridge.enviar_mensaje') as mock_enviar:
+            call_command('enviar_mensajes_automaticos')
+        envio.refresh_from_db()
+        self.assertTrue(envio.exitoso)
+        mock_enviar.assert_not_called()
+
+    def test_simular_no_verifica_entregas(self):
+        ConfiguracionMensajesAutomaticos.objects.create(pk=1, activo=True, aviso_dia_dias_semana='LMXJVSD')
+        envio = self._envio_viejo()
+        with self._bridge_conectado(),              patch('core.whatsapp_bridge.obtener_estado_mensaje', return_value='pendiente') as mock_estado:
+            call_command('enviar_mensajes_automaticos', '--simular')
+        envio.refresh_from_db()
+        self.assertTrue(envio.exitoso)
+        mock_estado.assert_not_called()
 
 
 class MensajesAutomaticosConfigViewTest(TestCase):

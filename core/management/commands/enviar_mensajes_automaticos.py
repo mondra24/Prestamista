@@ -28,6 +28,13 @@ número personal no verificado (Baileys). Por eso cada envío exitoso o
 fallido espera un tiempo aleatorio antes de seguir con el próximo — ver
 PAUSA_MIN_SEGUNDOS / PAUSA_MAX_SEGUNDOS.
 
+Verificación de entrega: que el bridge devuelva "enviado" no alcanza (puede
+quedar con el relojito y no llegarle nunca al cliente). Al empezar cada
+corrida se le pregunta al bridge cómo quedó lo mandado hoy: si pasados
+MINUTOS_ESPERA_ENTREGA sigue "pendiente", se lo marca como fallido, se avisa
+a los administradores y se reintenta en esa misma corrida (con el tope de
+MAX_INTENTOS_FALLIDOS_POR_DIA).
+
 Opción --simular: no habla con el bridge para enviar ni escribe nada, solo
 muestra qué mensajes mandaría en este momento (sirve para probar en
 producción sin mandarle nada a nadie).
@@ -54,6 +61,11 @@ HORA_LIMITE_DEFAULT = hora_del_dia(21, 0)
 # Un mismo mensaje que falló esta cantidad de veces hoy no se reintenta más
 # (ej. número inválido): si no, cada corrida horaria lo volvería a probar.
 MAX_INTENTOS_FALLIDOS_POR_DIA = 2
+
+# Un mensaje que sigue "pendiente" (sin que WhatsApp lo haya aceptado) pasado este
+# tiempo se da por no entregado. Los que ya tienen otro estado no se vuelven a consultar.
+MINUTOS_ESPERA_ENTREGA = 10
+ESTADOS_ENTREGA_FINALES = ('enviado', 'entregado', 'leido', 'desconocido', 'sin_entrega')
 
 URL_CONEXION_WHATSAPP = '/whatsapp/conexion/'
 
@@ -94,6 +106,9 @@ class Command(BaseCommand):
                 'configurado (WHATSAPP_BRIDGE_URL / WHATSAPP_BRIDGE_SECRET). No se envía nada.'
             ))
             return
+
+        if not self.simular:
+            self._verificar_entregas()
 
         hoy = fecha_local_hoy()
         ahora = hora_local_ahora()
@@ -136,6 +151,43 @@ class Command(BaseCommand):
 
         if fallidos:
             self._avisar_fallidos(fallidos)
+
+    # ------------------------------------------------------------------ verificación de entrega
+
+    def _verificar_entregas(self):
+        """
+        Consulta al bridge cómo quedaron los mensajes mandados hoy. Los que siguen
+        "pendientes" pasado el tiempo de espera se marcan como fallidos para que
+        esta misma corrida los reintente. Si el bridge no responde, no hace nada.
+        """
+        limite = timezone.now() - timedelta(minutes=MINUTOS_ESPERA_ENTREGA)
+        envios = EnvioWhatsApp.objects.filter(
+            canal=EnvioWhatsApp.Canal.PERSONAL, exitoso=True, fecha_envio__date=fecha_local_hoy(),
+            fecha_envio__lte=limite,
+        ).exclude(message_id__isnull=True).exclude(message_id='').exclude(estado_entrega__in=ESTADOS_ENTREGA_FINALES)
+
+        sin_entregar = 0
+        for envio in envios:
+            try:
+                estado = whatsapp_bridge.obtener_estado_mensaje(envio.message_id)
+            except whatsapp_bridge.WhatsAppBridgeError:
+                break
+            if estado is None:
+                envio.estado_entrega = 'desconocido'  # el bridge se reinició: no hay forma de saberlo
+                envio.save(update_fields=['estado_entrega'])
+            elif estado in ('pendiente', 'error'):
+                envio.exitoso = False
+                envio.estado_entrega = 'sin_entrega'
+                envio.error = f'No se entregó: WhatsApp lo dejó "{estado}" pasados {MINUTOS_ESPERA_ENTREGA} minutos'
+                envio.save(update_fields=['exitoso', 'estado_entrega', 'error'])
+                sin_entregar += 1
+            else:
+                envio.estado_entrega = estado
+                envio.save(update_fields=['estado_entrega'])
+
+        if sin_entregar:
+            self.stdout.write(self.style.WARNING(f'{sin_entregar} mensaje(s) no se entregaron, se reintentan.'))
+            self._avisar_sin_entregar(sin_entregar)
 
     # ------------------------------------------------------------------ qué toca mandar
 
@@ -247,6 +299,14 @@ class Command(BaseCommand):
             mensaje=f'Hay {cantidad} mensaje(s) automático(s) esperando para salir, pero WhatsApp no está '
                     'conectado. Entrá a WhatsApp y escaneá el QR: al reconectar se envían solos en la '
                     'próxima hora.',
+            enlace=URL_CONEXION_WHATSAPP,
+        )
+
+    def _avisar_sin_entregar(self, cantidad):
+        self._notificar_una_vez_por_dia(
+            titulo='Mensajes de WhatsApp sin entregar',
+            mensaje=f'{cantidad} mensaje(s) automático(s) quedaron sin entregarse (WhatsApp los dejó en espera). '
+                    'El sistema los reintenta solo. Si se repite, entrá a WhatsApp y volvé a vincular el QR.',
             enlace=URL_CONEXION_WHATSAPP,
         )
 

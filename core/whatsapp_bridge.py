@@ -101,3 +101,23 @@ def enviar_mensaje(telefono, texto):
 
     data = response.json()
     return data.get('message_id')
+
+
+def obtener_estado_mensaje(message_id):
+    """
+    Estado real de un mensaje ya enviado: 'pendiente' (WhatsApp todavía no lo
+    aceptó, el relojito), 'enviado', 'entregado', 'leido' o 'error'.
+    Retorna None si el bridge no lo conoce (se reinició desde que se mandó).
+    Lanza WhatsAppBridgeError si el bridge no responde.
+    """
+    if not bridge_configurado():
+        raise WhatsAppBridgeError('El bridge de WhatsApp no está configurado')
+    try:
+        response = requests.get(_url(f'/message/{message_id}'), headers=_headers(), timeout=TIMEOUT_SEGUNDOS)
+    except requests.RequestException as e:
+        raise WhatsAppBridgeError(f'No se pudo conectar con el bridge: {e}')
+    if response.status_code == 404:
+        return None
+    if response.status_code != 200:
+        raise WhatsAppBridgeError(f'El bridge respondió con error ({response.status_code})')
+    return response.json().get('status')

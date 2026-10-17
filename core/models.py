@@ -2571,6 +2571,10 @@ class EnvioWhatsApp(models.Model):
     exitoso = models.BooleanField(default=False, verbose_name='Exitoso')
     error = models.TextField(blank=True, null=True, verbose_name='Error')
     message_id = models.CharField(max_length=100, blank=True, null=True, verbose_name='ID de mensaje (Meta)')
+    estado_entrega = models.CharField(
+        max_length=20, blank=True, default='', verbose_name='Estado de entrega',
+        help_text='Solo canal QR: lo que informó WhatsApp después (enviado, entregado, leido, sin_entrega...)'
+    )
 
     class Meta:
         verbose_name = 'Envío de WhatsApp'
