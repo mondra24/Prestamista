@@ -77,6 +77,10 @@ const ESTADOS = { 0: 'error', 1: 'pendiente', 2: 'enviado', 3: 'entregado', 4: '
 const entregas = new Map();
 const MAX_ENTREGAS = 500;
 
+// El estado solo puede avanzar: WhatsApp a veces manda confirmaciones
+// atrasadas y una de "enviado" no debe pisar un "leído" ya recibido.
+const ORDEN_ESTADO = { error: 0, pendiente: 1, enviado: 2, entregado: 3, leido: 4 };
+
 function registrarEntrega(id, estadoNuevo) {
     if (!id) return;
     const actual = entregas.get(id);
@@ -85,8 +89,12 @@ function registrarEntrega(id, estadoNuevo) {
         entregas.set(id, { estado: estadoNuevo, actualizado: Date.now() });
         return;
     }
-    actual.estado = estadoNuevo;
-    actual.actualizado = Date.now();
+    const rangoNuevo = ORDEN_ESTADO[estadoNuevo] ?? -1;
+    const rangoActual = ORDEN_ESTADO[actual.estado] ?? -1;
+    if (rangoNuevo > rangoActual || (estadoNuevo === 'error' && actual.estado === 'pendiente')) {
+        actual.estado = estadoNuevo;
+        actual.actualizado = Date.now();
+    }
 }
 
 async function abrirSocket() {
